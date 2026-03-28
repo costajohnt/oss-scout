@@ -17,6 +17,7 @@ import { getOctokit, checkRateLimit } from './github.js';
 import { getSearchBudgetTracker } from './search-budget.js';
 import { daysBetween, sleep } from './utils.js';
 import { type SearchPriority, type IssueCandidate, SCOPE_LABELS } from './types.js';
+import { CONCRETE_STRATEGIES } from './schemas.js';
 import type { ScoutPreferences, SearchStrategy } from './schemas.js';
 import { ValidationError, errorMessage, getHttpStatusCode, isRateLimitError } from './errors.js';
 import { debug, info, warn } from './logger.js';
@@ -126,7 +127,7 @@ export class IssueDiscovery {
     const minStars = config.minStars ?? 50;
 
     // Strategy selection: resolve which phases to run
-    const ALL_STRATEGIES: SearchStrategy[] = ['merged', 'orgs', 'starred', 'broad', 'maintained'];
+    const ALL_STRATEGIES: readonly SearchStrategy[] = CONCRETE_STRATEGIES;
     const rawStrategies = options.strategies ?? config.defaultStrategy ?? ['all'];
     const enabledStrategies = new Set<SearchStrategy>(
       rawStrategies.includes('all') ? ALL_STRATEGIES : rawStrategies,

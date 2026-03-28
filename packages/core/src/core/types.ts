@@ -120,7 +120,7 @@ export interface SearchResult {
   excludedRepos: string[];
   aiPolicyBlocklist: string[];
   rateLimitWarning?: string;
-  strategiesUsed: string[];
+  strategiesUsed: SearchStrategy[];
 }
 
 /** Record of a merged PR for state contribution. */

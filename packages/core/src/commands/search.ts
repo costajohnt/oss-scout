@@ -33,7 +33,7 @@ export interface SearchOutput {
   excludedRepos: string[];
   aiPolicyBlocklist: string[];
   rateLimitWarning?: string;
-  strategiesUsed: string[];
+  strategiesUsed: SearchStrategy[];
 }
 
 interface SearchCommandOptions {
