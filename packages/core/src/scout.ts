@@ -23,6 +23,9 @@ import type {
   ClosedPRRecord,
   RepoScoreUpdate,
   ProjectCategory,
+  VetListOptions,
+  VetListResult,
+  VetListEntry,
 } from './core/types.js';
 
 /**
@@ -106,6 +109,87 @@ export class OssScout implements ScoutStateReader {
   async vetIssue(issueUrl: string): Promise<IssueCandidate> {
     const discovery = new IssueDiscovery(this.githubToken, this.state.preferences, this);
     return discovery.vetIssue(issueUrl);
+  }
+
+  // ── Batch Vetting ───────────────────────────────────────────────────
+
+  /**
+   * Re-vet all saved results with bounded concurrency.
+   * Classifies each as still_available, claimed, has_pr, closed, or error.
+   * Optionally prunes unavailable issues from saved results.
+   */
+  async vetList(options?: VetListOptions): Promise<VetListResult> {
+    const saved = this.getSavedResults();
+    const concurrency = options?.concurrency ?? 5;
+    const results: VetListEntry[] = [];
+    const pending = new Map<string, Promise<void>>();
+
+    for (const item of saved) {
+      const task = this.vetIssue(item.issueUrl)
+        .then((candidate) => {
+          results.push({
+            issueUrl: item.issueUrl,
+            repo: item.repo,
+            number: item.number,
+            title: item.title,
+            status: this.classifyVetResult(candidate),
+            recommendation: candidate.recommendation,
+            viabilityScore: candidate.viabilityScore,
+          });
+        })
+        .catch((error) => {
+          const msg = error instanceof Error ? error.message : String(error);
+          const isGone = msg.includes('Not Found') || msg.includes('410');
+          results.push({
+            issueUrl: item.issueUrl,
+            repo: item.repo,
+            number: item.number,
+            title: item.title,
+            status: isGone ? 'closed' : 'error',
+            errorMessage: msg,
+          });
+        })
+        .finally(() => {
+          pending.delete(item.issueUrl);
+        });
+
+      pending.set(item.issueUrl, task);
+      if (pending.size >= concurrency) {
+        await Promise.race(pending.values());
+      }
+    }
+    await Promise.allSettled(pending.values());
+
+    const summary = {
+      total: results.length,
+      stillAvailable: results.filter((r) => r.status === 'still_available').length,
+      claimed: results.filter((r) => r.status === 'claimed').length,
+      closed: results.filter((r) => r.status === 'closed').length,
+      hasPR: results.filter((r) => r.status === 'has_pr').length,
+      errors: results.filter((r) => r.status === 'error').length,
+    };
+
+    let prunedCount: number | undefined;
+    if (options?.prune) {
+      const unavailableUrls = new Set(
+        results.filter((r) => r.status !== 'still_available').map((r) => r.issueUrl),
+      );
+      const before = (this.state.savedResults ?? []).length;
+      this.state.savedResults = (this.state.savedResults ?? []).filter(
+        (r) => !unavailableUrls.has(r.issueUrl),
+      );
+      prunedCount = before - (this.state.savedResults?.length ?? 0);
+      this.dirty = true;
+    }
+
+    return { results, summary, prunedCount };
+  }
+
+  private classifyVetResult(candidate: IssueCandidate): VetListEntry['status'] {
+    const checks = candidate.vettingResult.checks;
+    if (!checks.noExistingPR) return 'has_pr';
+    if (!checks.notClaimed) return 'claimed';
+    return 'still_available';
   }
 
   // ── State Reads (ScoutStateReader implementation) ───────────────────
