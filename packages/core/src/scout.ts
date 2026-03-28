@@ -83,8 +83,9 @@ export class OssScout implements ScoutStateReader {
    */
   async search(options?: SearchOptions): Promise<SearchResult> {
     const discovery = new IssueDiscovery(this.githubToken, this.state.preferences, this);
-    const candidates = await discovery.searchIssues({
+    const { candidates, strategiesUsed } = await discovery.searchIssues({
       maxResults: options?.maxResults,
+      strategies: options?.strategies,
     });
 
     this.state.lastSearchAt = new Date().toISOString();
@@ -95,6 +96,7 @@ export class OssScout implements ScoutStateReader {
       excludedRepos: this.state.preferences.excludeRepos,
       aiPolicyBlocklist: this.state.preferences.aiPolicyBlocklist,
       rateLimitWarning: discovery.rateLimitWarning ?? undefined,
+      strategiesUsed,
     };
   }
 

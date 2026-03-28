@@ -17,7 +17,8 @@ import { getOctokit, checkRateLimit } from './github.js';
 import { getSearchBudgetTracker } from './search-budget.js';
 import { daysBetween, sleep } from './utils.js';
 import { type SearchPriority, type IssueCandidate, SCOPE_LABELS } from './types.js';
-import type { ScoutPreferences } from './schemas.js';
+import { CONCRETE_STRATEGIES } from './schemas.js';
+import type { ScoutPreferences, SearchStrategy } from './schemas.js';
 import { ValidationError, errorMessage, getHttpStatusCode, isRateLimitError } from './errors.js';
 import { debug, info, warn } from './logger.js';
 import { type GitHubSearchItem, isDocOnlyIssue, applyPerRepoCap } from './issue-filtering.js';
@@ -115,14 +116,23 @@ export class IssueDiscovery {
       languages?: string[];
       labels?: string[];
       maxResults?: number;
+      strategies?: SearchStrategy[];
     } = {},
-  ): Promise<IssueCandidate[]> {
+  ): Promise<{ candidates: IssueCandidate[]; strategiesUsed: SearchStrategy[] }> {
     const config = this.preferences;
     const languages = options.languages || config.languages;
     const scopes = config.scope; // undefined = legacy mode
     const labels = options.labels || (scopes ? buildEffectiveLabels(scopes, config.labels) : config.labels);
     const maxResults = options.maxResults || 10;
     const minStars = config.minStars ?? 50;
+
+    // Strategy selection: resolve which phases to run
+    const ALL_STRATEGIES: readonly SearchStrategy[] = CONCRETE_STRATEGIES;
+    const rawStrategies = options.strategies ?? config.defaultStrategy ?? ['all'];
+    const enabledStrategies = new Set<SearchStrategy>(
+      rawStrategies.includes('all') ? ALL_STRATEGIES : rawStrategies,
+    );
+    const strategiesUsed: SearchStrategy[] = [];
 
     const allCandidates: IssueCandidate[] = [];
     let phase0Error: string | null = null;
@@ -217,7 +227,7 @@ export class IssueDiscovery {
     const phase0Repos = mergedPRRepos.slice(0, 10);
     const phase0RepoSet = new Set(phase0Repos);
 
-    if (phase0Repos.length > 0) {
+    if (phase0Repos.length > 0 && enabledStrategies.has('merged')) {
       info(
         MODULE,
         `Phase 0: Searching issues in ${phase0Repos.length} merged-PR repos (no label filter)...`,
@@ -248,13 +258,14 @@ export class IssueDiscovery {
         }
         info(MODULE, `Found ${mergedCandidates.length} candidates from merged-PR repos`);
       }
+      strategiesUsed.push('merged');
     }
 
     // Phase 0.5: Search preferred organizations (explicit user preference)
     // Skip if budget is critical — Phase 0 results are sufficient
     let phase0_5Error: string | null = null;
     const preferredOrgs = config.preferredOrgs ?? [];
-    if (allCandidates.length < maxResults && preferredOrgs.length > 0 && searchBudget >= CRITICAL_BUDGET_THRESHOLD) {
+    if (allCandidates.length < maxResults && preferredOrgs.length > 0 && searchBudget >= CRITICAL_BUDGET_THRESHOLD && enabledStrategies.has('orgs')) {
       // Inter-phase delay to let GitHub's rate limit window cool down
       if (phase0Repos.length > 0) await sleep(INTER_PHASE_DELAY_MS);
       // Filter out orgs already covered by Phase 0 repos
@@ -308,11 +319,12 @@ export class IssueDiscovery {
           warn(MODULE, `Error searching preferred orgs: ${errMsg}`);
         }
       }
+      strategiesUsed.push('orgs');
     }
 
     // Phase 1: Search starred repos (filter out already-searched Phase 0 repos)
     // Skip if budget is critical
-    if (allCandidates.length < maxResults && starredRepos.length > 0 && searchBudget >= CRITICAL_BUDGET_THRESHOLD) {
+    if (allCandidates.length < maxResults && starredRepos.length > 0 && searchBudget >= CRITICAL_BUDGET_THRESHOLD && enabledStrategies.has('starred')) {
       await sleep(INTER_PHASE_DELAY_MS);
       const reposToSearch = starredRepos.filter((r) => !phase0RepoSet.has(r));
       if (reposToSearch.length > 0) {
@@ -348,6 +360,7 @@ export class IssueDiscovery {
           info(MODULE, `Found ${starredCandidates.length} candidates from starred repos`);
         }
       }
+      strategiesUsed.push('starred');
     }
 
     // Phase 2: General search (if still need more)
@@ -356,7 +369,7 @@ export class IssueDiscovery {
     // results to prevent high-volume tiers (e.g., "enhancement") from drowning out
     // beginner results.
     let phase2Error: string | null = null;
-    if (allCandidates.length < maxResults && searchBudget >= LOW_BUDGET_THRESHOLD) {
+    if (allCandidates.length < maxResults && searchBudget >= LOW_BUDGET_THRESHOLD && enabledStrategies.has('broad')) {
       await sleep(INTER_PHASE_DELAY_MS);
       info(MODULE, 'Phase 2: General issue search...');
       const remainingNeeded = maxResults - allCandidates.length;
@@ -439,12 +452,13 @@ export class IssueDiscovery {
         warn(MODULE, `All ${tierLabelGroups.length} scope tiers failed in Phase 2: ${phase2Error}`);
       }
       allCandidates.push(...interleaved.slice(0, remainingNeeded));
+      strategiesUsed.push('broad');
     }
 
     // Phase 3: Actively maintained repos
     // Skip if budget is low — this phase is API-heavy with broad queries
     let phase3Error: string | null = null;
-    if (allCandidates.length < maxResults && searchBudget >= LOW_BUDGET_THRESHOLD) {
+    if (allCandidates.length < maxResults && searchBudget >= LOW_BUDGET_THRESHOLD && enabledStrategies.has('maintained')) {
       await sleep(INTER_PHASE_DELAY_MS);
       info(MODULE, 'Phase 3: Searching actively maintained repos...');
       const remainingNeeded = maxResults - allCandidates.length;
@@ -502,6 +516,7 @@ export class IssueDiscovery {
         }
         warn(MODULE, `Error in maintained-repo search: ${errMsg}`);
       }
+      strategiesUsed.push('maintained');
     }
 
     // Determine if phases were skipped due to budget constraints
@@ -527,7 +542,7 @@ export class IssueDiscovery {
         this.rateLimitWarning =
           `Search returned no results due to GitHub API rate limits.${details}${budgetNote} ` +
           `Try again after the rate limit resets.`;
-        return [];
+        return { candidates: [], strategiesUsed };
       }
 
       throw new ValidationError(
@@ -564,7 +579,7 @@ export class IssueDiscovery {
       MODULE,
       `Search complete: ${tracker.getTotalCalls()} Search API calls used, ${capped.length} candidates returned`,
     );
-    return capped.slice(0, maxResults);
+    return { candidates: capped.slice(0, maxResults), strategiesUsed };
   }
 
   /**

@@ -5,7 +5,7 @@
 import { createScout } from '../scout.js';
 import { requireGitHubToken } from '../core/utils.js';
 import { saveLocalState } from '../core/local-state.js';
-import type { ScoutState } from '../core/schemas.js';
+import type { ScoutState, SearchStrategy } from '../core/schemas.js';
 
 export interface SearchOutput {
   candidates: Array<{
@@ -33,11 +33,13 @@ export interface SearchOutput {
   excludedRepos: string[];
   aiPolicyBlocklist: string[];
   rateLimitWarning?: string;
+  strategiesUsed: SearchStrategy[];
 }
 
 interface SearchCommandOptions {
   maxResults: number;
   state?: ScoutState;
+  strategies?: SearchStrategy[];
 }
 
 export async function runSearch(options: SearchCommandOptions): Promise<SearchOutput> {
@@ -45,7 +47,7 @@ export async function runSearch(options: SearchCommandOptions): Promise<SearchOu
   const scout = options.state
     ? await createScout({ githubToken: token, persistence: 'provided', initialState: options.state })
     : await createScout({ githubToken: token });
-  const result = await scout.search({ maxResults: options.maxResults });
+  const result = await scout.search({ maxResults: options.maxResults, strategies: options.strategies });
 
   // Persist results to local state
   scout.saveResults(result.candidates);
@@ -82,5 +84,6 @@ export async function runSearch(options: SearchCommandOptions): Promise<SearchOu
     excludedRepos: result.excludedRepos,
     aiPolicyBlocklist: result.aiPolicyBlocklist,
     rateLimitWarning: result.rateLimitWarning,
+    strategiesUsed: result.strategiesUsed,
   };
 }
