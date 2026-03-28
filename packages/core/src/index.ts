@@ -30,6 +30,10 @@ export type {
   ProjectHealth,
   SearchPriority,
   CheckResult,
+  VetListOptions,
+  VetListResult,
+  VetListEntry,
+  VetListSummary,
 } from './core/types.js';
 
 export type {

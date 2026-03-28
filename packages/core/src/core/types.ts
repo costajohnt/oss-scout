@@ -85,6 +85,43 @@ export const SCOPE_LABELS: Record<IssueScope, string[]> = {
   advanced: ['proposal', 'RFC', 'accepted', 'design'],
 };
 
+// ── Vet-list types ─────────────────────────────────────────────────
+
+/** Options for batch vetting saved results. */
+export interface VetListOptions {
+  concurrency?: number;
+  prune?: boolean;
+}
+
+/** A single entry in the vet-list result. */
+export interface VetListEntry {
+  issueUrl: string;
+  repo: string;
+  number: number;
+  title: string;
+  status: 'still_available' | 'claimed' | 'closed' | 'has_pr' | 'error';
+  recommendation?: 'approve' | 'skip' | 'needs_review';
+  viabilityScore?: number;
+  errorMessage?: string;
+}
+
+/** Summary counts for a vet-list run. */
+export interface VetListSummary {
+  total: number;
+  stillAvailable: number;
+  claimed: number;
+  closed: number;
+  hasPR: number;
+  errors: number;
+}
+
+/** Result of a batch vet-list operation. */
+export interface VetListResult {
+  results: VetListEntry[];
+  summary: VetListSummary;
+  prunedCount?: number;
+}
+
 // ── Config types for the OssScout API ───────────────────────────────
 
 /** Configuration for creating an OssScout instance. */

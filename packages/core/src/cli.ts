@@ -287,6 +287,56 @@ configCmd
   });
 
 program
+  .command('vet-list')
+  .description('Re-vet all saved search results and classify their current status')
+  .option('--prune', 'Remove unavailable issues from saved results')
+  .option('--concurrency <n>', 'Max concurrent API requests (default: 5)', parseInt)
+  .option('--json', 'Output as JSON')
+  .action(async (options: { prune?: boolean; concurrency?: number; json?: boolean }) => {
+    try {
+      const { runVetList } = await import('./commands/vet-list.js');
+      const state = loadLocalState();
+      const result = await runVetList({
+        state,
+        prune: options.prune,
+        concurrency: options.concurrency,
+      });
+      if (options.json) {
+        console.log(formatJsonSuccess(result));
+      } else {
+        if (result.results.length === 0) {
+          console.log('\nNo saved results to vet. Run `oss-scout search` first.\n');
+          return;
+        }
+        console.log(`\nVet-list results (${result.summary.total}):\n`);
+        for (const r of result.results) {
+          const icon =
+            r.status === 'still_available' ? '✅' :
+            r.status === 'claimed' ? '🔒' :
+            r.status === 'has_pr' ? '🔀' :
+            r.status === 'closed' ? '🚫' : '❌';
+          const score = r.viabilityScore != null ? ` [${r.viabilityScore}/100]` : '';
+          console.log(`  ${icon} ${r.repo}#${r.number} — ${r.status}${score}`);
+          console.log(`     ${r.title}`);
+        }
+        console.log(`\nSummary: ${result.summary.stillAvailable} available, ${result.summary.claimed} claimed, ${result.summary.hasPR} has PR, ${result.summary.closed} closed, ${result.summary.errors} errors`);
+        if (result.prunedCount != null) {
+          console.log(`Pruned ${result.prunedCount} unavailable issues from saved results.`);
+        }
+        console.log();
+      }
+    } catch (err) {
+      if (options.json) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.log(formatJsonError(msg, resolveErrorCode(err)));
+      } else {
+        console.error('Error:', err instanceof Error ? err.message : String(err));
+      }
+      process.exit(1);
+    }
+  });
+
+program
   .command('vet <issue-url>')
   .description('Vet a specific GitHub issue for claimability and project health')
   .option('--json', 'Output as JSON')
