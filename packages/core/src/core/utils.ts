@@ -34,6 +34,26 @@ export function getCacheDir(): string {
   return dir;
 }
 
+/**
+ * Extract "owner/repo" from any GitHub URL format:
+ * - https://github.com/owner/repo
+ * - https://github.com/owner/repo/pull/123
+ * - https://github.com/owner/repo/issues/123
+ * - https://api.github.com/repos/owner/repo
+ * - https://api.github.com/repos/owner/repo/...
+ */
+export function extractRepoFromUrl(url: string): string | null {
+  // API URLs: https://api.github.com/repos/owner/repo[/...]
+  const apiMatch = url.match(/api\.github\.com\/repos\/([^/]+\/[^/]+)/);
+  if (apiMatch) return apiMatch[1];
+
+  // Web URLs: https://github.com/owner/repo[/...]
+  const webMatch = url.match(/github\.com\/([^/]+\/[^/]+)/);
+  if (webMatch) return webMatch[1];
+
+  return null;
+}
+
 interface ParsedGitHubUrl {
   owner: string;
   repo: string;
@@ -69,6 +89,7 @@ export function parseGitHubUrl(url: string): ParsedGitHubUrl | null {
 
   return null;
 }
+
 
 export function daysBetween(from: Date, to: Date = new Date()): number {
   return Math.max(0, Math.floor((to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24)));

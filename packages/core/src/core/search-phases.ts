@@ -12,7 +12,7 @@ import { debug, warn } from './logger.js';
 import { getHttpCache, cachedTimeBased } from './http-cache.js';
 import { type GitHubSearchItem, detectLabelFarmingRepos } from './issue-filtering.js';
 import { IssueVetter } from './issue-vetting.js';
-import { sleep } from './utils.js';
+import { extractRepoFromUrl, sleep } from './utils.js';
 import { getSearchBudgetTracker } from './search-budget.js';
 
 const MODULE = 'search-phases';
@@ -196,7 +196,7 @@ export async function filterVetAndScore(
 ): Promise<{ candidates: IssueCandidate[]; allVetFailed: boolean; rateLimitHit: boolean }> {
   const spamRepos = detectLabelFarmingRepos(items);
   if (spamRepos.size > 0) {
-    const spamCount = items.filter((i) => spamRepos.has(i.repository_url.split('/').slice(-2).join('/'))).length;
+    const spamCount = items.filter((i) => spamRepos.has(extractRepoFromUrl(i.repository_url)!)).length;
     debug(
       MODULE,
       `[SPAM_FILTER] Filtered ${spamCount} issues from ${spamRepos.size} label-farming repos: ${[...spamRepos].join(', ')}`,
@@ -205,7 +205,7 @@ export async function filterVetAndScore(
 
   const itemsToVet = filterIssues(items)
     .filter((item) => {
-      const repoFullName = item.repository_url.split('/').slice(-2).join('/');
+      const repoFullName = extractRepoFromUrl(item.repository_url)!;
       if (spamRepos.has(repoFullName)) return false;
       return excludedRepoSets.every((s) => !s.has(repoFullName));
     })

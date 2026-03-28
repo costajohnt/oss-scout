@@ -6,6 +6,7 @@
 import { getOctokit, checkRateLimit } from './github.js';
 import { debug, warn } from './logger.js';
 import { errorMessage } from './errors.js';
+import { extractRepoFromUrl } from './utils.js';
 import type { OssScout } from '../scout.js';
 
 const MODULE = 'bootstrap';
@@ -80,14 +81,14 @@ export async function bootstrapScout(scout: OssScout, token: string): Promise<Bo
       });
 
       for (const item of data.items) {
-        const repoMatch = item.html_url.match(/github\.com\/([^/]+\/[^/]+)\//);
-        if (!repoMatch) continue;
+        const repo = extractRepoFromUrl(item.html_url);
+        if (!repo) continue;
 
         scout.recordMergedPR({
           url: item.html_url,
           title: item.title,
           mergedAt: item.closed_at ?? new Date().toISOString(),
-          repo: repoMatch[1],
+          repo,
         });
         mergedPRCount++;
       }
@@ -111,14 +112,14 @@ export async function bootstrapScout(scout: OssScout, token: string): Promise<Bo
       });
 
       for (const item of data.items) {
-        const repoMatch = item.html_url.match(/github\.com\/([^/]+\/[^/]+)\//);
-        if (!repoMatch) continue;
+        const repo = extractRepoFromUrl(item.html_url);
+        if (!repo) continue;
 
         scout.recordClosedPR({
           url: item.html_url,
           title: item.title,
           closedAt: item.closed_at ?? new Date().toISOString(),
-          repo: repoMatch[1],
+          repo,
         });
         closedPRCount++;
       }

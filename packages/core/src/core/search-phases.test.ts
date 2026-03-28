@@ -11,6 +11,7 @@ vi.mock('./logger.js', () => ({
 
 vi.mock('./utils.js', () => ({
   sleep: vi.fn().mockResolvedValue(undefined),
+  extractRepoFromUrl: (url: string) => url.split('/').slice(-2).join('/'),
 }));
 
 vi.mock('./errors.js', () => ({

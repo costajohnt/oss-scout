@@ -32,6 +32,7 @@ import type { GistOctokitLike } from './core/gist-state-store.js';
 import { getOctokit } from './core/github.js';
 import { loadLocalState } from './core/local-state.js';
 import { warn } from './core/logger.js';
+import { extractRepoFromUrl } from './core/utils.js';
 
 /**
  * Create an OssScout instance.
@@ -220,7 +221,7 @@ export class OssScout implements ScoutStateReader {
   getReposWithMergedPRs(): string[] {
     const repoCounts = new Map<string, number>();
     for (const pr of this.state.mergedPRs ?? []) {
-      const repo = this.extractRepoFromUrl(pr.url);
+      const repo = extractRepoFromUrl(pr.url);
       if (repo) {
         repoCounts.set(repo, (repoCounts.get(repo) ?? 0) + 1);
       }
@@ -426,17 +427,12 @@ export class OssScout implements ScoutStateReader {
 
   // ── Private helpers ─────────────────────────────────────────────────
 
-  private extractRepoFromUrl(url: string): string | null {
-    const match = url.match(/github\.com\/([^/]+\/[^/]+)\//);
-    return match ? match[1] : null;
-  }
-
   private updateRepoScoreFromPRs(repo: string): void {
     const mergedCount = (this.state.mergedPRs ?? []).filter(
-      (p) => this.extractRepoFromUrl(p.url) === repo,
+      (p) => extractRepoFromUrl(p.url) === repo,
     ).length;
     const closedCount = (this.state.closedPRs ?? []).filter(
-      (p) => this.extractRepoFromUrl(p.url) === repo,
+      (p) => extractRepoFromUrl(p.url) === repo,
     ).length;
 
     this.updateRepoScore(repo, {
@@ -445,7 +441,7 @@ export class OssScout implements ScoutStateReader {
       lastMergedAt:
         mergedCount > 0
           ? (this.state.mergedPRs ?? [])
-              .filter((p) => this.extractRepoFromUrl(p.url) === repo)
+              .filter((p) => extractRepoFromUrl(p.url) === repo)
               .sort((a, b) => b.mergedAt.localeCompare(a.mergedAt))[0]
               ?.mergedAt
           : undefined,

@@ -43,6 +43,10 @@ vi.mock('./issue-vetting.js', () => {
 vi.mock('./utils.js', () => ({
   daysBetween: () => 1,
   sleep: vi.fn().mockResolvedValue(undefined),
+  extractRepoFromUrl: (url: string) => {
+    const m = url.match(/github\.com\/([^/]+\/[^/]+)/);
+    return m ? m[1] : null;
+  },
 }));
 
 vi.mock('./logger.js', () => ({

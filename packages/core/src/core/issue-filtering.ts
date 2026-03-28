@@ -5,6 +5,8 @@
  * label farming detection, doc-only filtering, per-repo caps, templated title detection.
  */
 
+import { extractRepoFromUrl } from './utils.js';
+
 /** Minimal shape of a GitHub search result item (from octokit.search.issuesAndPullRequests) */
 export interface GitHubSearchItem {
   html_url: string;
@@ -79,7 +81,7 @@ export function detectLabelFarmingRepos(items: GitHubSearchItem[]): Set<string> 
   const repoSpamCounts = new Map<string, number>();
 
   for (const item of items) {
-    const repoFullName = item.repository_url.split('/').slice(-2).join('/');
+    const repoFullName = extractRepoFromUrl(item.repository_url)!;
 
     // Strong signal: single issue with 5+ beginner labels
     if (isLabelFarming(item)) {

@@ -15,7 +15,7 @@
 import { Octokit } from '@octokit/rest';
 import { getOctokit, checkRateLimit } from './github.js';
 import { getSearchBudgetTracker } from './search-budget.js';
-import { daysBetween, sleep } from './utils.js';
+import { daysBetween, extractRepoFromUrl, sleep } from './utils.js';
 import { type SearchPriority, type IssueCandidate, SCOPE_LABELS } from './types.js';
 import { CONCRETE_STRATEGIES } from './schemas.js';
 import type { ScoutPreferences, SearchStrategy } from './schemas.js';
@@ -208,7 +208,7 @@ export class IssueDiscovery {
     }
     const filterIssues = (items: GitHubSearchItem[]) => {
       return items.filter((item) => {
-        const repoFullName = item.repository_url.split('/').slice(-2).join('/');
+        const repoFullName = extractRepoFromUrl(item.repository_url)!;
         if (excludedRepos.has(repoFullName)) return false;
         // Filter out entire orgs
         if (excludeOrgs.size > 0) {
@@ -295,7 +295,7 @@ export class IssueDiscovery {
 
           if (allItems.length > 0) {
             const filtered = filterIssues(allItems).filter((item) => {
-              const repoFullName = item.repository_url.split('/').slice(-2).join('/');
+              const repoFullName = extractRepoFromUrl(item.repository_url)!;
               return !phase0RepoSet.has(repoFullName);
             });
             const {

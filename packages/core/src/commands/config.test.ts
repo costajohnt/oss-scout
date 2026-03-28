@@ -231,7 +231,7 @@ describe('config command', () => {
       it('should reject invalid scope values', () => {
         writeState(makeState());
 
-        expect(() => runConfigSet('scope', 'expert')).toThrow('Invalid scope');
+        expect(() => runConfigSet('scope', 'expert')).toThrow('Invalid value');
       });
 
       it('should append to scope with +', () => {
@@ -263,7 +263,7 @@ describe('config command', () => {
       it('should reject invalid categories', () => {
         writeState(makeState());
 
-        expect(() => runConfigSet('projectCategories', 'invalid')).toThrow('Invalid category');
+        expect(() => runConfigSet('projectCategories', 'invalid')).toThrow('Invalid value');
       });
     });
 

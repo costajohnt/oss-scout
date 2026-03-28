@@ -7,40 +7,29 @@ import { ScoutPreferencesSchema, IssueScopeSchema, ProjectCategorySchema, Persis
 import type { ScoutPreferences } from '../core/schemas.js';
 import { ValidationError } from '../core/errors.js';
 
-/** All known preference keys and their types. */
-const ARRAY_FIELDS = new Set([
-  'languages',
-  'labels',
-  'preferredOrgs',
-  'projectCategories',
-  'excludeRepos',
-  'excludeOrgs',
-  'aiPolicyBlocklist',
-]);
+type FieldType = 'array' | 'number' | 'boolean' | 'enum-array' | 'enum' | 'string';
 
-const NUMBER_FIELDS = new Set(['minStars', 'maxIssueAgeDays', 'minRepoScoreThreshold']);
+interface FieldConfig {
+  type: FieldType;
+  validValues?: readonly string[];
+}
 
-const BOOLEAN_FIELDS = new Set(['includeDocIssues']);
-
-const STRING_FIELDS = new Set(['githubUsername']);
-
-const SCOPE_FIELD = 'scope';
-
-const ENUM_FIELDS: Record<string, readonly string[]> = {
-  persistence: PersistenceModeSchema.options as readonly string[],
+const FIELD_CONFIGS: Record<string, FieldConfig> = {
+  languages: { type: 'array' },
+  labels: { type: 'array' },
+  excludeRepos: { type: 'array' },
+  excludeOrgs: { type: 'array' },
+  aiPolicyBlocklist: { type: 'array' },
+  preferredOrgs: { type: 'array' },
+  minStars: { type: 'number' },
+  maxIssueAgeDays: { type: 'number' },
+  minRepoScoreThreshold: { type: 'number' },
+  includeDocIssues: { type: 'boolean' },
+  scope: { type: 'enum-array', validValues: IssueScopeSchema.options },
+  projectCategories: { type: 'enum-array', validValues: ProjectCategorySchema.options },
+  persistence: { type: 'enum', validValues: PersistenceModeSchema.options },
+  githubUsername: { type: 'string' },
 };
-
-const ALL_FIELDS = new Set([
-  ...ARRAY_FIELDS,
-  ...NUMBER_FIELDS,
-  ...BOOLEAN_FIELDS,
-  ...STRING_FIELDS,
-  ...Object.keys(ENUM_FIELDS),
-  SCOPE_FIELD,
-]);
-
-const VALID_SCOPES = IssueScopeSchema.options as readonly string[];
-const VALID_CATEGORIES = ProjectCategorySchema.options as readonly string[];
 
 function parseBoolean(value: string): boolean {
   const lower = value.toLowerCase();
@@ -129,50 +118,64 @@ export function getConfigData(): ScoutPreferences {
  * Update a single preference by key.
  */
 export function runConfigSet(key: string, value: string): ScoutPreferences {
-  if (!ALL_FIELDS.has(key)) {
+  const field = FIELD_CONFIGS[key];
+  if (!field) {
     throw new ValidationError(
-      `Unknown config key: "${key}". Valid keys: ${[...ALL_FIELDS].sort().join(', ')}`,
+      `Unknown config key: "${key}". Valid keys: ${Object.keys(FIELD_CONFIGS).sort().join(', ')}`,
     );
   }
 
   const state = loadLocalState();
   const prefs = { ...state.preferences };
 
-  if (STRING_FIELDS.has(key)) {
-    (prefs as Record<string, unknown>)[key] = value;
-  } else if (BOOLEAN_FIELDS.has(key)) {
-    (prefs as Record<string, unknown>)[key] = parseBoolean(value);
-  } else if (NUMBER_FIELDS.has(key)) {
-    (prefs as Record<string, unknown>)[key] = parseNumber(value, key);
-  } else if (key === SCOPE_FIELD) {
-    const updated = updateArray((prefs.scope as string[] | undefined) ?? [], value);
-    const invalid = updated.filter((s) => !VALID_SCOPES.includes(s));
-    if (invalid.length > 0) {
-      throw new ValidationError(
-        `Invalid scope value(s): ${invalid.join(', ')}. Valid: ${VALID_SCOPES.join(', ')}`,
-      );
+  switch (field.type) {
+    case 'string':
+      (prefs as Record<string, unknown>)[key] = value;
+      break;
+
+    case 'boolean':
+      (prefs as Record<string, unknown>)[key] = parseBoolean(value);
+      break;
+
+    case 'number':
+      (prefs as Record<string, unknown>)[key] = parseNumber(value, key);
+      break;
+
+    case 'array': {
+      const current = ((prefs as Record<string, unknown>)[key] as string[] | undefined) ?? [];
+      (prefs as Record<string, unknown>)[key] = updateArray(current, value);
+      break;
     }
-    prefs.scope = updated.length > 0 ? (updated as typeof prefs.scope) : undefined;
-  } else if (key === 'projectCategories') {
-    const updated = updateArray(prefs.projectCategories, value);
-    const invalid = updated.filter((s) => !VALID_CATEGORIES.includes(s));
-    if (invalid.length > 0) {
-      throw new ValidationError(
-        `Invalid category value(s): ${invalid.join(', ')}. Valid: ${VALID_CATEGORIES.join(', ')}`,
-      );
+
+    case 'enum': {
+      const validValues = field.validValues!;
+      if (!validValues.includes(value)) {
+        throw new ValidationError(
+          `Invalid value for "${key}": "${value}". Valid: ${validValues.join(', ')}`,
+        );
+      }
+      (prefs as Record<string, unknown>)[key] = value;
+      break;
     }
-    prefs.projectCategories = updated as typeof prefs.projectCategories;
-  } else if (key in ENUM_FIELDS) {
-    const validValues = ENUM_FIELDS[key];
-    if (!validValues.includes(value)) {
-      throw new ValidationError(
-        `Invalid value for "${key}": "${value}". Valid: ${validValues.join(', ')}`,
-      );
+
+    case 'enum-array': {
+      const current = ((prefs as Record<string, unknown>)[key] as string[] | undefined) ?? [];
+      const updated = updateArray(current, value);
+      const validValues = field.validValues!;
+      const invalid = updated.filter((s) => !validValues.includes(s));
+      if (invalid.length > 0) {
+        throw new ValidationError(
+          `Invalid value(s) for "${key}": ${invalid.join(', ')}. Valid: ${validValues.join(', ')}`,
+        );
+      }
+      // For 'scope', empty array means undefined (all scopes)
+      if (key === 'scope') {
+        (prefs as Record<string, unknown>)[key] = updated.length > 0 ? updated : undefined;
+      } else {
+        (prefs as Record<string, unknown>)[key] = updated;
+      }
+      break;
     }
-    (prefs as Record<string, unknown>)[key] = value;
-  } else if (ARRAY_FIELDS.has(key)) {
-    const current = ((prefs as Record<string, unknown>)[key] as string[] | undefined) ?? [];
-    (prefs as Record<string, unknown>)[key] = updateArray(current, value);
   }
 
   // Validate the full preferences object
