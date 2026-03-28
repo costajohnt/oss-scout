@@ -81,7 +81,8 @@ export function detectLabelFarmingRepos(items: GitHubSearchItem[]): Set<string> 
   const repoSpamCounts = new Map<string, number>();
 
   for (const item of items) {
-    const repoFullName = extractRepoFromUrl(item.repository_url)!;
+    const repoFullName = extractRepoFromUrl(item.repository_url);
+    if (!repoFullName) continue;
 
     // Strong signal: single issue with 5+ beginner labels
     if (isLabelFarming(item)) {

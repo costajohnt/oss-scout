@@ -208,7 +208,8 @@ export class IssueDiscovery {
     }
     const filterIssues = (items: GitHubSearchItem[]) => {
       return items.filter((item) => {
-        const repoFullName = extractRepoFromUrl(item.repository_url)!;
+        const repoFullName = extractRepoFromUrl(item.repository_url);
+        if (!repoFullName) return false;
         if (excludedRepos.has(repoFullName)) return false;
         // Filter out entire orgs
         if (excludeOrgs.size > 0) {
@@ -295,7 +296,8 @@ export class IssueDiscovery {
 
           if (allItems.length > 0) {
             const filtered = filterIssues(allItems).filter((item) => {
-              const repoFullName = extractRepoFromUrl(item.repository_url)!;
+              const repoFullName = extractRepoFromUrl(item.repository_url);
+              if (!repoFullName) return false;
               return !phase0RepoSet.has(repoFullName);
             });
             const {

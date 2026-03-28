@@ -196,7 +196,7 @@ export async function filterVetAndScore(
 ): Promise<{ candidates: IssueCandidate[]; allVetFailed: boolean; rateLimitHit: boolean }> {
   const spamRepos = detectLabelFarmingRepos(items);
   if (spamRepos.size > 0) {
-    const spamCount = items.filter((i) => spamRepos.has(extractRepoFromUrl(i.repository_url)!)).length;
+    const spamCount = items.filter((i) => spamRepos.has(extractRepoFromUrl(i.repository_url) ?? '')).length;
     debug(
       MODULE,
       `[SPAM_FILTER] Filtered ${spamCount} issues from ${spamRepos.size} label-farming repos: ${[...spamRepos].join(', ')}`,
@@ -205,7 +205,8 @@ export async function filterVetAndScore(
 
   const itemsToVet = filterIssues(items)
     .filter((item) => {
-      const repoFullName = extractRepoFromUrl(item.repository_url)!;
+      const repoFullName = extractRepoFromUrl(item.repository_url);
+      if (!repoFullName) return false;
       if (spamRepos.has(repoFullName)) return false;
       return excludedRepoSets.every((s) => !s.has(repoFullName));
     })
