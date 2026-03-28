@@ -5,7 +5,7 @@
 import { createScout } from '../scout.js';
 import { requireGitHubToken } from '../core/utils.js';
 import type { ProjectHealth } from '../core/types.js';
-import type { IssueVettingResult } from '../core/schemas.js';
+import type { IssueVettingResult, ScoutState } from '../core/schemas.js';
 import { ISSUE_URL_PATTERN, validateGitHubUrl, validateUrl } from './validation.js';
 
 export interface VetOutput {
@@ -25,6 +25,7 @@ export interface VetOutput {
 
 interface VetCommandOptions {
   issueUrl: string;
+  state?: ScoutState;
 }
 
 export async function runVet(options: VetCommandOptions): Promise<VetOutput> {
@@ -32,7 +33,9 @@ export async function runVet(options: VetCommandOptions): Promise<VetOutput> {
   validateGitHubUrl(options.issueUrl, ISSUE_URL_PATTERN, 'issue');
 
   const token = requireGitHubToken();
-  const scout = await createScout({ githubToken: token });
+  const scout = options.state
+    ? await createScout({ githubToken: token, persistence: 'provided', initialState: options.state })
+    : await createScout({ githubToken: token });
   const candidate = await scout.vetIssue(options.issueUrl);
 
   return {

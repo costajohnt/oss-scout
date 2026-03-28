@@ -9,6 +9,7 @@ import { enableDebug } from './core/logger.js';
 import { getCLIVersion } from './core/utils.js';
 import { formatJsonSuccess, formatJsonError } from './formatters/json.js';
 import { resolveErrorCode } from './core/errors.js';
+import { hasLocalState, loadLocalState, saveLocalState } from './core/local-state.js';
 
 const program = new Command();
 
@@ -25,18 +26,47 @@ program.hook('preAction', (_thisCommand, _actionCommand) => {
 });
 
 program
+  .command('setup')
+  .description('Interactive first-run configuration')
+  .option('--json', 'Output as JSON')
+  .action(async (options: { json?: boolean }) => {
+    try {
+      const { runSetup } = await import('./commands/setup.js');
+      const prefs = await runSetup();
+      const state = loadLocalState();
+      state.preferences = prefs;
+      saveLocalState(state);
+      if (options.json) {
+        console.log(formatJsonSuccess(prefs));
+      }
+    } catch (err) {
+      if (options.json) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.log(formatJsonError(msg, resolveErrorCode(err)));
+      } else {
+        console.error('Error:', err instanceof Error ? err.message : String(err));
+      }
+      process.exit(1);
+    }
+  });
+
+program
   .command('search [count]')
   .description('Search for contributable issues using multi-strategy discovery')
   .option('--json', 'Output as JSON')
   .action(async (count: string | undefined, options: { json?: boolean }) => {
     try {
+      if (!hasLocalState()) {
+        console.log('💡 Run `oss-scout setup` to configure your preferences for personalized search results.\n');
+      }
       const { runSearch } = await import('./commands/search.js');
       const maxResults = count ? parseInt(count, 10) : 10;
       if (isNaN(maxResults) || maxResults < 1) {
         console.error('Error: count must be a positive integer');
         process.exit(1);
       }
-      const results = await runSearch({ maxResults });
+      const state = loadLocalState();
+      const results = await runSearch({ maxResults, state });
       if (options.json) {
         console.log(formatJsonSuccess(results));
       } else {
@@ -74,7 +104,8 @@ program
   .action(async (issueUrl: string, options: { json?: boolean }) => {
     try {
       const { runVet } = await import('./commands/vet.js');
-      const result = await runVet({ issueUrl });
+      const state = loadLocalState();
+      const result = await runVet({ issueUrl, state });
       if (options.json) {
         console.log(formatJsonSuccess(result));
       } else {
