@@ -5,7 +5,7 @@
  * label farming detection, doc-only filtering, per-repo caps, templated title detection.
  */
 
-import { extractRepoFromUrl } from './utils.js';
+import { extractRepoFromUrl } from "./utils.js";
 
 /** Minimal shape of a GitHub search result item (from octokit.search.issuesAndPullRequests) */
 export interface GitHubSearchItem {
@@ -18,7 +18,12 @@ export interface GitHubSearchItem {
 }
 
 /** Labels that indicate documentation-only issues. */
-export const DOC_ONLY_LABELS = new Set(['documentation', 'docs', 'typo', 'spelling']);
+export const DOC_ONLY_LABELS = new Set([
+  "documentation",
+  "docs",
+  "typo",
+  "spelling",
+]);
 
 /**
  * Check if an issue's labels are ALL documentation-related.
@@ -26,8 +31,11 @@ export const DOC_ONLY_LABELS = new Set(['documentation', 'docs', 'typo', 'spelli
  * Issues with no labels are not considered doc-only.
  */
 export function isDocOnlyIssue(item: GitHubSearchItem): boolean {
-  if (!item.labels || !Array.isArray(item.labels) || item.labels.length === 0) return false;
-  const labelNames = item.labels.map((l) => (typeof l === 'string' ? l : l.name || '').toLowerCase());
+  if (!item.labels || !Array.isArray(item.labels) || item.labels.length === 0)
+    return false;
+  const labelNames = item.labels.map((l) =>
+    (typeof l === "string" ? l : l.name || "").toLowerCase(),
+  );
   // Filter out empty label names before checking
   const nonEmptyLabels = labelNames.filter((n) => n.length > 0);
   if (nonEmptyLabels.length === 0) return false;
@@ -36,23 +44,25 @@ export function isDocOnlyIssue(item: GitHubSearchItem): boolean {
 
 /** Known beginner-type label names used to detect label-farming repos. */
 export const BEGINNER_LABELS = new Set([
-  'good first issue',
-  'hacktoberfest',
-  'easy',
-  'up-for-grabs',
-  'first-timers-only',
-  'beginner-friendly',
-  'beginner',
-  'starter',
-  'newbie',
-  'low-hanging-fruit',
-  'community',
+  "good first issue",
+  "hacktoberfest",
+  "easy",
+  "up-for-grabs",
+  "first-timers-only",
+  "beginner-friendly",
+  "beginner",
+  "starter",
+  "newbie",
+  "low-hanging-fruit",
+  "community",
 ]);
 
 /** Check if a single issue has an excessive number of beginner labels (>= 5). */
 export function isLabelFarming(item: GitHubSearchItem): boolean {
   if (!item.labels || !Array.isArray(item.labels)) return false;
-  const labelNames = item.labels.map((l) => (typeof l === 'string' ? l : l.name || '').toLowerCase());
+  const labelNames = item.labels.map((l) =>
+    (typeof l === "string" ? l : l.name || "").toLowerCase(),
+  );
   const beginnerCount = labelNames.filter((n) => BEGINNER_LABELS.has(n)).length;
   return beginnerCount >= 5;
 }
@@ -76,7 +86,9 @@ export function hasTemplatedTitle(title: string): boolean {
  * - ANY single issue has >= 5 beginner labels (strong individual signal), OR
  * - It has >= 3 issues with templated titles (batch signal)
  */
-export function detectLabelFarmingRepos(items: GitHubSearchItem[]): Set<string> {
+export function detectLabelFarmingRepos(
+  items: GitHubSearchItem[],
+): Set<string> {
   const spamRepos = new Set<string>();
   const repoSpamCounts = new Map<string, number>();
 
@@ -92,7 +104,10 @@ export function detectLabelFarmingRepos(items: GitHubSearchItem[]): Set<string> 
 
     // Weaker signal: templated title
     if (item.title && hasTemplatedTitle(item.title)) {
-      repoSpamCounts.set(repoFullName, (repoSpamCounts.get(repoFullName) || 0) + 1);
+      repoSpamCounts.set(
+        repoFullName,
+        (repoSpamCounts.get(repoFullName) || 0) + 1,
+      );
     }
   }
 
@@ -112,7 +127,10 @@ export function detectLabelFarmingRepos(items: GitHubSearchItem[]): Set<string> 
  * Maintains the existing sort order — first N from each repo are kept,
  * excess issues from over-represented repos are dropped.
  */
-export function applyPerRepoCap<T extends { issue: { repo: string } }>(candidates: T[], maxPerRepo: number): T[] {
+export function applyPerRepoCap<T extends { issue: { repo: string } }>(
+  candidates: T[],
+  maxPerRepo: number,
+): T[] {
   const repoCounts = new Map<string, number>();
   const kept: T[] = [];
 

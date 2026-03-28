@@ -7,23 +7,35 @@
  * - repo-health.ts       — project health, contribution guidelines
  */
 
-import { Octokit } from '@octokit/rest';
-import { parseGitHubUrl } from './utils.js';
-import { type TrackedIssue, type IssueVettingResult, type SearchPriority, type IssueCandidate, type ProjectCategory } from './types.js';
-import { ValidationError, errorMessage, isRateLimitError } from './errors.js';
-import { debug, warn } from './logger.js';
-import { calculateRepoQualityBonus, calculateViabilityScore } from './issue-scoring.js';
-import { repoBelongsToCategory } from './category-mapping.js';
+import { Octokit } from "@octokit/rest";
+import { parseGitHubUrl } from "./utils.js";
+import {
+  type TrackedIssue,
+  type IssueVettingResult,
+  type SearchPriority,
+  type IssueCandidate,
+  type ProjectCategory,
+} from "./types.js";
+import { ValidationError, errorMessage, isRateLimitError } from "./errors.js";
+import { debug, warn } from "./logger.js";
+import {
+  calculateRepoQualityBonus,
+  calculateViabilityScore,
+} from "./issue-scoring.js";
+import { repoBelongsToCategory } from "./category-mapping.js";
 import {
   checkNoExistingPR,
   checkNotClaimed,
   checkUserMergedPRsInRepo,
   analyzeRequirements,
-} from './issue-eligibility.js';
-import { checkProjectHealth, fetchContributionGuidelines } from './repo-health.js';
-import { getHttpCache } from './http-cache.js';
+} from "./issue-eligibility.js";
+import {
+  checkProjectHealth,
+  fetchContributionGuidelines,
+} from "./repo-health.js";
+import { getHttpCache } from "./http-cache.js";
 
-const MODULE = 'issue-vetting';
+const MODULE = "issue-vetting";
 
 /** Vetting concurrency: kept low to reduce burst pressure on GitHub's secondary rate limit. */
 const MAX_CONCURRENT_VETTING = 3;
@@ -66,14 +78,19 @@ export class IssueVetter {
     const cache = getHttpCache();
     const cacheKey = `vet:${issueUrl}`;
     const cached = cache.getIfFresh(cacheKey, VETTING_CACHE_TTL_MS);
-    if (cached && typeof cached === 'object' && 'issue' in cached && 'viabilityScore' in cached) {
+    if (
+      cached &&
+      typeof cached === "object" &&
+      "issue" in cached &&
+      "viabilityScore" in cached
+    ) {
       debug(MODULE, `Vetting cache hit for ${issueUrl}`);
       return cached as IssueCandidate;
     }
 
     // Parse URL
     const parsed = parseGitHubUrl(issueUrl);
-    if (!parsed || parsed.type !== 'issues') {
+    if (!parsed || parsed.type !== "issues") {
       throw new ValidationError(`Invalid issue URL: ${issueUrl}`);
     }
 
@@ -92,26 +109,37 @@ export class IssueVetter {
     const hasMergedPRsInRepo = reposWithMergedPRs.includes(repoFullName);
 
     // Run all vetting checks in parallel — delegates to standalone functions
-    const [existingPRCheck, claimCheck, projectHealth, contributionGuidelines, userMergedPRCount] = await Promise.all([
+    const [
+      existingPRCheck,
+      claimCheck,
+      projectHealth,
+      contributionGuidelines,
+      userMergedPRCount,
+    ] = await Promise.all([
       checkNoExistingPR(this.octokit, owner, repo, number),
       checkNotClaimed(this.octokit, owner, repo, number, ghIssue.comments),
       checkProjectHealth(this.octokit, owner, repo),
       fetchContributionGuidelines(this.octokit, owner, repo),
-      hasMergedPRsInRepo ? Promise.resolve(0) : checkUserMergedPRsInRepo(this.octokit, owner, repo),
+      hasMergedPRsInRepo
+        ? Promise.resolve(0)
+        : checkUserMergedPRsInRepo(this.octokit, owner, repo),
     ]);
 
     const noExistingPR = existingPRCheck.passed;
     const notClaimed = claimCheck.passed;
 
     // Analyze issue quality
-    const clearRequirements = analyzeRequirements(ghIssue.body || '');
+    const clearRequirements = analyzeRequirements(ghIssue.body || "");
 
     // When the health check itself failed (API error), use a neutral default:
     // don't penalize the repo as inactive, but don't credit it as active either.
-    const projectActive = projectHealth.checkFailed ? true : projectHealth.isActive;
+    const projectActive = projectHealth.checkFailed
+      ? true
+      : projectHealth.isActive;
 
     const vettingResult: IssueVettingResult = {
-      passedAllChecks: noExistingPR && notClaimed && projectActive && clearRequirements,
+      passedAllChecks:
+        noExistingPR && notClaimed && projectActive && clearRequirements,
       checks: {
         noExistingPR,
         notClaimed,
@@ -124,21 +152,31 @@ export class IssueVetter {
     };
 
     // Build notes
-    if (!noExistingPR) vettingResult.notes.push('Existing PR found for this issue');
-    if (!notClaimed) vettingResult.notes.push('Issue appears to be claimed by someone');
+    if (!noExistingPR)
+      vettingResult.notes.push("Existing PR found for this issue");
+    if (!notClaimed)
+      vettingResult.notes.push("Issue appears to be claimed by someone");
     if (existingPRCheck.inconclusive) {
-      vettingResult.notes.push(`Could not verify absence of existing PRs: ${existingPRCheck.reason || 'API error'}`);
+      vettingResult.notes.push(
+        `Could not verify absence of existing PRs: ${existingPRCheck.reason || "API error"}`,
+      );
     }
     if (claimCheck.inconclusive) {
-      vettingResult.notes.push(`Could not verify claim status: ${claimCheck.reason || 'API error'}`);
+      vettingResult.notes.push(
+        `Could not verify claim status: ${claimCheck.reason || "API error"}`,
+      );
     }
     if (projectHealth.checkFailed) {
-      vettingResult.notes.push(`Could not verify project activity: ${projectHealth.failureReason || 'API error'}`);
+      vettingResult.notes.push(
+        `Could not verify project activity: ${projectHealth.failureReason || "API error"}`,
+      );
     } else if (!projectHealth.isActive) {
-      vettingResult.notes.push('Project may be inactive');
+      vettingResult.notes.push("Project may be inactive");
     }
-    if (!clearRequirements) vettingResult.notes.push('Issue requirements are unclear');
-    if (!contributionGuidelines) vettingResult.notes.push('No CONTRIBUTING.md found');
+    if (!clearRequirements)
+      vettingResult.notes.push("Issue requirements are unclear");
+    if (!contributionGuidelines)
+      vettingResult.notes.push("No CONTRIBUTING.md found");
 
     // Create tracked issue
     const trackedIssue: TrackedIssue = {
@@ -147,8 +185,10 @@ export class IssueVetter {
       repo: repoFullName,
       number,
       title: ghIssue.title,
-      status: 'candidate',
-      labels: ghIssue.labels.map((l) => (typeof l === 'string' ? l : l.name || '')),
+      status: "candidate",
+      labels: ghIssue.labels.map((l) =>
+        typeof l === "string" ? l : l.name || "",
+      ),
       createdAt: ghIssue.created_at,
       updatedAt: ghIssue.updated_at,
       vetted: true,
@@ -159,60 +199,73 @@ export class IssueVetter {
     const reasonsToSkip: string[] = [];
     const reasonsToApprove: string[] = [];
 
-    if (!noExistingPR) reasonsToSkip.push('Has existing PR');
-    if (!notClaimed) reasonsToSkip.push('Already claimed');
-    if (!projectHealth.isActive && !projectHealth.checkFailed) reasonsToSkip.push('Inactive project');
-    if (!clearRequirements) reasonsToSkip.push('Unclear requirements');
+    if (!noExistingPR) reasonsToSkip.push("Has existing PR");
+    if (!notClaimed) reasonsToSkip.push("Already claimed");
+    if (!projectHealth.isActive && !projectHealth.checkFailed)
+      reasonsToSkip.push("Inactive project");
+    if (!clearRequirements) reasonsToSkip.push("Unclear requirements");
 
-    if (noExistingPR) reasonsToApprove.push('No existing PR');
-    if (notClaimed) reasonsToApprove.push('Not claimed');
-    if (projectHealth.isActive && !projectHealth.checkFailed) reasonsToApprove.push('Active project');
-    if (clearRequirements) reasonsToApprove.push('Clear requirements');
-    if (contributionGuidelines) reasonsToApprove.push('Has contribution guidelines');
+    if (noExistingPR) reasonsToApprove.push("No existing PR");
+    if (notClaimed) reasonsToApprove.push("Not claimed");
+    if (projectHealth.isActive && !projectHealth.checkFailed)
+      reasonsToApprove.push("Active project");
+    if (clearRequirements) reasonsToApprove.push("Clear requirements");
+    if (contributionGuidelines)
+      reasonsToApprove.push("Has contribution guidelines");
 
     // Determine effective merged PR count: prefer local state (authoritative if present),
     // fall back to live GitHub API count to detect contributions made before using oss-scout
     const effectiveMergedCount = hasMergedPRsInRepo ? 1 : userMergedPRCount;
     if (effectiveMergedCount > 0) {
       reasonsToApprove.push(
-        `Trusted project (${effectiveMergedCount} PR${effectiveMergedCount > 1 ? 's' : ''} merged)`,
+        `Trusted project (${effectiveMergedCount} PR${effectiveMergedCount > 1 ? "s" : ""} merged)`,
       );
     }
 
     // Check for org-level affinity (user has merged PRs in another repo under same org)
-    const orgName = repoFullName.split('/')[0];
+    const orgName = repoFullName.split("/")[0];
     let orgHasMergedPRs = false;
-    if (orgName && repoFullName.includes('/')) {
+    if (orgName && repoFullName.includes("/")) {
       orgHasMergedPRs = reposWithMergedPRs.some(
-        (r) => r.startsWith(orgName + '/') && r !== repoFullName,
+        (r) => r.startsWith(orgName + "/") && r !== repoFullName,
       );
     }
     if (orgHasMergedPRs) {
-      reasonsToApprove.push(`Org affinity (merged PRs in other ${orgName} repos)`);
+      reasonsToApprove.push(
+        `Org affinity (merged PRs in other ${orgName} repos)`,
+      );
     }
 
     // Check for category preference match
     const projectCategories = this.stateReader.getProjectCategories();
-    const matchesCategory = repoBelongsToCategory(repoFullName, projectCategories);
+    const matchesCategory = repoBelongsToCategory(
+      repoFullName,
+      projectCategories,
+    );
     if (matchesCategory) {
-      reasonsToApprove.push('Matches preferred project category');
+      reasonsToApprove.push("Matches preferred project category");
     }
 
-    let recommendation: 'approve' | 'skip' | 'needs_review';
+    let recommendation: "approve" | "skip" | "needs_review";
     if (vettingResult.passedAllChecks) {
-      recommendation = 'approve';
+      recommendation = "approve";
     } else if (reasonsToSkip.length > 2) {
-      recommendation = 'skip';
+      recommendation = "skip";
     } else {
-      recommendation = 'needs_review';
+      recommendation = "needs_review";
     }
 
     // Downgrade to needs_review if any check was inconclusive —
     // "approve" should only be given when all checks actually passed, not when they were skipped.
-    const hasInconclusiveChecks = projectHealth.checkFailed || existingPRCheck.inconclusive || claimCheck.inconclusive;
-    if (recommendation === 'approve' && hasInconclusiveChecks) {
-      recommendation = 'needs_review';
-      vettingResult.notes.push('Recommendation downgraded: one or more checks were inconclusive');
+    const hasInconclusiveChecks =
+      projectHealth.checkFailed ||
+      existingPRCheck.inconclusive ||
+      claimCheck.inconclusive;
+    if (recommendation === "approve" && hasInconclusiveChecks) {
+      recommendation = "needs_review";
+      vettingResult.notes.push(
+        "Recommendation downgraded: one or more checks were inconclusive",
+      );
     }
 
     // Calculate repo quality bonus from star/fork counts
@@ -221,7 +274,9 @@ export class IssueVetter {
       projectHealth.forksCount ?? 0,
     );
     if (projectHealth.checkFailed && repoQualityBonus === 0) {
-      vettingResult.notes.push('Repo quality bonus unavailable: could not fetch star/fork counts due to API error');
+      vettingResult.notes.push(
+        "Repo quality bonus unavailable: could not fetch star/fork counts due to API error",
+      );
     }
 
     const repoScore = this.stateReader.getRepoScore(repoFullName);
@@ -241,13 +296,15 @@ export class IssueVetter {
 
     const starredRepos = this.stateReader.getStarredRepos();
     const preferredOrgs = this.stateReader.getPreferredOrgs();
-    let searchPriority: SearchPriority = 'normal';
+    let searchPriority: SearchPriority = "normal";
     if (effectiveMergedCount > 0) {
-      searchPriority = 'merged_pr';
-    } else if (preferredOrgs.some((o) => o.toLowerCase() === orgName?.toLowerCase())) {
-      searchPriority = 'preferred_org';
+      searchPriority = "merged_pr";
+    } else if (
+      preferredOrgs.some((o) => o.toLowerCase() === orgName?.toLowerCase())
+    ) {
+      searchPriority = "preferred_org";
     } else if (starredRepos.includes(repoFullName)) {
-      searchPriority = 'starred';
+      searchPriority = "starred";
     }
 
     const result: IssueCandidate = {
@@ -262,7 +319,7 @@ export class IssueVetter {
     };
 
     // Cache the vetting result to avoid redundant API calls on repeated searches
-    cache.set(cacheKey, '', result);
+    cache.set(cacheKey, "", result);
 
     return result;
   }
@@ -274,7 +331,11 @@ export class IssueVetter {
     urls: string[],
     maxResults: number,
     priority?: SearchPriority,
-  ): Promise<{ candidates: IssueCandidate[]; allFailed: boolean; rateLimitHit: boolean }> {
+  ): Promise<{
+    candidates: IssueCandidate[];
+    allFailed: boolean;
+    rateLimitHit: boolean;
+  }> {
     const candidates: IssueCandidate[] = [];
     const pending = new Map<string, Promise<void>>();
     let failedVettingCount = 0;
@@ -315,7 +376,8 @@ export class IssueVetter {
     // Wait for remaining
     await Promise.allSettled(pending.values());
 
-    const allFailed = failedVettingCount === attemptedCount && attemptedCount > 0;
+    const allFailed =
+      failedVettingCount === attemptedCount && attemptedCount > 0;
     if (allFailed) {
       warn(
         MODULE,
@@ -324,6 +386,10 @@ export class IssueVetter {
       );
     }
 
-    return { candidates: candidates.slice(0, maxResults), allFailed, rateLimitHit: rateLimitFailures > 0 };
+    return {
+      candidates: candidates.slice(0, maxResults),
+      allFailed,
+      rateLimitHit: rateLimitFailures > 0,
+    };
   }
 }

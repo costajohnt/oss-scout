@@ -4,7 +4,7 @@
  * Extracted from issue-discovery.ts to isolate scoring logic.
  */
 
-import { daysBetween } from './utils.js';
+import { daysBetween } from "./utils.js";
 
 /**
  * Calculate a quality bonus based on repo star and fork counts.
@@ -12,7 +12,10 @@ import { daysBetween } from './utils.js';
  * Forks: 50+ -> +2, 500+ -> +4
  * Natural max is 12 (8 stars + 4 forks).
  */
-export function calculateRepoQualityBonus(stargazersCount: number, forksCount: number): number {
+export function calculateRepoQualityBonus(
+  stargazersCount: number,
+  forksCount: number,
+): number {
   let bonus = 0;
 
   // Star tiers

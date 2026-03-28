@@ -10,14 +10,14 @@
  * share a single HTTP round-trip.
  */
 
-import * as fs from 'fs';
-import * as path from 'path';
-import * as crypto from 'crypto';
-import { getCacheDir } from './utils.js';
-import { debug, warn } from './logger.js';
-import { errorMessage, getHttpStatusCode } from './errors.js';
+import * as fs from "fs";
+import * as path from "path";
+import * as crypto from "crypto";
+import { getCacheDir } from "./utils.js";
+import { debug, warn } from "./logger.js";
+import { errorMessage, getHttpStatusCode } from "./errors.js";
 
-const MODULE = 'http-cache';
+const MODULE = "http-cache";
 
 /** Shape of a single cache entry on disk. */
 interface CacheEntry {
@@ -54,7 +54,7 @@ export class HttpCache {
 
   /** Derive a filesystem-safe cache key from a URL. */
   private keyFor(url: string): string {
-    return crypto.createHash('sha256').update(url).digest('hex');
+    return crypto.createHash("sha256").update(url).digest("hex");
   }
 
   /** Full path to the cache file for a given URL. */
@@ -81,7 +81,7 @@ export class HttpCache {
   get(url: string): CacheEntry | null {
     const filePath = this.pathFor(url);
     try {
-      const raw = fs.readFileSync(filePath, 'utf-8');
+      const raw = fs.readFileSync(filePath, "utf-8");
       const entry = JSON.parse(raw) as CacheEntry;
       // Sanity-check: the file should contain the URL we asked for
       if (entry.url !== url) {
@@ -91,11 +91,16 @@ export class HttpCache {
       return entry;
     } catch (err: unknown) {
       const code = (err as NodeJS.ErrnoException)?.code;
-      if (code === 'ENOENT') return null;
+      if (code === "ENOENT") return null;
       if (err instanceof SyntaxError) {
         debug(MODULE, `Corrupt cache entry, deleting: ${url}`);
-        try { fs.unlinkSync(filePath); } catch (unlinkErr) {
-          debug(MODULE, `Failed to delete corrupt cache entry: ${errorMessage(unlinkErr)}`);
+        try {
+          fs.unlinkSync(filePath);
+        } catch (unlinkErr) {
+          debug(
+            MODULE,
+            `Failed to delete corrupt cache entry: ${errorMessage(unlinkErr)}`,
+          );
         }
         return null;
       }
@@ -115,7 +120,10 @@ export class HttpCache {
       cachedAt: new Date().toISOString(),
     };
     try {
-      fs.writeFileSync(this.pathFor(url), JSON.stringify(entry), { encoding: 'utf-8', mode: 0o600 });
+      fs.writeFileSync(this.pathFor(url), JSON.stringify(entry), {
+        encoding: "utf-8",
+        mode: 0o600,
+      });
       debug(MODULE, `Cached response for ${url}`);
     } catch (err) {
       // Non-fatal: cache write failure should not break the request
@@ -151,10 +159,10 @@ export class HttpCache {
       const files = fs.readdirSync(this.cacheDir);
       const now = Date.now();
       for (const file of files) {
-        if (!file.endsWith('.json')) continue;
+        if (!file.endsWith(".json")) continue;
         const filePath = path.join(this.cacheDir, file);
         try {
-          const raw = fs.readFileSync(filePath, 'utf-8');
+          const raw = fs.readFileSync(filePath, "utf-8");
           const entry = JSON.parse(raw) as CacheEntry;
           const age = now - new Date(entry.cachedAt).getTime();
           if (age > maxAgeMs) {
@@ -167,14 +175,20 @@ export class HttpCache {
             fs.unlinkSync(filePath);
             evicted++;
           } catch (unlinkErr) {
-            debug(MODULE, `Failed to remove stale cache entry ${file}: ${errorMessage(unlinkErr)}`);
+            debug(
+              MODULE,
+              `Failed to remove stale cache entry ${file}: ${errorMessage(unlinkErr)}`,
+            );
           }
         }
       }
     } catch (err: unknown) {
       const code = (err as NodeJS.ErrnoException)?.code;
-      if (code !== 'ENOENT') {
-        warn(MODULE, `Failed to evict stale cache entries: ${errorMessage(err)}`);
+      if (code !== "ENOENT") {
+        warn(
+          MODULE,
+          `Failed to evict stale cache entries: ${errorMessage(err)}`,
+        );
       }
     }
     if (evicted > 0) {
@@ -190,13 +204,13 @@ export class HttpCache {
     try {
       const files = fs.readdirSync(this.cacheDir);
       for (const file of files) {
-        if (!file.endsWith('.json')) continue;
+        if (!file.endsWith(".json")) continue;
         fs.unlinkSync(path.join(this.cacheDir, file));
       }
-      debug(MODULE, 'Cache cleared');
+      debug(MODULE, "Cache cleared");
     } catch (err: unknown) {
       const code = (err as NodeJS.ErrnoException)?.code;
-      if (code !== 'ENOENT') {
+      if (code !== "ENOENT") {
         warn(MODULE, `Failed to clear cache: ${errorMessage(err)}`);
       }
     }
@@ -207,10 +221,11 @@ export class HttpCache {
    */
   size(): number {
     try {
-      return fs.readdirSync(this.cacheDir).filter((f) => f.endsWith('.json')).length;
+      return fs.readdirSync(this.cacheDir).filter((f) => f.endsWith(".json"))
+        .length;
     } catch (err: unknown) {
       const code = (err as NodeJS.ErrnoException)?.code;
-      if (code !== 'ENOENT') {
+      if (code !== "ENOENT") {
         debug(MODULE, `Failed to read cache size: ${errorMessage(err)}`);
       }
       return 0;
@@ -259,7 +274,9 @@ export function getHttpCache(): HttpCache {
 export async function cachedRequest<T>(
   cache: HttpCache,
   url: string,
-  fetcher: (headers: Record<string, string>) => Promise<{ data: T; headers?: Record<string, string> }>,
+  fetcher: (
+    headers: Record<string, string>,
+  ) => Promise<{ data: T; headers?: Record<string, string> }>,
 ): Promise<T> {
   // --- Deduplication ---
   const existing = cache.getInflight(url);
@@ -272,13 +289,13 @@ export async function cachedRequest<T>(
     const extraHeaders: Record<string, string> = {};
     const cached = cache.get(url);
     if (cached) {
-      extraHeaders['if-none-match'] = cached.etag;
+      extraHeaders["if-none-match"] = cached.etag;
     }
 
     try {
       const response = await fetcher(extraHeaders);
       // Store ETag if present (headers may be absent in test mocks)
-      const etag = response.headers?.['etag'];
+      const etag = response.headers?.["etag"];
       if (etag) {
         cache.set(url, etag, response.data);
       }
@@ -329,7 +346,7 @@ export async function cachedTimeBased<T>(
   }
 
   const result = await fetcher();
-  cache.set(key, '', result);
+  cache.set(key, "", result);
   return result;
 }
 

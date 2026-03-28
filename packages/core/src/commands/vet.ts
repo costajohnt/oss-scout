@@ -2,11 +2,15 @@
  * Vet command — vets a specific issue for claimability.
  */
 
-import { createScout } from '../scout.js';
-import { requireGitHubToken } from '../core/utils.js';
-import type { ProjectHealth } from '../core/types.js';
-import type { IssueVettingResult, ScoutState } from '../core/schemas.js';
-import { ISSUE_URL_PATTERN, validateGitHubUrl, validateUrl } from './validation.js';
+import { createScout } from "../scout.js";
+import { requireGitHubToken } from "../core/utils.js";
+import type { ProjectHealth } from "../core/types.js";
+import type { IssueVettingResult, ScoutState } from "../core/schemas.js";
+import {
+  ISSUE_URL_PATTERN,
+  validateGitHubUrl,
+  validateUrl,
+} from "./validation.js";
 
 export interface VetOutput {
   issue: {
@@ -16,7 +20,7 @@ export interface VetOutput {
     url: string;
     labels: string[];
   };
-  recommendation: 'approve' | 'skip' | 'needs_review';
+  recommendation: "approve" | "skip" | "needs_review";
   reasonsToApprove: string[];
   reasonsToSkip: string[];
   projectHealth: ProjectHealth;
@@ -30,11 +34,15 @@ interface VetCommandOptions {
 
 export async function runVet(options: VetCommandOptions): Promise<VetOutput> {
   validateUrl(options.issueUrl);
-  validateGitHubUrl(options.issueUrl, ISSUE_URL_PATTERN, 'issue');
+  validateGitHubUrl(options.issueUrl, ISSUE_URL_PATTERN, "issue");
 
   const token = requireGitHubToken();
   const scout = options.state
-    ? await createScout({ githubToken: token, persistence: 'provided', initialState: options.state })
+    ? await createScout({
+        githubToken: token,
+        persistence: "provided",
+        initialState: options.state,
+      })
     : await createScout({ githubToken: token });
   const candidate = await scout.vetIssue(options.issueUrl);
 

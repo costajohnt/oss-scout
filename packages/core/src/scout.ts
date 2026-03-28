@@ -5,15 +5,15 @@
  * Implements ScoutStateReader to bridge state with the search engine.
  */
 
-import { IssueDiscovery } from './core/issue-discovery.js';
-import type { ScoutStateReader } from './core/issue-vetting.js';
-import { ScoutStateSchema } from './core/schemas.js';
+import { IssueDiscovery } from "./core/issue-discovery.js";
+import type { ScoutStateReader } from "./core/issue-vetting.js";
+import { ScoutStateSchema } from "./core/schemas.js";
 import type {
   ScoutState,
   ScoutPreferences,
   RepoScore,
   SavedCandidate,
-} from './core/schemas.js';
+} from "./core/schemas.js";
 import type {
   ScoutConfig,
   SearchOptions,
@@ -26,13 +26,13 @@ import type {
   VetListOptions,
   VetListResult,
   VetListEntry,
-} from './core/types.js';
-import { GistStateStore, mergeStates } from './core/gist-state-store.js';
-import type { GistOctokitLike } from './core/gist-state-store.js';
-import { getOctokit } from './core/github.js';
-import { loadLocalState } from './core/local-state.js';
-import { warn } from './core/logger.js';
-import { extractRepoFromUrl } from './core/utils.js';
+} from "./core/types.js";
+import { GistStateStore, mergeStates } from "./core/gist-state-store.js";
+import type { GistOctokitLike } from "./core/gist-state-store.js";
+import { getOctokit } from "./core/github.js";
+import { loadLocalState } from "./core/local-state.js";
+import { warn } from "./core/logger.js";
+import { extractRepoFromUrl } from "./core/utils.js";
 
 /**
  * Create an OssScout instance.
@@ -59,13 +59,18 @@ export async function createScout(config: ScoutConfig): Promise<OssScout> {
   let state: ScoutState;
   let gistStore: GistStateStore | null = null;
 
-  if (config.persistence === 'provided') {
+  if (config.persistence === "provided") {
     state = config.initialState;
-  } else if (config.persistence === 'gist') {
-    gistStore = new GistStateStore(getOctokit(config.githubToken) as unknown as GistOctokitLike);
+  } else if (config.persistence === "gist") {
+    gistStore = new GistStateStore(
+      getOctokit(config.githubToken) as unknown as GistOctokitLike,
+    );
     const result = await gistStore.bootstrap();
     if (result.degraded) {
-      warn('scout', 'Gist sync unavailable — running in offline mode. Changes will only be saved locally.');
+      warn(
+        "scout",
+        "Gist sync unavailable — running in offline mode. Changes will only be saved locally.",
+      );
     }
     const localState = loadLocalState();
     state = mergeStates(localState, result.state);
@@ -105,7 +110,11 @@ export class OssScout implements ScoutStateReader {
    * Multi-strategy issue search. Returns scored, sorted candidates.
    */
   async search(options?: SearchOptions): Promise<SearchResult> {
-    const discovery = new IssueDiscovery(this.githubToken, this.state.preferences, this);
+    const discovery = new IssueDiscovery(
+      this.githubToken,
+      this.state.preferences,
+      this,
+    );
     const { candidates, strategiesUsed } = await discovery.searchIssues({
       maxResults: options?.maxResults,
       strategies: options?.strategies,
@@ -163,13 +172,13 @@ export class OssScout implements ScoutStateReader {
         })
         .catch((error) => {
           const msg = error instanceof Error ? error.message : String(error);
-          const isGone = msg.includes('Not Found') || msg.includes('410');
+          const isGone = msg.includes("Not Found") || msg.includes("410");
           results.push({
             issueUrl: item.issueUrl,
             repo: item.repo,
             number: item.number,
             title: item.title,
-            status: isGone ? 'closed' : 'error',
+            status: isGone ? "closed" : "error",
             errorMessage: msg,
           });
         })
@@ -186,17 +195,20 @@ export class OssScout implements ScoutStateReader {
 
     const summary = {
       total: results.length,
-      stillAvailable: results.filter((r) => r.status === 'still_available').length,
-      claimed: results.filter((r) => r.status === 'claimed').length,
-      closed: results.filter((r) => r.status === 'closed').length,
-      hasPR: results.filter((r) => r.status === 'has_pr').length,
-      errors: results.filter((r) => r.status === 'error').length,
+      stillAvailable: results.filter((r) => r.status === "still_available")
+        .length,
+      claimed: results.filter((r) => r.status === "claimed").length,
+      closed: results.filter((r) => r.status === "closed").length,
+      hasPR: results.filter((r) => r.status === "has_pr").length,
+      errors: results.filter((r) => r.status === "error").length,
     };
 
     let prunedCount: number | undefined;
     if (options?.prune) {
       const unavailableUrls = new Set(
-        results.filter((r) => r.status !== 'still_available').map((r) => r.issueUrl),
+        results
+          .filter((r) => r.status !== "still_available")
+          .map((r) => r.issueUrl),
       );
       const before = (this.state.savedResults ?? []).length;
       this.state.savedResults = (this.state.savedResults ?? []).filter(
@@ -209,11 +221,11 @@ export class OssScout implements ScoutStateReader {
     return { results, summary, prunedCount };
   }
 
-  private classifyVetResult(candidate: IssueCandidate): VetListEntry['status'] {
+  private classifyVetResult(candidate: IssueCandidate): VetListEntry["status"] {
     const checks = candidate.vettingResult.checks;
-    if (!checks.noExistingPR) return 'has_pr';
-    if (!checks.notClaimed) return 'claimed';
-    return 'still_available';
+    if (!checks.noExistingPR) return "has_pr";
+    if (!checks.notClaimed) return "claimed";
+    return "still_available";
   }
 
   // ── State Reads (ScoutStateReader implementation) ───────────────────
@@ -442,8 +454,7 @@ export class OssScout implements ScoutStateReader {
         mergedCount > 0
           ? (this.state.mergedPRs ?? [])
               .filter((p) => extractRepoFromUrl(p.url) === repo)
-              .sort((a, b) => b.mergedAt.localeCompare(a.mergedAt))[0]
-              ?.mergedAt
+              .sort((a, b) => b.mergedAt.localeCompare(a.mergedAt))[0]?.mergedAt
           : undefined,
     });
   }

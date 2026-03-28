@@ -16,7 +16,7 @@
  */
 
 // Main API
-export { createScout, OssScout } from './scout.js';
+export { createScout, OssScout } from "./scout.js";
 
 // Types
 export type {
@@ -34,7 +34,7 @@ export type {
   VetListResult,
   VetListEntry,
   VetListSummary,
-} from './core/types.js';
+} from "./core/types.js";
 
 export type {
   ScoutState,
@@ -49,7 +49,7 @@ export type {
   StoredMergedPR,
   StoredClosedPR,
   SearchStrategy,
-} from './core/schemas.js';
+} from "./core/schemas.js";
 
 // Schemas (for consumers who need runtime validation)
 export {
@@ -59,11 +59,11 @@ export {
   IssueScopeSchema,
   ProjectCategorySchema,
   SearchStrategySchema,
-} from './core/schemas.js';
+} from "./core/schemas.js";
 
 // Utilities
-export { requireGitHubToken, getGitHubToken } from './core/utils.js';
+export { requireGitHubToken, getGitHubToken } from "./core/utils.js";
 
 // Internal classes (for advanced use)
-export { IssueDiscovery } from './core/issue-discovery.js';
-export { IssueVetter, type ScoutStateReader } from './core/issue-vetting.js';
+export { IssueDiscovery } from "./core/issue-discovery.js";
+export { IssueVetter, type ScoutStateReader } from "./core/issue-vetting.js";

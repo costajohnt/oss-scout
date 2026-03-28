@@ -5,20 +5,20 @@
  * as fallback when the API is unavailable.
  */
 
-import * as fs from 'fs';
-import * as path from 'path';
-import { ScoutStateSchema } from './schemas.js';
-import type { ScoutState, RepoScore, SavedCandidate } from './schemas.js';
-import { getDataDir } from './utils.js';
-import { debug, warn } from './logger.js';
-import { errorMessage } from './errors.js';
+import * as fs from "fs";
+import * as path from "path";
+import { ScoutStateSchema } from "./schemas.js";
+import type { ScoutState, RepoScore, SavedCandidate } from "./schemas.js";
+import { getDataDir } from "./utils.js";
+import { debug, warn } from "./logger.js";
+import { errorMessage } from "./errors.js";
 
-const MODULE = 'gist-state';
+const MODULE = "gist-state";
 
-const GIST_DESCRIPTION = 'oss-scout-state';
-const GIST_FILENAME = 'state.json';
-const GIST_ID_FILE = 'gist-id';
-const CACHE_FILE = 'state-cache.json';
+const GIST_DESCRIPTION = "oss-scout-state";
+const GIST_FILENAME = "state.json";
+const GIST_ID_FILE = "gist-id";
+const CACHE_FILE = "state-cache.json";
 const SEARCH_MAX_PAGES = 5;
 
 /** Minimal Octokit interface for gist operations — keeps the class testable. */
@@ -41,10 +41,7 @@ export interface GistOctokitLike {
       gist_id: string;
       files: Record<string, { content: string }>;
     }): Promise<{ data: { id: string } }>;
-    list(params: {
-      per_page: number;
-      page: number;
-    }): Promise<{
+    list(params: { per_page: number; page: number }): Promise<{
       data: Array<{ id: string; description: string | null }>;
     }>;
   };
@@ -90,7 +87,7 @@ export class GistStateStore {
     this.writeCache(state);
 
     if (!this.gistId) {
-      warn(MODULE, 'No gist ID — cannot push');
+      warn(MODULE, "No gist ID — cannot push");
       return false;
     }
 
@@ -101,7 +98,7 @@ export class GistStateStore {
           [GIST_FILENAME]: { content: JSON.stringify(state, null, 2) },
         },
       });
-      debug(MODULE, 'State pushed to gist');
+      debug(MODULE, "State pushed to gist");
       return true;
     } catch (err) {
       warn(MODULE, `Failed to push: ${errorMessage(err)}`);
@@ -149,7 +146,7 @@ export class GistStateStore {
       } catch (err) {
         debug(MODULE, `Cached gist ID invalid: ${errorMessage(err)}`);
       }
-      debug(MODULE, 'Cached gist ID invalid, searching...');
+      debug(MODULE, "Cached gist ID invalid, searching...");
     }
 
     // 2. Search user's gists
@@ -166,7 +163,7 @@ export class GistStateStore {
     }
 
     // 3. Create new gist
-    debug(MODULE, 'No existing gist found, creating new one');
+    debug(MODULE, "No existing gist found, creating new one");
     const freshState = ScoutStateSchema.parse({ version: 1 });
     const newId = await this.createGist(freshState);
     this.saveGistId(newId);
@@ -178,20 +175,20 @@ export class GistStateStore {
   private bootstrapFromCache(): BootstrapResult {
     const cached = this.readCache();
     if (cached) {
-      debug(MODULE, 'Bootstrapped from local cache (degraded mode)');
+      debug(MODULE, "Bootstrapped from local cache (degraded mode)");
       const cachedId = this.readCachedGistId();
       if (cachedId) this.gistId = cachedId;
       return {
-        gistId: cachedId ?? '',
+        gistId: cachedId ?? "",
         state: cached,
         created: false,
         degraded: true,
       };
     }
 
-    debug(MODULE, 'No cache available, using fresh state (degraded mode)');
+    debug(MODULE, "No cache available, using fresh state (degraded mode)");
     const fresh = ScoutStateSchema.parse({ version: 1 });
-    return { gistId: '', state: fresh, created: false, degraded: true };
+    return { gistId: "", state: fresh, created: false, degraded: true };
   }
 
   // ── Gist API operations ──────────────────────────────────────────────
@@ -240,11 +237,11 @@ export class GistStateStore {
 
   private readCachedGistId(): string | null {
     try {
-      const id = fs.readFileSync(getGistIdPath(), 'utf-8').trim();
+      const id = fs.readFileSync(getGistIdPath(), "utf-8").trim();
       return id || null;
     } catch (err) {
       const code = (err as NodeJS.ErrnoException)?.code;
-      if (code !== 'ENOENT') {
+      if (code !== "ENOENT") {
         warn(MODULE, `Failed to read cached gist ID: ${errorMessage(err)}`);
       }
       return null;
@@ -252,16 +249,16 @@ export class GistStateStore {
   }
 
   private saveGistId(id: string): void {
-    fs.writeFileSync(getGistIdPath(), id + '\n', { mode: 0o600 });
+    fs.writeFileSync(getGistIdPath(), id + "\n", { mode: 0o600 });
   }
 
   private readCache(): ScoutState | null {
     try {
-      const raw = fs.readFileSync(getCachePath(), 'utf-8');
+      const raw = fs.readFileSync(getCachePath(), "utf-8");
       return ScoutStateSchema.parse(JSON.parse(raw));
     } catch (err) {
       const code = (err as NodeJS.ErrnoException)?.code;
-      if (code !== 'ENOENT') {
+      if (code !== "ENOENT") {
         warn(MODULE, `Failed to read state cache: ${errorMessage(err)}`);
       }
       return null;
@@ -270,11 +267,9 @@ export class GistStateStore {
 
   private writeCache(state: ScoutState): void {
     try {
-      fs.writeFileSync(
-        getCachePath(),
-        JSON.stringify(state, null, 2) + '\n',
-        { mode: 0o600 },
-      );
+      fs.writeFileSync(getCachePath(), JSON.stringify(state, null, 2) + "\n", {
+        mode: 0o600,
+      });
     } catch (err) {
       warn(MODULE, `Failed to write cache: ${errorMessage(err)}`);
     }
@@ -303,9 +298,14 @@ export function mergeStates(local: ScoutState, remote: ScoutState): ScoutState {
     ),
     mergedPRs: unionByUrl(local.mergedPRs, remote.mergedPRs),
     closedPRs: unionByUrl(local.closedPRs, remote.closedPRs),
-    savedResults: mergeSavedResults(local.savedResults ?? [], remote.savedResults ?? []),
+    savedResults: mergeSavedResults(
+      local.savedResults ?? [],
+      remote.savedResults ?? [],
+    ),
     lastSearchAt: pickFresherTimestamp(local.lastSearchAt, remote.lastSearchAt),
-    lastRunAt: pickFresherTimestamp(local.lastRunAt, remote.lastRunAt) ?? new Date().toISOString(),
+    lastRunAt:
+      pickFresherTimestamp(local.lastRunAt, remote.lastRunAt) ??
+      new Date().toISOString(),
     gistId: remote.gistId ?? local.gistId,
   };
 }
@@ -320,8 +320,10 @@ function mergeRepoScores(
     if (!localScore) {
       merged[repo] = remoteScore;
     } else {
-      const localActivity = localScore.mergedPRCount + localScore.closedWithoutMergeCount;
-      const remoteActivity = remoteScore.mergedPRCount + remoteScore.closedWithoutMergeCount;
+      const localActivity =
+        localScore.mergedPRCount + localScore.closedWithoutMergeCount;
+      const remoteActivity =
+        remoteScore.mergedPRCount + remoteScore.closedWithoutMergeCount;
       merged[repo] = remoteActivity >= localActivity ? remoteScore : localScore;
     }
   }
@@ -331,7 +333,10 @@ function mergeRepoScores(
 function mergeStarredRepos(local: ScoutState, remote: ScoutState): string[] {
   const localTs = local.starredReposLastFetched;
   const remoteTs = remote.starredReposLastFetched;
-  if (!localTs && !remoteTs) return remote.starredRepos.length >= local.starredRepos.length ? remote.starredRepos : local.starredRepos;
+  if (!localTs && !remoteTs)
+    return remote.starredRepos.length >= local.starredRepos.length
+      ? remote.starredRepos
+      : local.starredRepos;
   if (!localTs) return remote.starredRepos;
   if (!remoteTs) return local.starredRepos;
   return remoteTs >= localTs ? remote.starredRepos : local.starredRepos;
@@ -344,7 +349,10 @@ function unionByUrl<T extends { url: string }>(local: T[], remote: T[]): T[] {
   return [...seen.values()];
 }
 
-function mergeSavedResults(local: SavedCandidate[], remote: SavedCandidate[]): SavedCandidate[] {
+function mergeSavedResults(
+  local: SavedCandidate[],
+  remote: SavedCandidate[],
+): SavedCandidate[] {
   const merged = new Map<string, SavedCandidate>();
   for (const item of local) merged.set(item.issueUrl, item);
   for (const item of remote) {

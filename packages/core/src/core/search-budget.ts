@@ -12,10 +12,10 @@
  * - Call canAfford(n) to check if n more calls fit in the remaining budget
  */
 
-import { debug } from './logger.js';
-import { sleep } from './utils.js';
+import { debug } from "./logger.js";
+import { sleep } from "./utils.js";
 
-const MODULE = 'search-budget';
+const MODULE = "search-budget";
 
 /** GitHub Search API rate limit: 30 requests per 60-second rolling window. */
 const SEARCH_RATE_LIMIT = 30;
@@ -48,7 +48,10 @@ export class SearchBudgetTracker {
     this.resetAt = new Date(resetAt).getTime();
     this.callTimestamps = [];
     this.totalCalls = 0;
-    debug(MODULE, `Initialized: ${remaining} remaining, resets at ${new Date(this.resetAt).toLocaleTimeString()}`);
+    debug(
+      MODULE,
+      `Initialized: ${remaining} remaining, resets at ${new Date(this.resetAt).toLocaleTimeString()}`,
+    );
   }
 
   /**
@@ -121,7 +124,10 @@ export class SearchBudgetTracker {
       const waitMs = waitUntil - Date.now();
 
       if (waitMs > 0) {
-        debug(MODULE, `Budget full (${this.callTimestamps.length}/${EFFECTIVE_BUDGET} in window), waiting ${waitMs}ms`);
+        debug(
+          MODULE,
+          `Budget full (${this.callTimestamps.length}/${EFFECTIVE_BUDGET} in window), waiting ${waitMs}ms`,
+        );
         await sleep(waitMs + 100); // +100ms safety buffer
       }
     }

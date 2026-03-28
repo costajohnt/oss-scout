@@ -12,18 +12,31 @@
  * All state is injected via constructor parameters (ScoutStateReader + ScoutPreferences).
  */
 
-import { Octokit } from '@octokit/rest';
-import { getOctokit, checkRateLimit } from './github.js';
-import { getSearchBudgetTracker } from './search-budget.js';
-import { daysBetween, extractRepoFromUrl, sleep } from './utils.js';
-import { type SearchPriority, type IssueCandidate, SCOPE_LABELS } from './types.js';
-import { CONCRETE_STRATEGIES } from './schemas.js';
-import type { ScoutPreferences, SearchStrategy } from './schemas.js';
-import { ValidationError, errorMessage, getHttpStatusCode, isRateLimitError } from './errors.js';
-import { debug, info, warn } from './logger.js';
-import { type GitHubSearchItem, isDocOnlyIssue, applyPerRepoCap } from './issue-filtering.js';
-import { IssueVetter, type ScoutStateReader } from './issue-vetting.js';
-import { getTopicsForCategories } from './category-mapping.js';
+import { Octokit } from "@octokit/rest";
+import { getOctokit, checkRateLimit } from "./github.js";
+import { getSearchBudgetTracker } from "./search-budget.js";
+import { daysBetween, extractRepoFromUrl, sleep } from "./utils.js";
+import {
+  type SearchPriority,
+  type IssueCandidate,
+  SCOPE_LABELS,
+} from "./types.js";
+import { CONCRETE_STRATEGIES } from "./schemas.js";
+import type { ScoutPreferences, SearchStrategy } from "./schemas.js";
+import {
+  ValidationError,
+  errorMessage,
+  getHttpStatusCode,
+  isRateLimitError,
+} from "./errors.js";
+import { debug, info, warn } from "./logger.js";
+import {
+  type GitHubSearchItem,
+  isDocOnlyIssue,
+  applyPerRepoCap,
+} from "./issue-filtering.js";
+import { IssueVetter, type ScoutStateReader } from "./issue-vetting.js";
+import { getTopicsForCategories } from "./category-mapping.js";
 import {
   buildEffectiveLabels,
   interleaveArrays,
@@ -31,9 +44,9 @@ import {
   filterVetAndScore,
   searchInRepos,
   searchWithChunkedLabels,
-} from './search-phases.js';
+} from "./search-phases.js";
 
-const MODULE = 'issue-discovery';
+const MODULE = "issue-discovery";
 
 /** Delay between major search phases to let GitHub's rate limit window cool down. */
 const INTER_PHASE_DELAY_MS = 2000;
@@ -118,19 +131,25 @@ export class IssueDiscovery {
       maxResults?: number;
       strategies?: SearchStrategy[];
     } = {},
-  ): Promise<{ candidates: IssueCandidate[]; strategiesUsed: SearchStrategy[] }> {
+  ): Promise<{
+    candidates: IssueCandidate[];
+    strategiesUsed: SearchStrategy[];
+  }> {
     const config = this.preferences;
     const languages = options.languages || config.languages;
     const scopes = config.scope; // undefined = legacy mode
-    const labels = options.labels || (scopes ? buildEffectiveLabels(scopes, config.labels) : config.labels);
+    const labels =
+      options.labels ||
+      (scopes ? buildEffectiveLabels(scopes, config.labels) : config.labels);
     const maxResults = options.maxResults || 10;
     const minStars = config.minStars ?? 50;
 
     // Strategy selection: resolve which phases to run
     const ALL_STRATEGIES: readonly SearchStrategy[] = CONCRETE_STRATEGIES;
-    const rawStrategies = options.strategies ?? config.defaultStrategy ?? ['all'];
+    const rawStrategies = options.strategies ??
+      config.defaultStrategy ?? ["all"];
     const enabledStrategies = new Set<SearchStrategy>(
-      rawStrategies.includes('all') ? ALL_STRATEGIES : rawStrategies,
+      rawStrategies.includes("all") ? ALL_STRATEGIES : rawStrategies,
     );
     const strategiesUsed: SearchStrategy[] = [];
 
@@ -148,14 +167,23 @@ export class IssueDiscovery {
       searchBudget = rateLimit.remaining;
       tracker.init(rateLimit.remaining, rateLimit.resetAt);
       if (rateLimit.remaining < 5) {
-        const resetTime = new Date(rateLimit.resetAt).toLocaleTimeString('en-US', { hour12: false });
+        const resetTime = new Date(rateLimit.resetAt).toLocaleTimeString(
+          "en-US",
+          { hour12: false },
+        );
         this.rateLimitWarning = `GitHub search API quota low (${rateLimit.remaining}/${rateLimit.limit} remaining, resets at ${resetTime}). Search may be slow.`;
         warn(MODULE, this.rateLimitWarning);
       }
       if (searchBudget < CRITICAL_BUDGET_THRESHOLD) {
-        info(MODULE, `Search budget critical (${searchBudget} remaining) — running only Phase 0`);
+        info(
+          MODULE,
+          `Search budget critical (${searchBudget} remaining) — running only Phase 0`,
+        );
       } else if (searchBudget < LOW_BUDGET_THRESHOLD) {
-        info(MODULE, `Search budget low (${searchBudget} remaining) — skipping heavy phases (2, 3)`);
+        info(
+          MODULE,
+          `Search budget low (${searchBudget} remaining) — skipping heavy phases (2, 3)`,
+        );
       }
     } catch (error) {
       // Fail fast on auth errors — no point searching with a bad token
@@ -164,10 +192,13 @@ export class IssueDiscovery {
       }
       // Non-fatal: proceed with conservative budget for transient/network errors.
       // Initialize tracker with conservative defaults so it doesn't fly blind.
-      tracker.init(CRITICAL_BUDGET_THRESHOLD, new Date(Date.now() + 60000).toISOString());
+      tracker.init(
+        CRITICAL_BUDGET_THRESHOLD,
+        new Date(Date.now() + 60000).toISOString(),
+      );
       warn(
         MODULE,
-        'Could not check rate limit — using conservative budget, skipping heavy phases:',
+        "Could not check rate limit — using conservative budget, skipping heavy phases:",
         errorMessage(error),
       );
     }
@@ -181,21 +212,29 @@ export class IssueDiscovery {
 
     // Get low-scoring repos from state reader
     const minRepoScoreThreshold = config.minRepoScoreThreshold;
-    const lowScoringRepos = new Set(this.deriveLowScoringRepos(minRepoScoreThreshold));
+    const lowScoringRepos = new Set(
+      this.deriveLowScoringRepos(minRepoScoreThreshold),
+    );
 
     // Common filters
     const excludedRepos = new Set(config.excludeRepos);
-    const excludeOrgs = new Set((config.excludeOrgs ?? []).map(o => o.toLowerCase()));
+    const excludeOrgs = new Set(
+      (config.excludeOrgs ?? []).map((o) => o.toLowerCase()),
+    );
     const maxAgeDays = config.maxIssueAgeDays || 90;
     const now = new Date();
 
     // Build query parts
     // When languages includes 'any', omit the language filter entirely
-    const isAnyLanguage = languages.some((l) => l.toLowerCase() === 'any');
-    const langQuery = isAnyLanguage ? '' : languages.map((l) => `language:${l}`).join(' ');
+    const isAnyLanguage = languages.some((l) => l.toLowerCase() === "any");
+    const langQuery = isAnyLanguage
+      ? ""
+      : languages.map((l) => `language:${l}`).join(" ");
     // Phase 0 uses a broader query — established contributors don't need beginner labels
     // Phases 1+ pass labels separately to searchInRepos/searchWithChunkedLabels
-    const baseQualifiers = `is:issue is:open ${langQuery} no:assignee`.replace(/  +/g, ' ').trim();
+    const baseQualifiers = `is:issue is:open ${langQuery} no:assignee`
+      .replace(/  +/g, " ")
+      .trim();
 
     // Helper to filter issues
     const includeDocIssues = config.includeDocIssues ?? true;
@@ -203,7 +242,7 @@ export class IssueDiscovery {
     if (aiBlocklisted.size > 0) {
       debug(
         MODULE,
-        `[AI_POLICY_FILTER] Filtering issues from ${aiBlocklisted.size} blocklisted repo(s): ${[...aiBlocklisted].join(', ')}`,
+        `[AI_POLICY_FILTER] Filtering issues from ${aiBlocklisted.size} blocklisted repo(s): ${[...aiBlocklisted].join(", ")}`,
       );
     }
     const filterIssues = (items: GitHubSearchItem[]) => {
@@ -213,7 +252,7 @@ export class IssueDiscovery {
         if (excludedRepos.has(repoFullName)) return false;
         // Filter out entire orgs
         if (excludeOrgs.size > 0) {
-          const orgName = repoFullName.split('/')[0]?.toLowerCase();
+          const orgName = repoFullName.split("/")[0]?.toLowerCase();
           if (orgName && excludeOrgs.has(orgName)) return false;
         }
         // Filter repos with known anti-AI contribution policies
@@ -234,7 +273,7 @@ export class IssueDiscovery {
     const phase0Repos = mergedPRRepos.slice(0, 10);
     const phase0RepoSet = new Set(phase0Repos);
 
-    if (phase0Repos.length > 0 && enabledStrategies.has('merged')) {
+    if (phase0Repos.length > 0 && enabledStrategies.has("merged")) {
       info(
         MODULE,
         `Phase 0: Searching issues in ${phase0Repos.length} merged-PR repos (no label filter)...`,
@@ -253,36 +292,53 @@ export class IssueDiscovery {
           baseQualifiers,
           [],
           remainingNeeded,
-          'merged_pr',
+          "merged_pr",
           filterIssues,
         );
         allCandidates.push(...mergedCandidates);
         if (allBatchesFailed) {
-          phase0Error = 'All merged-PR repo batches failed';
+          phase0Error = "All merged-PR repo batches failed";
         }
         if (rateLimitHit) {
           rateLimitHitDuringSearch = true;
         }
-        info(MODULE, `Found ${mergedCandidates.length} candidates from merged-PR repos`);
+        info(
+          MODULE,
+          `Found ${mergedCandidates.length} candidates from merged-PR repos`,
+        );
       }
-      strategiesUsed.push('merged');
+      strategiesUsed.push("merged");
     }
 
     // Phase 0.5: Search preferred organizations (explicit user preference)
     // Skip if budget is critical — Phase 0 results are sufficient
     let phase0_5Error: string | null = null;
     const preferredOrgs = config.preferredOrgs ?? [];
-    if (allCandidates.length < maxResults && preferredOrgs.length > 0 && searchBudget >= CRITICAL_BUDGET_THRESHOLD && enabledStrategies.has('orgs')) {
+    if (
+      allCandidates.length < maxResults &&
+      preferredOrgs.length > 0 &&
+      searchBudget >= CRITICAL_BUDGET_THRESHOLD &&
+      enabledStrategies.has("orgs")
+    ) {
       // Inter-phase delay to let GitHub's rate limit window cool down
       if (phase0Repos.length > 0) await sleep(INTER_PHASE_DELAY_MS);
       // Filter out orgs already covered by Phase 0 repos
-      const phase0Orgs = new Set(phase0Repos.map((r) => r.split('/')[0]?.toLowerCase()));
-      const orgsToSearch = preferredOrgs.filter((org) => !phase0Orgs.has(org.toLowerCase())).slice(0, 5);
+      const phase0Orgs = new Set(
+        phase0Repos.map((r) => r.split("/")[0]?.toLowerCase()),
+      );
+      const orgsToSearch = preferredOrgs
+        .filter((org) => !phase0Orgs.has(org.toLowerCase()))
+        .slice(0, 5);
 
       if (orgsToSearch.length > 0) {
-        info(MODULE, `Phase 0.5: Searching issues in ${orgsToSearch.length} preferred org(s)...`);
+        info(
+          MODULE,
+          `Phase 0.5: Searching issues in ${orgsToSearch.length} preferred org(s)...`,
+        );
         const remainingNeeded = maxResults - allCandidates.length;
-        const orgRepoFilter = orgsToSearch.map((org) => `org:${org}`).join(' OR ');
+        const orgRepoFilter = orgsToSearch
+          .map((org) => `org:${org}`)
+          .join(" OR ");
         const orgOps = orgsToSearch.length - 1;
 
         try {
@@ -290,7 +346,10 @@ export class IssueDiscovery {
             this.octokit,
             labels,
             orgOps,
-            (labelQ) => `${baseQualifiers} ${labelQ} (${orgRepoFilter})`.replace(/  +/g, ' ').trim(),
+            (labelQ) =>
+              `${baseQualifiers} ${labelQ} (${orgRepoFilter})`
+                .replace(/  +/g, " ")
+                .trim(),
             remainingNeeded * 3,
           );
 
@@ -307,16 +366,19 @@ export class IssueDiscovery {
             } = await this.vetter.vetIssuesParallel(
               filtered.slice(0, remainingNeeded * 2).map((i) => i.html_url),
               remainingNeeded,
-              'preferred_org',
+              "preferred_org",
             );
             allCandidates.push(...orgCandidates);
             if (allVetFailed) {
-              phase0_5Error = 'All preferred org issue vetting failed';
+              phase0_5Error = "All preferred org issue vetting failed";
             }
             if (rateLimitHit) {
               rateLimitHitDuringSearch = true;
             }
-            info(MODULE, `Found ${orgCandidates.length} candidates from preferred orgs`);
+            info(
+              MODULE,
+              `Found ${orgCandidates.length} candidates from preferred orgs`,
+            );
           }
         } catch (error) {
           const errMsg = errorMessage(error);
@@ -327,16 +389,24 @@ export class IssueDiscovery {
           warn(MODULE, `Error searching preferred orgs: ${errMsg}`);
         }
       }
-      strategiesUsed.push('orgs');
+      strategiesUsed.push("orgs");
     }
 
     // Phase 1: Search starred repos (filter out already-searched Phase 0 repos)
     // Skip if budget is critical
-    if (allCandidates.length < maxResults && starredRepos.length > 0 && searchBudget >= CRITICAL_BUDGET_THRESHOLD && enabledStrategies.has('starred')) {
+    if (
+      allCandidates.length < maxResults &&
+      starredRepos.length > 0 &&
+      searchBudget >= CRITICAL_BUDGET_THRESHOLD &&
+      enabledStrategies.has("starred")
+    ) {
       await sleep(INTER_PHASE_DELAY_MS);
       const reposToSearch = starredRepos.filter((r) => !phase0RepoSet.has(r));
       if (reposToSearch.length > 0) {
-        info(MODULE, `Phase 1: Searching issues in ${reposToSearch.length} starred repos...`);
+        info(
+          MODULE,
+          `Phase 1: Searching issues in ${reposToSearch.length} starred repos...`,
+        );
         const remainingNeeded = maxResults - allCandidates.length;
         if (remainingNeeded > 0) {
           // Cap labels to reduce Search API calls: starred repos already signal user
@@ -355,20 +425,23 @@ export class IssueDiscovery {
             baseQualifiers,
             phase1Labels,
             remainingNeeded,
-            'starred',
+            "starred",
             filterIssues,
           );
           allCandidates.push(...starredCandidates);
           if (allBatchesFailed) {
-            phase1Error = 'All starred repo batches failed';
+            phase1Error = "All starred repo batches failed";
           }
           if (rateLimitHit) {
             rateLimitHitDuringSearch = true;
           }
-          info(MODULE, `Found ${starredCandidates.length} candidates from starred repos`);
+          info(
+            MODULE,
+            `Found ${starredCandidates.length} candidates from starred repos`,
+          );
         }
       }
-      strategiesUsed.push('starred');
+      strategiesUsed.push("starred");
     }
 
     // Phase 2: General search (if still need more)
@@ -377,9 +450,13 @@ export class IssueDiscovery {
     // results to prevent high-volume tiers (e.g., "enhancement") from drowning out
     // beginner results.
     let phase2Error: string | null = null;
-    if (allCandidates.length < maxResults && searchBudget >= LOW_BUDGET_THRESHOLD && enabledStrategies.has('broad')) {
+    if (
+      allCandidates.length < maxResults &&
+      searchBudget >= LOW_BUDGET_THRESHOLD &&
+      enabledStrategies.has("broad")
+    ) {
       await sleep(INTER_PHASE_DELAY_MS);
-      info(MODULE, 'Phase 2: General issue search...');
+      info(MODULE, "Phase 2: General issue search...");
       const remainingNeeded = maxResults - allCandidates.length;
       const seenRepos = new Set(allCandidates.map((c) => c.issue.repo));
 
@@ -395,13 +472,15 @@ export class IssueDiscovery {
           tierLabelGroups.push({ tier: scope, tierLabels: scopeLabels });
         }
         // Custom labels not in any tier get their own pseudo-tier
-        const allScopeLabels = new Set(scopes.flatMap((s) => SCOPE_LABELS[s] ?? []));
+        const allScopeLabels = new Set(
+          scopes.flatMap((s) => SCOPE_LABELS[s] ?? []),
+        );
         const customOnly = config.labels.filter((l) => !allScopeLabels.has(l));
         if (customOnly.length > 0) {
-          tierLabelGroups.push({ tier: 'custom', tierLabels: customOnly });
+          tierLabelGroups.push({ tier: "custom", tierLabels: customOnly });
         }
       } else {
-        tierLabelGroups.push({ tier: 'general', tierLabels: labels });
+        tierLabelGroups.push({ tier: "general", tierLabels: labels });
       }
 
       const budgetPerTier = Math.ceil(remainingNeeded / tierLabelGroups.length);
@@ -413,11 +492,15 @@ export class IssueDiscovery {
             this.octokit,
             tierLabels,
             0, // no repo/org ORs in Phase 2
-            (labelQ) => `${baseQualifiers} ${labelQ}`.replace(/  +/g, ' ').trim(),
+            (labelQ) =>
+              `${baseQualifiers} ${labelQ}`.replace(/  +/g, " ").trim(),
             budgetPerTier * 3,
           );
 
-          info(MODULE, `Phase 2 [${tier}]: processing ${allItems.length} items...`);
+          info(
+            MODULE,
+            `Phase 2 [${tier}]: processing ${allItems.length} items...`,
+          );
 
           const {
             candidates: tierCandidates,
@@ -437,16 +520,22 @@ export class IssueDiscovery {
           // Update seenRepos so later tiers don't return duplicate repos
           for (const c of tierCandidates) seenRepos.add(c.issue.repo);
           if (allVetFailed) {
-            phase2Error = (phase2Error ? phase2Error + '; ' : '') + `${tier}: all vetting failed`;
+            phase2Error =
+              (phase2Error ? phase2Error + "; " : "") +
+              `${tier}: all vetting failed`;
           }
           if (vetRateLimitHit) {
             rateLimitHitDuringSearch = true;
           }
-          info(MODULE, `Found ${tierCandidates.length} candidates from ${tier} tier`);
+          info(
+            MODULE,
+            `Found ${tierCandidates.length} candidates from ${tier} tier`,
+          );
         } catch (error) {
           if (getHttpStatusCode(error) === 401) throw error;
           const errMsg = errorMessage(error);
-          phase2Error = (phase2Error ? phase2Error + '; ' : '') + `${tier}: ${errMsg}`;
+          phase2Error =
+            (phase2Error ? phase2Error + "; " : "") + `${tier}: ${errMsg}`;
           if (isRateLimitError(error)) {
             rateLimitHitDuringSearch = true;
           }
@@ -457,34 +546,44 @@ export class IssueDiscovery {
 
       const interleaved = interleaveArrays(tierResults);
       if (interleaved.length === 0 && phase2Error) {
-        warn(MODULE, `All ${tierLabelGroups.length} scope tiers failed in Phase 2: ${phase2Error}`);
+        warn(
+          MODULE,
+          `All ${tierLabelGroups.length} scope tiers failed in Phase 2: ${phase2Error}`,
+        );
       }
       allCandidates.push(...interleaved.slice(0, remainingNeeded));
-      strategiesUsed.push('broad');
+      strategiesUsed.push("broad");
     }
 
     // Phase 3: Actively maintained repos
     // Skip if budget is low — this phase is API-heavy with broad queries
     let phase3Error: string | null = null;
-    if (allCandidates.length < maxResults && searchBudget >= LOW_BUDGET_THRESHOLD && enabledStrategies.has('maintained')) {
+    if (
+      allCandidates.length < maxResults &&
+      searchBudget >= LOW_BUDGET_THRESHOLD &&
+      enabledStrategies.has("maintained")
+    ) {
       await sleep(INTER_PHASE_DELAY_MS);
-      info(MODULE, 'Phase 3: Searching actively maintained repos...');
+      info(MODULE, "Phase 3: Searching actively maintained repos...");
       const remainingNeeded = maxResults - allCandidates.length;
       const thirtyDaysAgo = new Date();
       thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-      const pushedSince = thirtyDaysAgo.toISOString().split('T')[0];
-      const categoryTopics = getTopicsForCategories(config.projectCategories ?? []);
-      const topicQuery = categoryTopics.length > 0 ? `topic:${categoryTopics[0]}` : '';
+      const pushedSince = thirtyDaysAgo.toISOString().split("T")[0];
+      const categoryTopics = getTopicsForCategories(
+        config.projectCategories ?? [],
+      );
+      const topicQuery =
+        categoryTopics.length > 0 ? `topic:${categoryTopics[0]}` : "";
       const phase3Query =
         `is:issue is:open no:assignee ${langQuery} ${topicQuery} stars:>=${minStars} pushed:>=${pushedSince} archived:false`
-          .replace(/  +/g, ' ')
+          .replace(/  +/g, " ")
           .trim();
 
       try {
         const data = await cachedSearchIssues(this.octokit, {
           q: phase3Query,
-          sort: 'updated',
-          order: 'desc',
+          sort: "updated",
+          order: "desc",
           per_page: remainingNeeded * 3,
         });
 
@@ -505,17 +604,20 @@ export class IssueDiscovery {
           [phase0RepoSet, starredRepoSet, seenRepos],
           remainingNeeded,
           minStars,
-          'Phase 3',
+          "Phase 3",
         );
 
         allCandidates.push(...starFiltered);
         if (allVetFailed) {
-          phase3Error = 'all vetting failed';
+          phase3Error = "all vetting failed";
         }
         if (vetRateLimitHit) {
           rateLimitHitDuringSearch = true;
         }
-        info(MODULE, `Found ${starFiltered.length} candidates from maintained-repo search`);
+        info(
+          MODULE,
+          `Found ${starFiltered.length} candidates from maintained-repo search`,
+        );
       } catch (error) {
         const errMsg = errorMessage(error);
         phase3Error = errMsg;
@@ -524,12 +626,12 @@ export class IssueDiscovery {
         }
         warn(MODULE, `Error in maintained-repo search: ${errMsg}`);
       }
-      strategiesUsed.push('maintained');
+      strategiesUsed.push("maintained");
     }
 
     // Determine if phases were skipped due to budget constraints
     const phasesSkippedForBudget = searchBudget < LOW_BUDGET_THRESHOLD;
-    let budgetNote = '';
+    let budgetNote = "";
     if (searchBudget < CRITICAL_BUDGET_THRESHOLD) {
       budgetNote = ` Most search phases were skipped due to critically low API quota (${searchBudget} remaining).`;
     } else if (phasesSkippedForBudget) {
@@ -544,7 +646,8 @@ export class IssueDiscovery {
         phase2Error ? `Phase 2 (general): ${phase2Error}` : null,
         phase3Error ? `Phase 3 (maintained repos): ${phase3Error}` : null,
       ].filter(Boolean);
-      const details = phaseErrors.length > 0 ? ` ${phaseErrors.join('. ')}.` : '';
+      const details =
+        phaseErrors.length > 0 ? ` ${phaseErrors.join(". ")}.` : "";
 
       if (rateLimitHitDuringSearch || phasesSkippedForBudget) {
         this.rateLimitWarning =
@@ -555,7 +658,7 @@ export class IssueDiscovery {
 
       throw new ValidationError(
         `No issue candidates found across all search phases.${details} ` +
-          'Try adjusting your search criteria (languages, labels) or check your network connection.',
+          "Try adjusting your search criteria (languages, labels) or check your network connection.",
       );
     }
 
@@ -563,18 +666,26 @@ export class IssueDiscovery {
     if (rateLimitHitDuringSearch || phasesSkippedForBudget) {
       this.rateLimitWarning =
         `Search results may be incomplete: GitHub API rate limits were hit during search.${budgetNote} ` +
-        `Found ${allCandidates.length} candidate${allCandidates.length === 1 ? '' : 's'} but some search phases were limited. ` +
+        `Found ${allCandidates.length} candidate${allCandidates.length === 1 ? "" : "s"} but some search phases were limited. ` +
         `Try again after the rate limit resets for complete results.`;
     }
 
     // Sort by priority first, then by recommendation, then by viability score
     allCandidates.sort((a, b) => {
-      const priorityOrder: Record<SearchPriority, number> = { merged_pr: 0, preferred_org: 1, starred: 2, normal: 3 };
-      const priorityDiff = priorityOrder[a.searchPriority] - priorityOrder[b.searchPriority];
+      const priorityOrder: Record<SearchPriority, number> = {
+        merged_pr: 0,
+        preferred_org: 1,
+        starred: 2,
+        normal: 3,
+      };
+      const priorityDiff =
+        priorityOrder[a.searchPriority] - priorityOrder[b.searchPriority];
       if (priorityDiff !== 0) return priorityDiff;
 
       const recommendationOrder = { approve: 0, needs_review: 1, skip: 2 };
-      const recDiff = recommendationOrder[a.recommendation] - recommendationOrder[b.recommendation];
+      const recDiff =
+        recommendationOrder[a.recommendation] -
+        recommendationOrder[b.recommendation];
       if (recDiff !== 0) return recDiff;
 
       return b.viabilityScore - a.viabilityScore;

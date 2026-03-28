@@ -2,10 +2,10 @@
  * Search command — finds contributable issues using multi-strategy search.
  */
 
-import { createScout } from '../scout.js';
-import { requireGitHubToken } from '../core/utils.js';
-import { saveLocalState } from '../core/local-state.js';
-import type { ScoutState, SearchStrategy } from '../core/schemas.js';
+import { createScout } from "../scout.js";
+import { requireGitHubToken } from "../core/utils.js";
+import { saveLocalState } from "../core/local-state.js";
+import type { ScoutState, SearchStrategy } from "../core/schemas.js";
 
 export interface SearchOutput {
   candidates: Array<{
@@ -17,7 +17,7 @@ export interface SearchOutput {
       url: string;
       labels: string[];
     };
-    recommendation: 'approve' | 'skip' | 'needs_review';
+    recommendation: "approve" | "skip" | "needs_review";
     reasonsToApprove: string[];
     reasonsToSkip: string[];
     searchPriority: string;
@@ -42,12 +42,21 @@ interface SearchCommandOptions {
   strategies?: SearchStrategy[];
 }
 
-export async function runSearch(options: SearchCommandOptions): Promise<SearchOutput> {
+export async function runSearch(
+  options: SearchCommandOptions,
+): Promise<SearchOutput> {
   const token = requireGitHubToken();
   const scout = options.state
-    ? await createScout({ githubToken: token, persistence: 'provided', initialState: options.state })
+    ? await createScout({
+        githubToken: token,
+        persistence: "provided",
+        initialState: options.state,
+      })
     : await createScout({ githubToken: token });
-  const result = await scout.search({ maxResults: options.maxResults, strategies: options.strategies });
+  const result = await scout.search({
+    maxResults: options.maxResults,
+    strategies: options.strategies,
+  });
 
   // Persist results to local state and gist
   scout.saveResults(result.candidates);
