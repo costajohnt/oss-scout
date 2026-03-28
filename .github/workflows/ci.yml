@@ -27,7 +27,6 @@ jobs:
 
       - name: Security audit
         run: pnpm audit --audit-level=high
-        continue-on-error: false
 
       - name: Lint
         run: pnpm run lint
