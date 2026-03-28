@@ -8,6 +8,7 @@ import type {
   IssueVettingResult,
   IssueScope,
   ScoutState,
+  SearchStrategy,
 } from './schemas.js';
 
 // Re-export persisted types for convenience
@@ -24,6 +25,7 @@ export type {
   ScoutPreferences,
   SavedCandidate,
   ScoutState,
+  SearchStrategy,
 } from './schemas.js';
 
 // ── Ephemeral types ─────────────────────────────────────────────────
@@ -109,6 +111,7 @@ export type ScoutConfig =
 /** Options for the search method. */
 export interface SearchOptions {
   maxResults?: number;
+  strategies?: SearchStrategy[];
 }
 
 /** Result of a search operation. */
@@ -117,6 +120,7 @@ export interface SearchResult {
   excludedRepos: string[];
   aiPolicyBlocklist: string[];
   rateLimitWarning?: string;
+  strategiesUsed: string[];
 }
 
 /** Record of a merged PR for state contribution. */

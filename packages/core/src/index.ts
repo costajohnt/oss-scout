@@ -44,6 +44,7 @@ export type {
   ProjectCategory,
   StoredMergedPR,
   StoredClosedPR,
+  SearchStrategy,
 } from './core/schemas.js';
 
 // Schemas (for consumers who need runtime validation)
@@ -53,6 +54,7 @@ export {
   RepoScoreSchema,
   IssueScopeSchema,
   ProjectCategorySchema,
+  SearchStrategySchema,
 } from './core/schemas.js';
 
 // Utilities

@@ -21,6 +21,11 @@ export const ProjectCategorySchema = z.enum([
 
 export const IssueScopeSchema = z.enum(['beginner', 'intermediate', 'advanced']);
 
+export const SearchStrategySchema = z.enum(['merged', 'orgs', 'starred', 'broad', 'maintained', 'all']);
+
+/** All concrete strategies (excludes 'all' meta-strategy). */
+export const CONCRETE_STRATEGIES = ['merged', 'orgs', 'starred', 'broad', 'maintained'] as const;
+
 // ── Leaf schemas ────────────────────────────────────────────────────
 
 export const RepoSignalsSchema = z.object({
@@ -118,6 +123,8 @@ export const SavedCandidateSchema = z.object({
 
 // ── Scout preferences schema ────────────────────────────────────────
 
+export const PersistenceModeSchema = z.enum(['local', 'gist']);
+
 export const ScoutPreferencesSchema = z.object({
   githubUsername: z.string().default(''),
   languages: z.array(z.string()).default(['typescript', 'javascript']),
@@ -131,6 +138,7 @@ export const ScoutPreferencesSchema = z.object({
   maxIssueAgeDays: z.number().default(90),
   includeDocIssues: z.boolean().default(true),
   minRepoScoreThreshold: z.number().default(4),
+  persistence: PersistenceModeSchema.default('local'),
 });
 
 // ── Root state schema ───────────────────────────────────────────────
@@ -161,6 +169,7 @@ export const ScoutStateSchema = z.object({
 export type IssueStatus = z.infer<typeof IssueStatusSchema>;
 export type ProjectCategory = z.infer<typeof ProjectCategorySchema>;
 export type IssueScope = z.infer<typeof IssueScopeSchema>;
+export type SearchStrategy = z.infer<typeof SearchStrategySchema>;
 export type RepoSignals = z.infer<typeof RepoSignalsSchema>;
 export type RepoScore = z.infer<typeof RepoScoreSchema>;
 export type StoredMergedPR = z.infer<typeof StoredMergedPRSchema>;
@@ -170,4 +179,5 @@ export type IssueVettingResult = z.infer<typeof IssueVettingResultSchema>;
 export type TrackedIssue = z.infer<typeof TrackedIssueSchema>;
 export type ScoutPreferences = z.infer<typeof ScoutPreferencesSchema>;
 export type SavedCandidate = z.infer<typeof SavedCandidateSchema>;
+export type PersistenceMode = z.infer<typeof PersistenceModeSchema>;
 export type ScoutState = z.infer<typeof ScoutStateSchema>;

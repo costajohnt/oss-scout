@@ -10,6 +10,8 @@ import { getCLIVersion } from './core/utils.js';
 import { formatJsonSuccess, formatJsonError } from './formatters/json.js';
 import { resolveErrorCode } from './core/errors.js';
 import { hasLocalState, loadLocalState, saveLocalState } from './core/local-state.js';
+import { CONCRETE_STRATEGIES, SearchStrategySchema } from './core/schemas.js';
+import type { SearchStrategy } from './core/schemas.js';
 
 const program = new Command();
 
@@ -90,7 +92,8 @@ program
   .command('search [count]')
   .description('Search for contributable issues using multi-strategy discovery')
   .option('--json', 'Output as JSON')
-  .action(async (count: string | undefined, options: { json?: boolean }) => {
+  .option('--strategy <strategies>', `Search strategies (${CONCRETE_STRATEGIES.join(',')},all)`, 'all')
+  .action(async (count: string | undefined, options: { json?: boolean; strategy?: string }) => {
     try {
       if (!hasLocalState()) {
         console.log('💡 Run `oss-scout setup` to configure your preferences for personalized search results.\n');
@@ -109,7 +112,20 @@ program
       ) {
         console.log('Run `oss-scout bootstrap` to import your starred repos and PR history for better results.\n');
       }
-      const results = await runSearch({ maxResults, state });
+      // Parse --strategy option
+      const strategyTokens = (options.strategy ?? 'all').split(',').map(s => s.trim()).filter(Boolean);
+      const strategies: SearchStrategy[] = [];
+      for (const token of strategyTokens) {
+        const parsed = SearchStrategySchema.safeParse(token);
+        if (!parsed.success) {
+          const valid = [...CONCRETE_STRATEGIES, 'all'].join(', ');
+          console.error('Error: unknown strategy "' + token + '". Valid strategies: ' + valid);
+          process.exit(1);
+        }
+        strategies.push(parsed.data);
+      }
+
+      const results = await runSearch({ maxResults, state, strategies });
       if (options.json) {
         console.log(formatJsonSuccess(results));
       } else {
