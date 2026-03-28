@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest';
 import { runSetup } from './setup.js';
-import type { ScoutPreferences } from '../core/schemas.js';
 
 /**
  * Creates a mock readline interface that answers questions in sequence.
