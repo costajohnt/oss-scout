@@ -4,7 +4,7 @@
 
 import { ValidationError } from '../core/errors.js';
 
-export const ISSUE_URL_PATTERN = /^https:\/\/github\.com\/[^\/]+\/[^\/]+\/issues\/\d+$/;
+export const ISSUE_URL_PATTERN = /^https:\/\/github\.com\/[^/]+\/[^/]+\/issues\/\d+$/;
 
 const MAX_URL_LENGTH = 2048;
 

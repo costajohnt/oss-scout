@@ -161,7 +161,7 @@ export class HttpCache {
             fs.unlinkSync(filePath);
             evicted++;
           }
-        } catch (readErr) {
+        } catch {
           debug(MODULE, `Removing unreadable cache entry ${file}`);
           try {
             fs.unlinkSync(filePath);
