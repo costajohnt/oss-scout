@@ -53,7 +53,6 @@ import {
   searchInRepos,
 } from './search-phases.js';
 import { cachedTimeBased } from './http-cache.js';
-import { detectLabelFarmingRepos } from './issue-filtering.js';
 import { isRateLimitError } from './errors.js';
 import type { Octokit } from '@octokit/rest';
 import type { IssueVetter } from './issue-vetting.js';
@@ -501,7 +500,7 @@ describe('searchWithChunkedLabels', () => {
     const uniqueItem = makeItem('https://github.com/c/d/issues/2', 'c/d');
 
     let callCount = 0;
-    vi.mocked(cachedTimeBased).mockImplementation(async (_cache, _key, _maxAge, fetcher) => {
+    vi.mocked(cachedTimeBased).mockImplementation(async (_cache, _key, _maxAge, _fetcher) => {
       callCount++;
       // Both chunks return the shared item; second chunk also returns unique item
       if (callCount === 1) return { total_count: 1, items: [sharedItem] };
