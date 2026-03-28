@@ -4,7 +4,7 @@
 
 import { createScout } from '../scout.js';
 import { requireGitHubToken } from '../core/utils.js';
-import type { ProjectHealth, IssueCandidate } from '../core/types.js';
+import type { ProjectHealth } from '../core/types.js';
 import type { IssueVettingResult } from '../core/schemas.js';
 import { ISSUE_URL_PATTERN, validateGitHubUrl, validateUrl } from './validation.js';
 

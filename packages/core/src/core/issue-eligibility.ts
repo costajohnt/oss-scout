@@ -3,7 +3,7 @@
  * existing PR detection, claim-phrase scanning, user merge history,
  * and requirement clarity analysis.
  *
- * Extracted from issue-vetting.ts (#621) to isolate eligibility logic.
+ * Extracted from issue-vetting.ts to isolate eligibility logic.
  */
 
 import { Octokit } from '@octokit/rest';

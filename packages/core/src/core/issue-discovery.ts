@@ -9,7 +9,6 @@
  * - repo-health.ts     — project health checks, contribution guidelines
  * - search-phases.ts   — search helpers, caching, batched repo search
  *
- * Unlike oss-autopilot, this module does NOT depend on a StateManager singleton.
  * All state is injected via constructor parameters (ScoutStateReader + ScoutPreferences).
  */
 
@@ -244,9 +243,8 @@ export class IssueDiscovery {
     const mergedPRRepos = this.stateReader.getReposWithMergedPRs();
     const mergedPRRepoSet = new Set(mergedPRRepos);
 
-    // oss-scout doesn't track "open-PR repos" separately — use empty array.
-    // In oss-autopilot this was stateManager.getReposWithOpenPRs(), which derived
-    // repos from PR tracking state that oss-scout doesn't maintain.
+    // oss-scout doesn't track open PRs — this is always empty.
+    // The pipeline still accepts this array so Phase 0 can process repos from multiple sources.
     const openPRRepos: string[] = [];
 
     // Get starred repos (from local cache or state reader)
@@ -258,7 +256,7 @@ export class IssueDiscovery {
     const lowScoringRepos = new Set(this.deriveLowScoringRepos(minRepoScoreThreshold));
 
     // Common filters
-    // oss-scout doesn't track active issues — no trackedUrls to exclude
+    // No active issue tracking — nothing to exclude
     const trackedUrls = new Set<string>();
     const excludedRepos = new Set(config.excludeRepos);
     const maxAgeDays = config.maxIssueAgeDays || 90;

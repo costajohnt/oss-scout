@@ -5,11 +5,9 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { execFileSync, execFile } from 'child_process';
+import { execFileSync } from 'child_process';
 import { ConfigurationError } from './errors.js';
 import { debug } from './logger.js';
-
-export const DEFAULT_CONCURRENCY = 5;
 
 export function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -26,14 +24,6 @@ export function getDataDir(): string {
     fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
   }
   return dir;
-}
-
-export function getGistIdPath(): string {
-  return path.join(getDataDir(), 'gist-id');
-}
-
-export function getStateCachePath(): string {
-  return path.join(getDataDir(), 'state-cache.json');
 }
 
 export function getCacheDir(): string {
@@ -80,16 +70,6 @@ export function parseGitHubUrl(url: string): ParsedGitHubUrl | null {
   return null;
 }
 
-export function extractOwnerRepo(url: string): { owner: string; repo: string } | null {
-  if (!url.startsWith('https://github.com/')) return null;
-  const match = url.match(/github\.com\/([^/]+)\/([^/]+)/);
-  if (!match) return null;
-  const owner = match[1];
-  const repo = match[2];
-  if (!isValidOwnerRepo(owner, repo)) return null;
-  return { owner, repo };
-}
-
 export function daysBetween(from: Date, to: Date = new Date()): number {
   return Math.max(0, Math.floor((to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24)));
 }
@@ -102,10 +82,6 @@ export function splitRepo(repoFullName: string): { owner: string; repo: string }
   return { owner, repo };
 }
 
-export function isOwnRepo(owner: string, username: string): boolean {
-  return owner.toLowerCase() === username.toLowerCase();
-}
-
 export function getCLIVersion(): string {
   try {
     const pkgPath = path.join(path.dirname(process.argv[1]), '..', 'package.json');
@@ -113,19 +89,6 @@ export function getCLIVersion(): string {
   } catch {
     return '0.0.0';
   }
-}
-
-export function formatRelativeTime(dateStr: string): string {
-  const date = new Date(dateStr);
-  const diffMs = Date.now() - date.getTime();
-  if (diffMs < 0) return 'just now';
-  const diffMins = Math.floor(diffMs / 60000);
-  const diffHours = Math.floor(diffMs / 3600000);
-  const diffDays = Math.floor(diffMs / 86400000);
-  if (diffMins < 60) return `${diffMins}m ago`;
-  if (diffHours < 24) return `${diffHours}h ago`;
-  if (diffDays < 30) return `${diffDays}d ago`;
-  return date.toLocaleDateString();
 }
 
 export function getGitHubToken(): string | null {
@@ -168,60 +131,4 @@ export function requireGitHubToken(): string {
     );
   }
   return token;
-}
-
-export function resetGitHubTokenCache(): void {
-  cachedGitHubToken = null;
-  tokenFetchAttempted = false;
-}
-
-export async function getGitHubTokenAsync(): Promise<string | null> {
-  if (cachedGitHubToken) return cachedGitHubToken;
-  if (tokenFetchAttempted) return null;
-  tokenFetchAttempted = true;
-
-  if (process.env.GITHUB_TOKEN) {
-    cachedGitHubToken = process.env.GITHUB_TOKEN;
-    return cachedGitHubToken;
-  }
-
-  try {
-    const token = await new Promise<string>((resolve, reject) => {
-      execFile('gh', ['auth', 'token'], { encoding: 'utf-8', timeout: 2000 }, (error, stdout) => {
-        if (error) reject(error);
-        else resolve(stdout.trim());
-      });
-    });
-    if (token && token.length > 0) {
-      cachedGitHubToken = token;
-      debug(MODULE, 'Using GitHub token from gh CLI (async)');
-      return cachedGitHubToken;
-    }
-  } catch (err) {
-    debug(MODULE, 'gh auth token failed', err);
-  }
-
-  return null;
-}
-
-const GITHUB_USERNAME_RE = /^[a-zA-Z0-9](?:[a-zA-Z0-9]|-(?=[a-zA-Z0-9])){0,38}$/;
-
-export async function detectGitHubUsername(): Promise<string | null> {
-  try {
-    const login = await new Promise<string>((resolve, reject) => {
-      execFile('gh', ['api', 'user', '--jq', '.login'], { encoding: 'utf-8', timeout: 5000 }, (error, stdout) => {
-        if (error) reject(error);
-        else resolve(stdout.trim());
-      });
-    });
-    if (login && GITHUB_USERNAME_RE.test(login)) {
-      debug(MODULE, `Detected GitHub username: ${login}`);
-      return login;
-    }
-    debug(MODULE, `gh api user returned invalid username: "${login}"`);
-    return null;
-  } catch (err) {
-    debug(MODULE, 'detectGitHubUsername failed', err);
-    return null;
-  }
 }

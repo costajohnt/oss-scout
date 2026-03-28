@@ -1,7 +1,7 @@
 /**
  * Search Phases — utilities and infrastructure for multi-phase issue search.
  *
- * Extracted from issue-discovery.ts (#621) to isolate search helpers,
+ * Extracted from issue-discovery.ts to isolate search helpers,
  * caching, spam-filtering, and batched repo search logic.
  */
 

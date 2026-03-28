@@ -26,18 +26,6 @@ export class ValidationError extends OssScoutError {
   }
 }
 
-export class GistPermissionError extends ConfigurationError {
-  constructor(message?: string) {
-    super(
-      message ??
-        'Your GitHub token does not have Gist permissions. ' +
-          'Run `gh auth refresh -s gist` to add the required scope, ' +
-          'or create a token with the "gist" scope.',
-    );
-    this.name = 'GistPermissionError';
-  }
-}
-
 export function errorMessage(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
@@ -56,16 +44,6 @@ export function isRateLimitError(error: unknown): boolean {
   if (status === 403) {
     const msg = errorMessage(error).toLowerCase();
     return msg.includes('rate limit');
-  }
-  return false;
-}
-
-export function isRateLimitOrAuthError(err: unknown): boolean {
-  const status = getHttpStatusCode(err);
-  if (status === 401 || status === 429) return true;
-  if (status === 403) {
-    const msg = errorMessage(err).toLowerCase();
-    return msg.includes('rate limit') || msg.includes('abuse detection');
   }
   return false;
 }

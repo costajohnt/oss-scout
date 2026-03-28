@@ -1,7 +1,7 @@
 /**
  * Issue Filtering — pure functions for filtering and spam detection on search results.
  *
- * Extracted from issue-discovery.ts (#356) to isolate filtering logic:
+ * Extracted from issue-discovery.ts to isolate filtering logic:
  * label farming detection, doc-only filtering, per-repo caps, templated title detection.
  */
 
@@ -15,11 +15,11 @@ export interface GitHubSearchItem {
   [key: string]: unknown;
 }
 
-/** Labels that indicate documentation-only issues (#105). */
+/** Labels that indicate documentation-only issues. */
 export const DOC_ONLY_LABELS = new Set(['documentation', 'docs', 'typo', 'spelling']);
 
 /**
- * Check if an issue's labels are ALL documentation-related (#105).
+ * Check if an issue's labels are ALL documentation-related.
  * Issues with mixed labels (e.g., "good first issue" + "documentation") pass through.
  * Issues with no labels are not considered doc-only.
  */
@@ -32,7 +32,7 @@ export function isDocOnlyIssue(item: GitHubSearchItem): boolean {
   return nonEmptyLabels.every((n) => DOC_ONLY_LABELS.has(n));
 }
 
-/** Known beginner-type label names used to detect label-farming repos (#97). */
+/** Known beginner-type label names used to detect label-farming repos. */
 export const BEGINNER_LABELS = new Set([
   'good first issue',
   'hacktoberfest',
@@ -67,7 +67,7 @@ export function hasTemplatedTitle(title: string): boolean {
 }
 
 /**
- * Batch-analyze search items to detect label-farming repositories (#97).
+ * Batch-analyze search items to detect label-farming repositories.
  * Returns a Set of repo full names (owner/repo) that appear to be spam.
  *
  * A repo is flagged if:
@@ -104,7 +104,7 @@ export function detectLabelFarmingRepos(items: GitHubSearchItem[]): Set<string> 
 }
 
 /**
- * Apply per-repo cap to candidates (#105).
+ * Apply per-repo cap to candidates.
  * Keeps at most `maxPerRepo` issues from any single repo.
  * Maintains the existing sort order — first N from each repo are kept,
  * excess issues from over-represented repos are dropped.

@@ -14,21 +14,17 @@ import type {
   ScoutState,
   ScoutPreferences,
   RepoScore,
-  StoredMergedPR,
-  StoredClosedPR,
 } from './core/schemas.js';
 import type {
   ScoutConfig,
   SearchOptions,
   SearchResult,
-  VetListOptions,
   IssueCandidate,
   MergedPRRecord,
   ClosedPRRecord,
   RepoScoreUpdate,
   ProjectCategory,
 } from './core/types.js';
-import { splitRepo } from './core/utils.js';
 
 /**
  * Create an OssScout instance.
@@ -43,7 +39,7 @@ import { splitRepo } from './core/utils.js';
  * // Standalone with gist persistence (default)
  * const scout = await createScout({ githubToken: 'ghp_...' });
  *
- * // As a library (OSS Autopilot provides state)
+ * // As a library (host application provides state)
  * const scout = await createScout({
  *   githubToken: 'ghp_...',
  *   persistence: 'provided',
@@ -55,12 +51,9 @@ export async function createScout(config: ScoutConfig): Promise<OssScout> {
   let state: ScoutState;
 
   if (config.persistence === 'provided') {
-    if (!config.initialState) {
-      throw new Error('initialState is required when persistence is "provided"');
-    }
     state = config.initialState;
   } else {
-    // Default: use local state for now (gist persistence added in Phase 3)
+    // Default: use local state (gist persistence not yet implemented)
     state = ScoutStateSchema.parse({ version: 1 });
   }
 
@@ -244,18 +237,18 @@ export class OssScout implements ScoutStateReader {
 
   /**
    * Push pending changes to the persistence layer.
-   * Currently a no-op placeholder — gist persistence added in Phase 3.
+   * Currently a no-op — gist persistence not yet implemented.
    */
   async checkpoint(): Promise<boolean> {
     if (!this.dirty) return true;
-    // Phase 3: push to gist here
+    // TODO: implement gist-backed persistence
     this.state.lastRunAt = new Date().toISOString();
     this.dirty = false;
     return true;
   }
 
   /**
-   * Get the full state snapshot (for OSS Autopilot to read or for serialization).
+   * Get the full state snapshot for serialization or external consumption.
    */
   getState(): Readonly<ScoutState> {
     return this.state;
@@ -289,8 +282,8 @@ export class OssScout implements ScoutStateReader {
 
   /**
    * Calculate repo score (1-10) from observed data.
-   * Scoring: base 5, +1 per merged PR (max +3), -1 per closed-without-merge,
-   * +1 for responsive, +1 for active maintainers, clamped 1-10.
+   * base 5, +1 per merged PR (max +3), -1 per closed-without-merge (max -3),
+   * +1 responsive, +1 active maintainers, -2 hostile comments, clamped 1-10
    */
   private calculateScore(repoScore: RepoScore): number {
     let score = 5;

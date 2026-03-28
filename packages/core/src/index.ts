@@ -23,7 +23,6 @@ export type {
   ScoutConfig,
   SearchOptions,
   SearchResult,
-  VetListOptions,
   IssueCandidate,
   MergedPRRecord,
   ClosedPRRecord,

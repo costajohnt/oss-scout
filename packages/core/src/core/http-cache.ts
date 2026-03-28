@@ -14,8 +14,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import { getCacheDir } from './utils.js';
-import { debug } from './logger.js';
-import { getHttpStatusCode } from './errors.js';
+import { debug, warn } from './logger.js';
+import { errorMessage, getHttpStatusCode } from './errors.js';
 
 const MODULE = 'http-cache';
 
@@ -89,7 +89,15 @@ export class HttpCache {
         return null;
       }
       return entry;
-    } catch {
+    } catch (err: unknown) {
+      const code = (err as NodeJS.ErrnoException)?.code;
+      if (code === 'ENOENT') return null;
+      if (err instanceof SyntaxError) {
+        debug(MODULE, `Corrupt cache entry, deleting: ${url}`);
+        try { fs.unlinkSync(filePath); } catch { /* best effort */ }
+        return null;
+      }
+      warn(MODULE, `Cache read failed for ${url}: ${errorMessage(err)}`);
       return null;
     }
   }
@@ -140,7 +148,7 @@ export class HttpCache {
 
   /**
    * Remove stale entries older than `maxAgeMs` from the cache directory.
-   * Intended to be called periodically (e.g., once per daily run).
+   * Intended to be called periodically (e.g., once per search invocation).
    */
   evictStale(maxAgeMs: number = DEFAULT_MAX_AGE_MS): number {
     let evicted = 0;
@@ -159,17 +167,16 @@ export class HttpCache {
             evicted++;
           }
         } catch {
-          // Corrupt entry — remove it
-          try {
-            fs.unlinkSync(filePath);
-            evicted++;
-          } catch {
-            // Ignore
-          }
+          // Corrupt entry — delete it
+          try { fs.unlinkSync(filePath); } catch { /* best effort */ }
+          evicted++;
         }
       }
-    } catch {
-      // Cache dir might not exist yet — that's fine
+    } catch (err: unknown) {
+      const code = (err as NodeJS.ErrnoException)?.code;
+      if (code !== 'ENOENT') {
+        warn(MODULE, `Failed to evict stale cache entries: ${errorMessage(err)}`);
+      }
     }
     if (evicted > 0) {
       debug(MODULE, `Evicted ${evicted} stale cache entries`);
@@ -188,8 +195,11 @@ export class HttpCache {
         fs.unlinkSync(path.join(this.cacheDir, file));
       }
       debug(MODULE, 'Cache cleared');
-    } catch {
-      // Cache dir might not exist yet — that's fine
+    } catch (err: unknown) {
+      const code = (err as NodeJS.ErrnoException)?.code;
+      if (code !== 'ENOENT') {
+        warn(MODULE, `Failed to clear cache: ${errorMessage(err)}`);
+      }
     }
   }
 
@@ -199,7 +209,11 @@ export class HttpCache {
   size(): number {
     try {
       return fs.readdirSync(this.cacheDir).filter((f) => f.endsWith('.json')).length;
-    } catch {
+    } catch (err: unknown) {
+      const code = (err as NodeJS.ErrnoException)?.code;
+      if (code !== 'ENOENT') {
+        debug(MODULE, `Failed to read cache size: ${errorMessage(err)}`);
+      }
       return 0;
     }
   }

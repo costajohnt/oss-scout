@@ -43,8 +43,7 @@ packages/core/src/
 │   ├── utils.ts          # Shared utilities
 │   ├── logger.ts         # Debug/info/warn logger
 │   ├── errors.ts         # Error hierarchy
-│   ├── pagination.ts     # Auto-pagination helper
-│   └── concurrency.ts    # Worker pool
+│   └── pagination.ts     # Auto-pagination helper
 └── formatters/
     └── json.ts           # JSON output formatter
 ```

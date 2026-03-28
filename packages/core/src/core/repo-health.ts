@@ -1,7 +1,7 @@
 /**
  * Repo Health — project health checks and contribution guidelines fetching.
  *
- * Extracted from issue-vetting.ts (#621) to isolate repo-level checks
+ * Extracted from issue-vetting.ts to isolate repo-level checks
  * from issue-level eligibility logic.
  */
 
@@ -99,7 +99,7 @@ export async function checkProjectHealth(octokit: Octokit, owner: string, repo: 
           per_page: 1,
         });
         if (workflows.total_count > 0) {
-          ciStatus = 'passing'; // Assume passing if workflows exist
+          ciStatus = 'unknown'; // Workflows exist but run status not checked
         }
       } catch (error) {
         const errMsg = errorMessage(error);

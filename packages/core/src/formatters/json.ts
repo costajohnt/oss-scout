@@ -2,15 +2,7 @@
  * JSON output formatter for oss-scout CLI.
  */
 
-export type ErrorCode =
-  | 'AUTH_REQUIRED'
-  | 'CONFIGURATION'
-  | 'NETWORK'
-  | 'NOT_FOUND'
-  | 'RATE_LIMITED'
-  | 'STATE_CORRUPTED'
-  | 'UNKNOWN'
-  | 'VALIDATION';
+import type { ErrorCode } from '../core/errors.js';
 
 export interface JsonOutput<T = unknown> {
   success: boolean;

@@ -1,13 +1,13 @@
 /**
  * Issue Scoring — pure functions for computing viability scores and quality bonuses.
  *
- * Extracted from issue-discovery.ts (#356) to isolate scoring logic.
+ * Extracted from issue-discovery.ts to isolate scoring logic.
  */
 
 import { daysBetween } from './utils.js';
 
 /**
- * Calculate a quality bonus based on repo star and fork counts (#98).
+ * Calculate a quality bonus based on repo star and fork counts.
  * Stars: <50 -> 0, 50-499 -> +3, 500-4999 -> +5, 5000+ -> +8
  * Forks: 50+ -> +2, 500+ -> +4
  * Natural max is 12 (8 stars + 4 forks).
@@ -47,8 +47,8 @@ export interface ViabilityScoreParams {
  * Scoring:
  * - Base: 50 points
  * - +repoScore*2 (up to +20 for score of 10)
- * - +repoQualityBonus (up to +12 for established repos, from star/fork counts) (#98)
- * - +15 for merged PR in this repo (direct proven relationship) (#99)
+ * - +repoQualityBonus (up to +12 for established repos, from star/fork counts)
+ * - +15 for merged PR in this repo (direct proven relationship)
  * - +15 for clear requirements (clarity)
  * - +15 for freshness (recently updated)
  * - +10 for contribution guidelines
@@ -66,10 +66,10 @@ export function calculateViabilityScore(params: ViabilityScoreParams): number {
     score += params.repoScore * 2;
   }
 
-  // Repo quality bonus from star/fork counts (#98, up to +12)
+  // Repo quality bonus from star/fork counts (up to +12)
   score += params.repoQualityBonus ?? 0;
 
-  // Merged PR bonus (+15) — direct proven relationship with this repo (#99)
+  // Merged PR bonus (+15) — direct proven relationship with this repo
   if (params.mergedPRCount > 0) {
     score += 15;
   }
