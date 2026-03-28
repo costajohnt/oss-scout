@@ -6,33 +6,33 @@
  * Extracted from issue-vetting.ts to isolate eligibility logic.
  */
 
-import { Octokit } from '@octokit/rest';
-import { paginateAll } from './pagination.js';
-import { errorMessage } from './errors.js';
-import { warn } from './logger.js';
-import { getHttpCache } from './http-cache.js';
-import { getSearchBudgetTracker } from './search-budget.js';
-import type { CheckResult } from './types.js';
+import { Octokit } from "@octokit/rest";
+import { paginateAll } from "./pagination.js";
+import { errorMessage } from "./errors.js";
+import { warn } from "./logger.js";
+import { getHttpCache } from "./http-cache.js";
+import { getSearchBudgetTracker } from "./search-budget.js";
+import type { CheckResult } from "./types.js";
 
-const MODULE = 'issue-eligibility';
+const MODULE = "issue-eligibility";
 
 /** Phrases that indicate someone has already claimed an issue. */
 const CLAIM_PHRASES = [
   "i'm working on this",
-  'i am working on this',
+  "i am working on this",
   "i'll take this",
-  'i will take this',
-  'working on it',
+  "i will take this",
+  "working on it",
   "i'd like to work on",
-  'i would like to work on',
-  'can i work on',
-  'may i work on',
-  'assigned to me',
+  "i would like to work on",
+  "can i work on",
+  "may i work on",
+  "assigned to me",
   "i'm on it",
   "i'll submit a pr",
-  'i will submit a pr',
-  'working on a fix',
-  'working on a pr',
+  "i will submit a pr",
+  "working on a fix",
+  "working on a pr",
 ] as const;
 
 /**
@@ -63,8 +63,11 @@ export async function checkNoExistingPR(
     );
 
     const linkedPRs = timeline.filter((event) => {
-      const e = event as { event?: string; source?: { issue?: { pull_request?: unknown } } };
-      return e.event === 'cross-referenced' && e.source?.issue?.pull_request;
+      const e = event as {
+        event?: string;
+        source?: { issue?: { pull_request?: unknown } };
+      };
+      return e.event === "cross-referenced" && e.source?.issue?.pull_request;
     });
 
     return { passed: linkedPRs.length === 0 };
@@ -87,7 +90,11 @@ const MERGED_PR_CACHE_TTL_MS = 15 * 60 * 1000;
  * Results are cached per-repo for 15 minutes to avoid redundant Search API
  * calls when multiple issues from the same repo are vetted.
  */
-export async function checkUserMergedPRsInRepo(octokit: Octokit, owner: string, repo: string): Promise<number> {
+export async function checkUserMergedPRsInRepo(
+  octokit: Octokit,
+  owner: string,
+  repo: string,
+): Promise<number> {
   const cache = getHttpCache();
   const cacheKey = `merged-prs:${owner}/${repo}`;
 
@@ -95,7 +102,7 @@ export async function checkUserMergedPRsInRepo(octokit: Octokit, owner: string, 
   // error-path fallback values (a transient failure returning 0 would poison the
   // cache for 15 minutes, hiding that the user has merged PRs in the repo).
   const cached = cache.getIfFresh(cacheKey, MERGED_PR_CACHE_TTL_MS);
-  if (cached != null && typeof cached === 'number') {
+  if (cached != null && typeof cached === "number") {
     return cached;
   }
 
@@ -109,7 +116,7 @@ export async function checkUserMergedPRsInRepo(octokit: Octokit, owner: string, 
         per_page: 1, // We only need total_count
       });
       // Only cache successful results
-      cache.set(cacheKey, '', data.total_count);
+      cache.set(cacheKey, "", data.total_count);
       return data.total_count;
     } finally {
       // Always record the call — failed requests still consume GitHub rate limit points
@@ -117,7 +124,10 @@ export async function checkUserMergedPRsInRepo(octokit: Octokit, owner: string, 
     }
   } catch (error) {
     const errMsg = errorMessage(error);
-    warn(MODULE, `Could not check merged PRs in ${owner}/${repo}: ${errMsg}. Defaulting to 0.`);
+    warn(
+      MODULE,
+      `Could not check merged PRs in ${owner}/${repo}: ${errMsg}. Defaulting to 0.`,
+    );
     return 0; // Not cached — next call will retry
   }
 }
@@ -152,7 +162,7 @@ export async function checkNotClaimed(
     const recentComments = comments.slice(-100);
 
     for (const comment of recentComments) {
-      const body = (comment.body || '').toLowerCase();
+      const body = (comment.body || "").toLowerCase();
       if (CLAIM_PHRASES.some((phrase) => body.includes(phrase))) {
         return { passed: false };
       }
@@ -161,7 +171,10 @@ export async function checkNotClaimed(
     return { passed: true };
   } catch (error) {
     const errMsg = errorMessage(error);
-    warn(MODULE, `Failed to check claim status on ${owner}/${repo}#${issueNumber}: ${errMsg}. Assuming not claimed.`);
+    warn(
+      MODULE,
+      `Failed to check claim status on ${owner}/${repo}#${issueNumber}: ${errMsg}. Assuming not claimed.`,
+    );
     return { passed: true, inconclusive: true, reason: errMsg };
   }
 }
@@ -180,6 +193,11 @@ export function analyzeRequirements(body: string): boolean {
   const hasExpectedBehavior = /expect|should|must|want/i.test(body);
 
   // Must have at least two indicators of clarity
-  const indicators = [hasSteps, hasCodeBlock, hasExpectedBehavior, body.length > 200];
+  const indicators = [
+    hasSteps,
+    hasCodeBlock,
+    hasExpectedBehavior,
+    body.length > 200,
+  ];
   return indicators.filter(Boolean).length >= 2;
 }

@@ -4,27 +4,49 @@
  * This file is the single source of truth for persisted type shapes.
  * Types are inferred via `z.infer<>` at the bottom.
  */
-import { z } from 'zod';
+import { z } from "zod";
 
 // ── Enum schemas ────────────────────────────────────────────────────
 
-export const IssueStatusSchema = z.enum(['candidate', 'claimed', 'in_progress', 'pr_submitted']);
-
-export const ProjectCategorySchema = z.enum([
-  'nonprofit',
-  'devtools',
-  'infrastructure',
-  'web-frameworks',
-  'data-ml',
-  'education',
+export const IssueStatusSchema = z.enum([
+  "candidate",
+  "claimed",
+  "in_progress",
+  "pr_submitted",
 ]);
 
-export const IssueScopeSchema = z.enum(['beginner', 'intermediate', 'advanced']);
+export const ProjectCategorySchema = z.enum([
+  "nonprofit",
+  "devtools",
+  "infrastructure",
+  "web-frameworks",
+  "data-ml",
+  "education",
+]);
 
-export const SearchStrategySchema = z.enum(['merged', 'orgs', 'starred', 'broad', 'maintained', 'all']);
+export const IssueScopeSchema = z.enum([
+  "beginner",
+  "intermediate",
+  "advanced",
+]);
+
+export const SearchStrategySchema = z.enum([
+  "merged",
+  "orgs",
+  "starred",
+  "broad",
+  "maintained",
+  "all",
+]);
 
 /** All concrete strategies (excludes 'all' meta-strategy). */
-export const CONCRETE_STRATEGIES = ['merged', 'orgs', 'starred', 'broad', 'maintained'] as const;
+export const CONCRETE_STRATEGIES = [
+  "merged",
+  "orgs",
+  "starred",
+  "broad",
+  "maintained",
+] as const;
 
 // ── Leaf schemas ────────────────────────────────────────────────────
 
@@ -113,7 +135,7 @@ export const SavedCandidateSchema = z.object({
   number: z.number(),
   title: z.string(),
   labels: z.array(z.string()),
-  recommendation: z.enum(['approve', 'skip', 'needs_review']),
+  recommendation: z.enum(["approve", "skip", "needs_review"]),
   viabilityScore: z.number(),
   searchPriority: z.string(),
   firstSeenAt: z.string(),
@@ -123,23 +145,23 @@ export const SavedCandidateSchema = z.object({
 
 // ── Scout preferences schema ────────────────────────────────────────
 
-export const PersistenceModeSchema = z.enum(['local', 'gist']);
+export const PersistenceModeSchema = z.enum(["local", "gist"]);
 
 export const ScoutPreferencesSchema = z.object({
-  githubUsername: z.string().default(''),
-  languages: z.array(z.string()).default(['typescript', 'javascript']),
-  labels: z.array(z.string()).default(['good first issue', 'help wanted']),
+  githubUsername: z.string().default(""),
+  languages: z.array(z.string()).default(["typescript", "javascript"]),
+  labels: z.array(z.string()).default(["good first issue", "help wanted"]),
   scope: z.array(IssueScopeSchema).optional(),
   excludeRepos: z.array(z.string()).default([]),
   excludeOrgs: z.array(z.string()).default([]),
-  aiPolicyBlocklist: z.array(z.string()).default(['matplotlib/matplotlib']),
+  aiPolicyBlocklist: z.array(z.string()).default(["matplotlib/matplotlib"]),
   preferredOrgs: z.array(z.string()).default([]),
   projectCategories: z.array(ProjectCategorySchema).default([]),
   minStars: z.number().default(50),
   maxIssueAgeDays: z.number().default(90),
   includeDocIssues: z.boolean().default(true),
   minRepoScoreThreshold: z.number().default(4),
-  persistence: PersistenceModeSchema.default('local'),
+  persistence: PersistenceModeSchema.default("local"),
   defaultStrategy: z.array(SearchStrategySchema).optional(),
 });
 
@@ -148,7 +170,9 @@ export const ScoutPreferencesSchema = z.object({
 export const ScoutStateSchema = z.object({
   version: z.literal(1),
 
-  preferences: ScoutPreferencesSchema.default(() => ScoutPreferencesSchema.parse({})),
+  preferences: ScoutPreferencesSchema.default(() =>
+    ScoutPreferencesSchema.parse({}),
+  ),
 
   repoScores: z.record(z.string(), RepoScoreSchema).default({}),
 
@@ -176,7 +200,9 @@ export type RepoSignals = z.infer<typeof RepoSignalsSchema>;
 export type RepoScore = z.infer<typeof RepoScoreSchema>;
 export type StoredMergedPR = z.infer<typeof StoredMergedPRSchema>;
 export type StoredClosedPR = z.infer<typeof StoredClosedPRSchema>;
-export type ContributionGuidelines = z.infer<typeof ContributionGuidelinesSchema>;
+export type ContributionGuidelines = z.infer<
+  typeof ContributionGuidelinesSchema
+>;
 export type IssueVettingResult = z.infer<typeof IssueVettingResultSchema>;
 export type TrackedIssue = z.infer<typeof TrackedIssueSchema>;
 export type PersistenceMode = z.infer<typeof PersistenceModeSchema>;

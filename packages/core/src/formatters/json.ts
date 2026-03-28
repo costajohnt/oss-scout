@@ -2,7 +2,7 @@
  * JSON output formatter for oss-scout CLI.
  */
 
-import type { ErrorCode } from '../core/errors.js';
+import type { ErrorCode } from "../core/errors.js";
 
 interface JsonOutput<T = unknown> {
   success: boolean;

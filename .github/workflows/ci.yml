@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        node-version: [20, 22]
+        node-version: [20, 22, 24]
 
     steps:
       - uses: actions/checkout@v4
@@ -27,13 +27,15 @@ jobs:
 
       - name: Security audit
         run: pnpm audit --audit-level=high
-        continue-on-error: true
-
-      - name: Typecheck
-        run: pnpm --filter @oss-scout/core run typecheck
 
       - name: Lint
         run: pnpm run lint
+
+      - name: Format check
+        run: pnpm run format:check
+
+      - name: Typecheck
+        run: pnpm --filter @oss-scout/core run typecheck
 
       - name: Test with coverage
         run: pnpm --filter @oss-scout/core run test:coverage

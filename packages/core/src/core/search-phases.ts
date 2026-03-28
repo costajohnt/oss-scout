@@ -5,17 +5,25 @@
  * caching, spam-filtering, and batched repo search logic.
  */
 
-import { Octokit } from '@octokit/rest';
-import { type SearchPriority, type IssueCandidate, type IssueScope, SCOPE_LABELS } from './types.js';
-import { errorMessage, isRateLimitError } from './errors.js';
-import { debug, warn } from './logger.js';
-import { getHttpCache, cachedTimeBased } from './http-cache.js';
-import { type GitHubSearchItem, detectLabelFarmingRepos } from './issue-filtering.js';
-import { IssueVetter } from './issue-vetting.js';
-import { sleep } from './utils.js';
-import { getSearchBudgetTracker } from './search-budget.js';
+import { Octokit } from "@octokit/rest";
+import {
+  type SearchPriority,
+  type IssueCandidate,
+  type IssueScope,
+  SCOPE_LABELS,
+} from "./types.js";
+import { errorMessage, isRateLimitError } from "./errors.js";
+import { debug, warn } from "./logger.js";
+import { getHttpCache, cachedTimeBased } from "./http-cache.js";
+import {
+  type GitHubSearchItem,
+  detectLabelFarmingRepos,
+} from "./issue-filtering.js";
+import { IssueVetter } from "./issue-vetting.js";
+import { extractRepoFromUrl, sleep } from "./utils.js";
+import { getSearchBudgetTracker } from "./search-budget.js";
 
-const MODULE = 'search-phases';
+const MODULE = "search-phases";
 
 /** GitHub Search API enforces a max of 5 AND/OR/NOT operators per query. */
 const GITHUB_MAX_BOOLEAN_OPS = 5;
@@ -64,13 +72,16 @@ function chunkLabels(labels: string[], reservedOps: number = 0): string[][] {
 
 /** Build a GitHub Search API label filter from a list of labels. */
 function buildLabelQuery(labels: string[]): string {
-  if (labels.length === 0) return '';
+  if (labels.length === 0) return "";
   if (labels.length === 1) return `label:"${labels[0]}"`;
-  return `(${labels.map((l) => `label:"${l}"`).join(' OR ')})`;
+  return `(${labels.map((l) => `label:"${l}"`).join(" OR ")})`;
 }
 
 /** Resolve scope tiers into a flat label list, merged with custom labels. */
-export function buildEffectiveLabels(scopes: IssueScope[], customLabels: string[]): string[] {
+export function buildEffectiveLabels(
+  scopes: IssueScope[],
+  customLabels: string[],
+): string[] {
   const labels = new Set<string>();
   for (const scope of scopes) {
     for (const label of SCOPE_LABELS[scope] ?? []) labels.add(label);
@@ -114,23 +125,28 @@ export async function cachedSearchIssues(
   octokit: Octokit,
   params: {
     q: string;
-    sort: 'created' | 'updated' | 'comments' | 'reactions' | 'interactions';
-    order: 'asc' | 'desc';
+    sort: "created" | "updated" | "comments" | "reactions" | "interactions";
+    order: "asc" | "desc";
     per_page: number;
   },
 ): Promise<{ total_count: number; items: GitHubSearchItem[] }> {
   const cacheKey = `search:${params.q}:${params.sort}:${params.order}:${params.per_page}`;
-  return cachedTimeBased(getHttpCache(), cacheKey, SEARCH_CACHE_TTL_MS, async () => {
-    const tracker = getSearchBudgetTracker();
-    await tracker.waitForBudget();
-    try {
-      const { data } = await octokit.search.issuesAndPullRequests(params);
-      return data;
-    } finally {
-      // Always record the call — failed requests still consume GitHub rate limit points
-      tracker.recordCall();
-    }
-  });
+  return cachedTimeBased(
+    getHttpCache(),
+    cacheKey,
+    SEARCH_CACHE_TTL_MS,
+    async () => {
+      const tracker = getSearchBudgetTracker();
+      await tracker.waitForBudget();
+      try {
+        const { data } = await octokit.search.issuesAndPullRequests(params);
+        return data;
+      } finally {
+        // Always record the call — failed requests still consume GitHub rate limit points
+        tracker.recordCall();
+      }
+    },
+  );
 }
 
 // ── Search infrastructure ──
@@ -165,8 +181,8 @@ export async function searchWithChunkedLabels(
     const query = buildQuery(buildLabelQuery(labelChunks[i]));
     const data = await cachedSearchIssues(octokit, {
       q: query,
-      sort: 'created',
-      order: 'desc',
+      sort: "created",
+      order: "desc",
       per_page: perPage,
     });
 
@@ -193,26 +209,36 @@ export async function filterVetAndScore(
   remainingNeeded: number,
   minStars: number,
   phaseLabel: string,
-): Promise<{ candidates: IssueCandidate[]; allVetFailed: boolean; rateLimitHit: boolean }> {
+): Promise<{
+  candidates: IssueCandidate[];
+  allVetFailed: boolean;
+  rateLimitHit: boolean;
+}> {
   const spamRepos = detectLabelFarmingRepos(items);
   if (spamRepos.size > 0) {
-    const spamCount = items.filter((i) => spamRepos.has(i.repository_url.split('/').slice(-2).join('/'))).length;
+    const spamCount = items.filter((i) =>
+      spamRepos.has(extractRepoFromUrl(i.repository_url) ?? ""),
+    ).length;
     debug(
       MODULE,
-      `[SPAM_FILTER] Filtered ${spamCount} issues from ${spamRepos.size} label-farming repos: ${[...spamRepos].join(', ')}`,
+      `[SPAM_FILTER] Filtered ${spamCount} issues from ${spamRepos.size} label-farming repos: ${[...spamRepos].join(", ")}`,
     );
   }
 
   const itemsToVet = filterIssues(items)
     .filter((item) => {
-      const repoFullName = item.repository_url.split('/').slice(-2).join('/');
+      const repoFullName = extractRepoFromUrl(item.repository_url);
+      if (!repoFullName) return false;
       if (spamRepos.has(repoFullName)) return false;
       return excludedRepoSets.every((s) => !s.has(repoFullName));
     })
     .slice(0, remainingNeeded * 2);
 
   if (itemsToVet.length === 0) {
-    debug(MODULE, `[${phaseLabel}] All ${items.length} items filtered before vetting`);
+    debug(
+      MODULE,
+      `[${phaseLabel}] All ${items.length} items filtered before vetting`,
+    );
     return { candidates: [], allVetFailed: false, rateLimitHit: false };
   }
 
@@ -223,7 +249,7 @@ export async function filterVetAndScore(
   } = await vetter.vetIssuesParallel(
     itemsToVet.map((i) => i.html_url),
     remainingNeeded,
-    'normal',
+    "normal",
   );
 
   const starFiltered = results.filter((c) => {
@@ -233,7 +259,10 @@ export async function filterVetAndScore(
   });
   const starFilteredCount = results.length - starFiltered.length;
   if (starFilteredCount > 0) {
-    debug(MODULE, `[STAR_FILTER] Filtered ${starFilteredCount} ${phaseLabel} candidates below ${minStars} stars`);
+    debug(
+      MODULE,
+      `[STAR_FILTER] Filtered ${starFilteredCount} ${phaseLabel} candidates below ${minStars} stars`,
+    );
   }
 
   return { candidates: starFiltered, allVetFailed, rateLimitHit };
@@ -261,7 +290,11 @@ export async function searchInRepos(
   maxResults: number,
   priority: SearchPriority,
   filterFn: (items: GitHubSearchItem[]) => GitHubSearchItem[],
-): Promise<{ candidates: IssueCandidate[]; allBatchesFailed: boolean; rateLimitHit: boolean }> {
+): Promise<{
+  candidates: IssueCandidate[];
+  allBatchesFailed: boolean;
+  rateLimitHit: boolean;
+}> {
   const candidates: IssueCandidate[] = [];
 
   const batches = batchRepos(repos, BATCH_SIZE);
@@ -276,7 +309,7 @@ export async function searchInRepos(
     if (batchIdx > 0) await sleep(INTER_QUERY_DELAY_MS);
 
     try {
-      const repoFilter = batch.map((r) => `repo:${r}`).join(' OR ');
+      const repoFilter = batch.map((r) => `repo:${r}`).join(" OR ");
       const repoOps = batch.length - 1;
       const perPage = Math.min(30, (maxResults - candidates.length) * 3);
 
@@ -284,18 +317,22 @@ export async function searchInRepos(
         octokit,
         labels,
         repoOps,
-        (labelQ) => `${baseQualifiers} ${labelQ} (${repoFilter})`.replace(/  +/g, ' ').trim(),
+        (labelQ) =>
+          `${baseQualifiers} ${labelQ} (${repoFilter})`
+            .replace(/  +/g, " ")
+            .trim(),
         perPage,
       );
 
       if (allItems.length > 0) {
         const filtered = filterFn(allItems);
         const remainingNeeded = maxResults - candidates.length;
-        const { candidates: vetted, rateLimitHit: vetRateLimitHit } = await vetter.vetIssuesParallel(
-          filtered.slice(0, remainingNeeded * 2).map((i) => i.html_url),
-          remainingNeeded,
-          priority,
-        );
+        const { candidates: vetted, rateLimitHit: vetRateLimitHit } =
+          await vetter.vetIssuesParallel(
+            filtered.slice(0, remainingNeeded * 2).map((i) => i.html_url),
+            remainingNeeded,
+            priority,
+          );
         candidates.push(...vetted);
         if (vetRateLimitHit) rateLimitFailures++;
       }
@@ -304,12 +341,17 @@ export async function searchInRepos(
       if (isRateLimitError(error)) {
         rateLimitFailures++;
       }
-      const batchReposStr = batch.join(', ');
-      warn(MODULE, `Error searching issues in batch [${batchReposStr}]:`, errorMessage(error));
+      const batchReposStr = batch.join(", ");
+      warn(
+        MODULE,
+        `Error searching issues in batch [${batchReposStr}]:`,
+        errorMessage(error),
+      );
     }
   }
 
-  const allBatchesFailed = failedBatches === batches.length && batches.length > 0;
+  const allBatchesFailed =
+    failedBatches === batches.length && batches.length > 0;
   const rateLimitHit = rateLimitFailures > 0;
   if (allBatchesFailed) {
     warn(

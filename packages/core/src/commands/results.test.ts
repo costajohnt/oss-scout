@@ -1,9 +1,9 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { SavedCandidate } from '../core/schemas.js';
-import { ScoutStateSchema } from '../core/schemas.js';
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import type { SavedCandidate } from "../core/schemas.js";
+import { ScoutStateSchema } from "../core/schemas.js";
 
 // Mock local-state module — factory must not reference top-level imports
-vi.mock('../core/local-state.js', () => {
+vi.mock("../core/local-state.js", () => {
   let mockState: any = { version: 1, savedResults: [] };
   return {
     loadLocalState: () => mockState,
@@ -19,48 +19,50 @@ vi.mock('../core/local-state.js', () => {
 });
 
 // Import after mock setup
-const { runResults, runResultsClear } = await import('./results.js');
+const { runResults, runResultsClear } = await import("./results.js");
 
 async function setMockState(state: any) {
-  const mod = (await import('../core/local-state.js')) as any;
+  const mod = (await import("../core/local-state.js")) as any;
   mod._setMockState(state);
 }
 
 async function getMockState(): Promise<any> {
-  const mod = (await import('../core/local-state.js')) as any;
+  const mod = (await import("../core/local-state.js")) as any;
   return mod._getMockState();
 }
 
-function makeSavedCandidate(overrides: Partial<SavedCandidate> = {}): SavedCandidate {
+function makeSavedCandidate(
+  overrides: Partial<SavedCandidate> = {},
+): SavedCandidate {
   return {
-    issueUrl: 'https://github.com/owner/repo/issues/1',
-    repo: 'owner/repo',
+    issueUrl: "https://github.com/owner/repo/issues/1",
+    repo: "owner/repo",
     number: 1,
-    title: 'Fix the bug',
-    labels: ['good first issue'],
-    recommendation: 'approve',
+    title: "Fix the bug",
+    labels: ["good first issue"],
+    recommendation: "approve",
     viabilityScore: 75,
-    searchPriority: 'normal',
-    firstSeenAt: '2026-03-01T00:00:00.000Z',
-    lastSeenAt: '2026-03-01T00:00:00.000Z',
+    searchPriority: "normal",
+    firstSeenAt: "2026-03-01T00:00:00.000Z",
+    lastSeenAt: "2026-03-01T00:00:00.000Z",
     lastScore: 75,
     ...overrides,
   };
 }
 
-describe('results command', () => {
+describe("results command", () => {
   beforeEach(async () => {
     const freshState = ScoutStateSchema.parse({ version: 1 });
     await setMockState(freshState);
   });
 
-  describe('runResults', () => {
-    it('returns empty array when no saved results', async () => {
+  describe("runResults", () => {
+    it("returns empty array when no saved results", async () => {
       const results = await runResults({});
       expect(results).toEqual([]);
     });
 
-    it('returns saved results from state', async () => {
+    it("returns saved results from state", async () => {
       const candidate = makeSavedCandidate();
       const state = ScoutStateSchema.parse({ version: 1 });
       state.savedResults = [candidate];
@@ -68,33 +70,39 @@ describe('results command', () => {
 
       const results = await runResults({});
       expect(results).toHaveLength(1);
-      expect(results[0].issueUrl).toBe('https://github.com/owner/repo/issues/1');
-      expect(results[0].repo).toBe('owner/repo');
-      expect(results[0].recommendation).toBe('approve');
+      expect(results[0].issueUrl).toBe(
+        "https://github.com/owner/repo/issues/1",
+      );
+      expect(results[0].repo).toBe("owner/repo");
+      expect(results[0].recommendation).toBe("approve");
     });
 
-    it('returns multiple saved results', async () => {
+    it("returns multiple saved results", async () => {
       const state = ScoutStateSchema.parse({ version: 1 });
       state.savedResults = [
-        makeSavedCandidate({ issueUrl: 'https://github.com/a/b/issues/1', repo: 'a/b', number: 1 }),
         makeSavedCandidate({
-          issueUrl: 'https://github.com/c/d/issues/2',
-          repo: 'c/d',
+          issueUrl: "https://github.com/a/b/issues/1",
+          repo: "a/b",
+          number: 1,
+        }),
+        makeSavedCandidate({
+          issueUrl: "https://github.com/c/d/issues/2",
+          repo: "c/d",
           number: 2,
-          recommendation: 'skip',
+          recommendation: "skip",
         }),
       ];
       await setMockState(state);
 
       const results = await runResults({ json: true });
       expect(results).toHaveLength(2);
-      expect(results[0].repo).toBe('a/b');
-      expect(results[1].recommendation).toBe('skip');
+      expect(results[0].repo).toBe("a/b");
+      expect(results[1].recommendation).toBe("skip");
     });
   });
 
-  describe('runResultsClear', () => {
-    it('clears saved results from state', async () => {
+  describe("runResultsClear", () => {
+    it("clears saved results from state", async () => {
       const state = ScoutStateSchema.parse({ version: 1 });
       state.savedResults = [makeSavedCandidate()];
       await setMockState(state);
@@ -105,7 +113,7 @@ describe('results command', () => {
       expect(updated.savedResults).toEqual([]);
     });
 
-    it('is a no-op when already empty', async () => {
+    it("is a no-op when already empty", async () => {
       await runResultsClear();
       const updated = await getMockState();
       expect(updated.savedResults).toEqual([]);
@@ -113,23 +121,23 @@ describe('results command', () => {
   });
 });
 
-describe('saveResults deduplication (via OssScout)', () => {
-  it('preserves firstSeenAt on re-save and updates score', async () => {
-    const { OssScout } = await import('../scout.js');
+describe("saveResults deduplication (via OssScout)", () => {
+  it("preserves firstSeenAt on re-save and updates score", async () => {
+    const { OssScout } = await import("../scout.js");
     const state = ScoutStateSchema.parse({ version: 1 });
-    const scout = new OssScout('fake-token', state);
+    const scout = new OssScout("fake-token", state);
 
     const makeCandidate = (score: number) => ({
       issue: {
         id: 1,
-        url: 'https://github.com/owner/repo/issues/1',
-        repo: 'owner/repo',
+        url: "https://github.com/owner/repo/issues/1",
+        repo: "owner/repo",
         number: 1,
-        title: 'Fix the bug',
-        status: 'candidate' as const,
-        labels: ['good first issue'],
-        createdAt: '2026-01-01T00:00:00.000Z',
-        updatedAt: '2026-01-01T00:00:00.000Z',
+        title: "Fix the bug",
+        status: "candidate" as const,
+        labels: ["good first issue"],
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
         vetted: true,
       },
       vettingResult: {
@@ -144,19 +152,19 @@ describe('saveResults deduplication (via OssScout)', () => {
         notes: [],
       },
       projectHealth: {
-        repo: 'owner/repo',
-        lastCommitAt: '2026-03-01T00:00:00.000Z',
+        repo: "owner/repo",
+        lastCommitAt: "2026-03-01T00:00:00.000Z",
         daysSinceLastCommit: 1,
         openIssuesCount: 10,
         avgIssueResponseDays: 2,
-        ciStatus: 'passing' as const,
+        ciStatus: "passing" as const,
         isActive: true,
       },
-      recommendation: 'approve' as const,
+      recommendation: "approve" as const,
       reasonsToSkip: [],
-      reasonsToApprove: ['Active project'],
+      reasonsToApprove: ["Active project"],
       viabilityScore: score,
-      searchPriority: 'normal' as const,
+      searchPriority: "normal" as const,
     });
 
     // First save
@@ -176,22 +184,22 @@ describe('saveResults deduplication (via OssScout)', () => {
     expect(secondSave[0].firstSeenAt).toBe(originalFirstSeen);
   });
 
-  it('adds new candidates alongside existing ones', async () => {
-    const { OssScout } = await import('../scout.js');
+  it("adds new candidates alongside existing ones", async () => {
+    const { OssScout } = await import("../scout.js");
     const state = ScoutStateSchema.parse({ version: 1 });
-    const scout = new OssScout('fake-token', state);
+    const scout = new OssScout("fake-token", state);
 
     const makeCandidate = (num: number) => ({
       issue: {
         id: num,
         url: `https://github.com/owner/repo/issues/${num}`,
-        repo: 'owner/repo',
+        repo: "owner/repo",
         number: num,
         title: `Issue ${num}`,
-        status: 'candidate' as const,
+        status: "candidate" as const,
         labels: [],
-        createdAt: '2026-01-01T00:00:00.000Z',
-        updatedAt: '2026-01-01T00:00:00.000Z',
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
         vetted: false,
       },
       vettingResult: {
@@ -206,19 +214,19 @@ describe('saveResults deduplication (via OssScout)', () => {
         notes: [],
       },
       projectHealth: {
-        repo: 'owner/repo',
-        lastCommitAt: '2026-03-01T00:00:00.000Z',
+        repo: "owner/repo",
+        lastCommitAt: "2026-03-01T00:00:00.000Z",
         daysSinceLastCommit: 1,
         openIssuesCount: 10,
         avgIssueResponseDays: 2,
-        ciStatus: 'passing' as const,
+        ciStatus: "passing" as const,
         isActive: true,
       },
-      recommendation: 'approve' as const,
+      recommendation: "approve" as const,
       reasonsToSkip: [],
       reasonsToApprove: [],
       viabilityScore: 60,
-      searchPriority: 'normal' as const,
+      searchPriority: "normal" as const,
     });
 
     scout.saveResults([makeCandidate(1)]);
@@ -228,22 +236,22 @@ describe('saveResults deduplication (via OssScout)', () => {
     expect(scout.getSavedResults()).toHaveLength(2);
   });
 
-  it('clearResults removes all saved results', async () => {
-    const { OssScout } = await import('../scout.js');
+  it("clearResults removes all saved results", async () => {
+    const { OssScout } = await import("../scout.js");
     const state = ScoutStateSchema.parse({ version: 1 });
-    const scout = new OssScout('fake-token', state);
+    const scout = new OssScout("fake-token", state);
 
     const candidate = {
       issue: {
         id: 1,
-        url: 'https://github.com/owner/repo/issues/1',
-        repo: 'owner/repo',
+        url: "https://github.com/owner/repo/issues/1",
+        repo: "owner/repo",
         number: 1,
-        title: 'Fix the bug',
-        status: 'candidate' as const,
+        title: "Fix the bug",
+        status: "candidate" as const,
         labels: [],
-        createdAt: '2026-01-01T00:00:00.000Z',
-        updatedAt: '2026-01-01T00:00:00.000Z',
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
         vetted: false,
       },
       vettingResult: {
@@ -258,19 +266,19 @@ describe('saveResults deduplication (via OssScout)', () => {
         notes: [],
       },
       projectHealth: {
-        repo: 'owner/repo',
-        lastCommitAt: '2026-03-01T00:00:00.000Z',
+        repo: "owner/repo",
+        lastCommitAt: "2026-03-01T00:00:00.000Z",
         daysSinceLastCommit: 1,
         openIssuesCount: 10,
         avgIssueResponseDays: 2,
-        ciStatus: 'passing' as const,
+        ciStatus: "passing" as const,
         isActive: true,
       },
-      recommendation: 'approve' as const,
+      recommendation: "approve" as const,
       reasonsToSkip: [],
       reasonsToApprove: [],
       viabilityScore: 60,
-      searchPriority: 'normal' as const,
+      searchPriority: "normal" as const,
     };
 
     scout.saveResults([candidate]);

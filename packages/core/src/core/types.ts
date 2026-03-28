@@ -9,7 +9,7 @@ import type {
   IssueScope,
   ScoutState,
   SearchStrategy,
-} from './schemas.js';
+} from "./schemas.js";
 
 // Re-export persisted types for convenience
 export type {
@@ -26,7 +26,7 @@ export type {
   SavedCandidate,
   ScoutState,
   SearchStrategy,
-} from './schemas.js';
+} from "./schemas.js";
 
 // ── Ephemeral types ─────────────────────────────────────────────────
 
@@ -37,7 +37,7 @@ export interface ProjectHealth {
   daysSinceLastCommit: number;
   openIssuesCount: number;
   avgIssueResponseDays: number;
-  ciStatus: 'passing' | 'failing' | 'unknown';
+  ciStatus: "passing" | "failing" | "unknown";
   isActive: boolean;
   stargazersCount?: number;
   forksCount?: number;
@@ -47,14 +47,18 @@ export interface ProjectHealth {
 }
 
 /** Priority tier for issue search results. */
-export type SearchPriority = 'merged_pr' | 'preferred_org' | 'starred' | 'normal';
+export type SearchPriority =
+  | "merged_pr"
+  | "preferred_org"
+  | "starred"
+  | "normal";
 
 /** A fully vetted issue candidate with scoring. */
 export interface IssueCandidate {
   issue: TrackedIssue;
   vettingResult: IssueVettingResult;
   projectHealth: ProjectHealth;
-  recommendation: 'approve' | 'skip' | 'needs_review';
+  recommendation: "approve" | "skip" | "needs_review";
   reasonsToSkip: string[];
   reasonsToApprove: string[];
   viabilityScore: number;
@@ -82,9 +86,21 @@ export interface CheckResult {
 // ── Const arrays and mappings ───────────────────────────────────────
 
 export const SCOPE_LABELS: Record<IssueScope, string[]> = {
-  beginner: ['good first issue', 'help wanted', 'easy', 'up-for-grabs', 'first-timers-only', 'beginner'],
-  intermediate: ['enhancement', 'feature', 'feature-request', 'contributions welcome'],
-  advanced: ['proposal', 'RFC', 'accepted', 'design'],
+  beginner: [
+    "good first issue",
+    "help wanted",
+    "easy",
+    "up-for-grabs",
+    "first-timers-only",
+    "beginner",
+  ],
+  intermediate: [
+    "enhancement",
+    "feature",
+    "feature-request",
+    "contributions welcome",
+  ],
+  advanced: ["proposal", "RFC", "accepted", "design"],
 };
 
 // ── Vet-list types ─────────────────────────────────────────────────
@@ -101,8 +117,8 @@ export interface VetListEntry {
   repo: string;
   number: number;
   title: string;
-  status: 'still_available' | 'claimed' | 'closed' | 'has_pr' | 'error';
-  recommendation?: 'approve' | 'skip' | 'needs_review';
+  status: "still_available" | "claimed" | "closed" | "has_pr" | "error";
+  recommendation?: "approve" | "skip" | "needs_review";
   viabilityScore?: number;
   errorMessage?: string;
 }
@@ -132,7 +148,7 @@ export type ScoutConfig =
       /** GitHub token with `repo` read scope. Add `gist` scope for persistence. */
       githubToken: string;
       /** Use gist-backed persistence (default for standalone CLI). */
-      persistence?: 'gist';
+      persistence?: "gist";
       /** Gist ID override. Skips gist discovery/creation if provided. */
       gistId?: string;
     }
@@ -140,7 +156,7 @@ export type ScoutConfig =
       /** GitHub token with `repo` read scope. */
       githubToken: string;
       /** Caller provides state directly. */
-      persistence: 'provided';
+      persistence: "provided";
       /** Pre-loaded state. Required when persistence is 'provided'. */
       initialState: ScoutState;
     };
