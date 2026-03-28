@@ -1,9 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import {
-  extractRepoFromUrl,
-  parseGitHubUrl,
-  daysBetween,
-} from "./utils.js";
+import { extractRepoFromUrl, parseGitHubUrl, daysBetween } from "./utils.js";
 
 vi.mock("./logger.js", () => ({
   debug: vi.fn(),
@@ -21,9 +17,9 @@ describe("extractRepoFromUrl", () => {
   });
 
   it("extracts from issue URL", () => {
-    expect(
-      extractRepoFromUrl("https://github.com/owner/repo/issues/456"),
-    ).toBe("owner/repo");
+    expect(extractRepoFromUrl("https://github.com/owner/repo/issues/456")).toBe(
+      "owner/repo",
+    );
   });
 
   it("extracts from API URL", () => {
@@ -91,9 +87,7 @@ describe("parseGitHubUrl", () => {
   });
 
   it("returns null for non-GitHub URL", () => {
-    expect(
-      parseGitHubUrl("https://gitlab.com/owner/repo/issues/1"),
-    ).toBeNull();
+    expect(parseGitHubUrl("https://gitlab.com/owner/repo/issues/1")).toBeNull();
   });
 
   it("returns null for invalid owner characters", () => {
@@ -131,7 +125,12 @@ describe("getCLIVersion", () => {
     vi.resetModules();
     vi.doMock("fs", async (importOriginal) => {
       const actual = await importOriginal<typeof import("fs")>();
-      return { ...actual, readFileSync: () => { throw new Error("ENOENT"); } };
+      return {
+        ...actual,
+        readFileSync: () => {
+          throw new Error("ENOENT");
+        },
+      };
     });
     const { getCLIVersion: freshGetCLIVersion } = await import("./utils.js");
     expect(freshGetCLIVersion()).toBe("unknown");

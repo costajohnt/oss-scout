@@ -120,11 +120,7 @@ async function runPhase0(
     `Phase 0: Searching issues in ${repos.length} merged-PR repos (no label filter)...`,
   );
 
-  const {
-    candidates,
-    allBatchesFailed,
-    rateLimitHit,
-  } = await searchInRepos(
+  const { candidates, allBatchesFailed, rateLimitHit } = await searchInRepos(
     octokit,
     vetter,
     repos,
@@ -160,9 +156,7 @@ async function runPhase05(
     `Phase 0.5: Searching issues in ${orgsToSearch.length} preferred org(s)...`,
   );
 
-  const orgRepoFilter = orgsToSearch
-    .map((org) => `org:${org}`)
-    .join(" OR ");
+  const orgRepoFilter = orgsToSearch.map((org) => `org:${org}`).join(" OR ");
   const orgOps = orgsToSearch.length - 1;
 
   try {
@@ -225,19 +219,12 @@ async function runPhase1(
   maxResults: number,
   filterIssues: (items: GitHubSearchItem[]) => GitHubSearchItem[],
 ): Promise<PhaseResult> {
-  info(
-    MODULE,
-    `Phase 1: Searching issues in ${repos.length} starred repos...`,
-  );
+  info(MODULE, `Phase 1: Searching issues in ${repos.length} starred repos...`);
 
   // Cap labels to reduce Search API calls: starred repos already signal user
   // interest, so fewer labels suffice.
   const phase1Labels = labels.slice(0, 3);
-  const {
-    candidates,
-    allBatchesFailed,
-    rateLimitHit,
-  } = await searchInRepos(
+  const { candidates, allBatchesFailed, rateLimitHit } = await searchInRepos(
     octokit,
     vetter,
     repos.slice(0, 10),
@@ -308,15 +295,11 @@ async function runPhase2(
         octokit,
         tierLabels,
         0,
-        (labelQ) =>
-          `${baseQualifiers} ${labelQ}`.replace(/  +/g, " ").trim(),
+        (labelQ) => `${baseQualifiers} ${labelQ}`.replace(/  +/g, " ").trim(),
         budgetPerTier * 3,
       );
 
-      info(
-        MODULE,
-        `Phase 2 [${tier}]: processing ${allItems.length} items...`,
-      );
+      info(MODULE, `Phase 2 [${tier}]: processing ${allItems.length} items...`);
 
       const {
         candidates: tierCandidates,
@@ -335,8 +318,7 @@ async function runPhase2(
       tierResults.push(tierCandidates);
       for (const c of tierCandidates) seenRepos.add(c.issue.repo);
       if (allVetFailed) {
-        error =
-          (error ? error + "; " : "") + `${tier}: all vetting failed`;
+        error = (error ? error + "; " : "") + `${tier}: all vetting failed`;
       }
       if (vetRateLimitHit) {
         rateLimitHit = true;
@@ -634,8 +616,12 @@ export class IssueDiscovery {
       const remaining = maxResults - allCandidates.length;
       if (remaining > 0) {
         const result = await runPhase0(
-          this.octokit, this.vetter, phase0Repos,
-          baseQualifiers, remaining, filterIssues,
+          this.octokit,
+          this.vetter,
+          phase0Repos,
+          baseQualifiers,
+          remaining,
+          filterIssues,
         );
         allCandidates.push(...result.candidates);
         phaseErrors["0"] = result.error;
@@ -663,8 +649,14 @@ export class IssueDiscovery {
       if (orgsToSearch.length > 0) {
         const remaining = maxResults - allCandidates.length;
         const result = await runPhase05(
-          this.octokit, this.vetter, orgsToSearch,
-          baseQualifiers, labels, remaining, phase0RepoSet, filterIssues,
+          this.octokit,
+          this.vetter,
+          orgsToSearch,
+          baseQualifiers,
+          labels,
+          remaining,
+          phase0RepoSet,
+          filterIssues,
         );
         allCandidates.push(...result.candidates);
         phaseErrors["0.5"] = result.error;
@@ -686,8 +678,13 @@ export class IssueDiscovery {
         const remaining = maxResults - allCandidates.length;
         if (remaining > 0) {
           const result = await runPhase1(
-            this.octokit, this.vetter, reposToSearch,
-            baseQualifiers, labels, remaining, filterIssues,
+            this.octokit,
+            this.vetter,
+            reposToSearch,
+            baseQualifiers,
+            labels,
+            remaining,
+            filterIssues,
           );
           allCandidates.push(...result.candidates);
           phaseErrors["1"] = result.error;
@@ -706,9 +703,18 @@ export class IssueDiscovery {
       await sleep(INTER_PHASE_DELAY_MS);
       const remaining = maxResults - allCandidates.length;
       const result = await runPhase2(
-        this.octokit, this.vetter, scopes, labels, config.labels,
-        baseQualifiers, remaining, minStars,
-        phase0RepoSet, starredRepoSet, allCandidates, filterIssues,
+        this.octokit,
+        this.vetter,
+        scopes,
+        labels,
+        config.labels,
+        baseQualifiers,
+        remaining,
+        minStars,
+        phase0RepoSet,
+        starredRepoSet,
+        allCandidates,
+        filterIssues,
       );
       allCandidates.push(...result.candidates);
       phaseErrors["2"] = result.error;
@@ -725,9 +731,16 @@ export class IssueDiscovery {
       await sleep(INTER_PHASE_DELAY_MS);
       const remaining = maxResults - allCandidates.length;
       const result = await runPhase3(
-        this.octokit, this.vetter, langQuery, minStars,
-        config.projectCategories ?? [], remaining,
-        phase0RepoSet, starredRepoSet, allCandidates, filterIssues,
+        this.octokit,
+        this.vetter,
+        langQuery,
+        minStars,
+        config.projectCategories ?? [],
+        remaining,
+        phase0RepoSet,
+        starredRepoSet,
+        allCandidates,
+        filterIssues,
       );
       allCandidates.push(...result.candidates);
       phaseErrors["3"] = result.error;
@@ -746,11 +759,19 @@ export class IssueDiscovery {
 
     if (allCandidates.length === 0) {
       const errorDetails = [
-        phaseErrors["0"] ? `Phase 0 (merged-PR repos): ${phaseErrors["0"]}` : null,
-        phaseErrors["0.5"] ? `Phase 0.5 (preferred orgs): ${phaseErrors["0.5"]}` : null,
-        phaseErrors["1"] ? `Phase 1 (starred repos): ${phaseErrors["1"]}` : null,
+        phaseErrors["0"]
+          ? `Phase 0 (merged-PR repos): ${phaseErrors["0"]}`
+          : null,
+        phaseErrors["0.5"]
+          ? `Phase 0.5 (preferred orgs): ${phaseErrors["0.5"]}`
+          : null,
+        phaseErrors["1"]
+          ? `Phase 1 (starred repos): ${phaseErrors["1"]}`
+          : null,
         phaseErrors["2"] ? `Phase 2 (general): ${phaseErrors["2"]}` : null,
-        phaseErrors["3"] ? `Phase 3 (maintained repos): ${phaseErrors["3"]}` : null,
+        phaseErrors["3"]
+          ? `Phase 3 (maintained repos): ${phaseErrors["3"]}`
+          : null,
       ].filter(Boolean);
       const details =
         errorDetails.length > 0 ? ` ${errorDetails.join(". ")}.` : "";
