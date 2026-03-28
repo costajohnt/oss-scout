@@ -97,6 +97,79 @@ program
     }
   });
 
+// ── results command ────────────────────────────────────────────────
+
+const resultsCmd = program
+  .command('results')
+  .description('Show saved search results');
+
+resultsCmd
+  .command('show', { isDefault: true })
+  .description('Display saved search results')
+  .option('--json', 'Output as JSON')
+  .action(async (options: { json?: boolean }) => {
+    try {
+      const { runResults } = await import('./commands/results.js');
+      const results = await runResults(options);
+      if (options.json) {
+        console.log(formatJsonSuccess(results));
+      } else {
+        if (results.length === 0) {
+          console.log('\nNo saved results. Run `oss-scout search` to find issues.\n');
+          return;
+        }
+        console.log(`\nSaved results (${results.length}):\n`);
+        console.log(
+          '  Score  Repo                              Issue   Recommendation  Title',
+        );
+        console.log(
+          '  ─────  ────────────────────────────────  ──────  ──────────────  ─────',
+        );
+        for (const r of results) {
+          const score = String(r.viabilityScore).padStart(3);
+          const repo = r.repo.padEnd(32).slice(0, 32);
+          const issue = `#${r.number}`.padEnd(6);
+          const rec = r.recommendation.padEnd(14);
+          const title = r.title.length > 50 ? r.title.slice(0, 47) + '...' : r.title;
+          console.log(`  ${score}    ${repo}  ${issue}  ${rec}  ${title}`);
+        }
+        console.log();
+      }
+    } catch (err) {
+      if (options.json) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.log(formatJsonError(msg, resolveErrorCode(err)));
+      } else {
+        console.error('Error:', err instanceof Error ? err.message : String(err));
+      }
+      process.exit(1);
+    }
+  });
+
+resultsCmd
+  .command('clear')
+  .description('Clear all saved results')
+  .option('--json', 'Output as JSON')
+  .action(async (options: { json?: boolean }) => {
+    try {
+      const { runResultsClear } = await import('./commands/results.js');
+      await runResultsClear();
+      if (options.json) {
+        console.log(formatJsonSuccess({ cleared: true }));
+      } else {
+        console.log('Saved results cleared.');
+      }
+    } catch (err) {
+      if (options.json) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.log(formatJsonError(msg, resolveErrorCode(err)));
+      } else {
+        console.error('Error:', err instanceof Error ? err.message : String(err));
+      }
+      process.exit(1);
+    }
+  });
+
 program
   .command('vet <issue-url>')
   .description('Vet a specific GitHub issue for claimability and project health')
