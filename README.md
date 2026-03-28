@@ -9,6 +9,8 @@
 </p>
 
 <p align="center">
+  <img src="https://img.shields.io/npm/v/@oss-scout/core" alt="npm">
+  <img src="https://img.shields.io/npm/dm/@oss-scout/core" alt="downloads">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
   <img src="https://img.shields.io/badge/node-%3E%3D20-brightgreen" alt="Node 20+">
   <img src="https://img.shields.io/badge/TypeScript-strict-blue" alt="TypeScript Strict">
@@ -44,14 +46,18 @@ Each issue gets a **viability score (0-100)** combining repo quality, your relat
 ### CLI
 
 ```bash
-# Search for issues (uses gh auth token automatically)
+# Via npx (no install)
 npx @oss-scout/core search 10
 
+# Or install globally
+npm install -g @oss-scout/core
+oss-scout search 10
+
 # Search with JSON output
-npx @oss-scout/core search 10 --json
+oss-scout search 10 --json
 
 # Vet a specific issue before working on it
-npx @oss-scout/core vet https://github.com/owner/repo/issues/123
+oss-scout vet https://github.com/owner/repo/issues/123
 ```
 
 ### As a Library
@@ -72,9 +78,37 @@ for (const c of results.candidates) {
 }
 ```
 
-### Claude Code Plugin (coming soon)
+### Claude Code Plugin
 
-The Claude Code plugin with `/scout` command and issue-scout agent is planned. For now, use the CLI or library API.
+Install from the marketplace:
+```
+/plugin marketplace add costajohnt/oss-scout
+/plugin install oss-scout@oss-scout
+```
+
+Restart Claude Code. Available commands:
+- `/scout` — Run multi-strategy issue search
+- `/scout-setup` — Configure preferences
+
+Available agents:
+- **issue-scout** — Autonomous issue discovery
+- **repo-evaluator** — Repository health assessment
+
+### MCP Server
+
+Configure in your MCP client:
+```json
+{
+  "mcpServers": {
+    "oss-scout": {
+      "command": "npx",
+      "args": ["@oss-scout/mcp@latest"]
+    }
+  }
+}
+```
+
+Provides search, vet, config, and config-set tools plus scout:// resources.
 
 ## What Makes It Different
 
@@ -111,14 +145,23 @@ Label-farming repos (5+ beginner labels per issue), templated-title repos ("Add 
 oss-scout [--debug] <command>
 
 Commands:
+  setup                    Interactive first-run configuration
+  bootstrap                Import starred repos and PR history from GitHub
   search [count]           Search for contributable issues (default: 10)
-    --json                 Output as structured JSON
-
+    --strategy <s>         Search strategies (merged_pr,preferred_org,starred,general,maintained,all)
   vet <issue-url>          Vet a specific GitHub issue
-    --json                 Output as structured JSON
+  vet-list                 Re-vet all saved results and classify current status
+    --prune                Remove unavailable issues from saved results
+    --concurrency <n>      Max concurrent API requests (default: 5)
+  results [show]           Display saved search results
+  results clear            Clear all saved results
+  config                   View current preferences
+  config set <key> <value> Update a single preference
+  config reset             Reset all preferences to defaults
 
 Global flags:
   --debug                  Enable debug logging (applies to any command)
+  --json                   Output as structured JSON (all commands)
   --version                Show version
 ```
 
@@ -207,7 +250,7 @@ Global flags:
 Creates an `OssScout` instance.
 
 ```typescript
-// Standalone — fresh state each run (gist persistence coming soon)
+// Standalone with gist persistence
 const scout = await createScout({ githubToken: 'ghp_...' });
 
 // Library — caller provides state (e.g., from a parent application)
@@ -330,7 +373,7 @@ scout.updatePreferences({
 
 Key design decisions:
 - **No singletons in the public API** — `OssScout` accepts config via constructor injection
-- **Two persistence modes** — `'provided'` for embedding in other tools, `'gist'` for standalone use (planned)
+- **Two persistence modes** — `'provided'` for embedding in other tools, `'gist'` for standalone use
 - **ScoutStateReader interface** — search engine programs against an interface, not a concrete state manager
 - **Rate-limit-first design** — every search phase respects a shared budget tracker
 

@@ -1,0 +1,13 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "packages": {
+    "packages/core": {
+      "release-type": "node",
+      "component": "core"
+    },
+    "packages/mcp-server": {
+      "release-type": "node",
+      "component": "mcp-server"
+    }
+  }
+}
