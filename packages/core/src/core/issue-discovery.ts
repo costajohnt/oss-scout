@@ -185,6 +185,7 @@ export class IssueDiscovery {
 
     // Common filters
     const excludedRepos = new Set(config.excludeRepos);
+    const excludeOrgs = new Set((config.excludeOrgs ?? []).map(o => o.toLowerCase()));
     const maxAgeDays = config.maxIssueAgeDays || 90;
     const now = new Date();
 
@@ -209,6 +210,11 @@ export class IssueDiscovery {
       return items.filter((item) => {
         const repoFullName = item.repository_url.split('/').slice(-2).join('/');
         if (excludedRepos.has(repoFullName)) return false;
+        // Filter out entire orgs
+        if (excludeOrgs.size > 0) {
+          const orgName = repoFullName.split('/')[0]?.toLowerCase();
+          if (orgName && excludeOrgs.has(orgName)) return false;
+        }
         // Filter repos with known anti-AI contribution policies
         if (aiBlocklisted.has(repoFullName)) return false;
         // Filter OUT low-scoring repos

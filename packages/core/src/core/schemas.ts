@@ -131,6 +131,7 @@ export const ScoutPreferencesSchema = z.object({
   labels: z.array(z.string()).default(['good first issue', 'help wanted']),
   scope: z.array(IssueScopeSchema).optional(),
   excludeRepos: z.array(z.string()).default([]),
+  excludeOrgs: z.array(z.string()).default([]),
   aiPolicyBlocklist: z.array(z.string()).default(['matplotlib/matplotlib']),
   preferredOrgs: z.array(z.string()).default([]),
   projectCategories: z.array(ProjectCategorySchema).default([]),

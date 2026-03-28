@@ -14,6 +14,7 @@ const ARRAY_FIELDS = new Set([
   'preferredOrgs',
   'projectCategories',
   'excludeRepos',
+  'excludeOrgs',
   'aiPolicyBlocklist',
 ]);
 
@@ -110,6 +111,7 @@ export function runConfigShow(options: { json?: boolean }): void {
   console.log(`  preferredOrgs:        ${formatArray(prefs.preferredOrgs)}`);
   console.log(`  projectCategories:    ${formatArray(prefs.projectCategories)}`);
   console.log(`  excludeRepos:         ${formatArray(prefs.excludeRepos)}`);
+  console.log(`  excludeOrgs:          ${formatArray(prefs.excludeOrgs)}`);
   console.log(`  aiPolicyBlocklist:    ${formatArray(prefs.aiPolicyBlocklist)}`);
   console.log(`  persistence:          ${prefs.persistence}`);
   console.log();
