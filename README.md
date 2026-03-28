@@ -1,6 +1,8 @@
 <p align="center">
-  <strong>oss-scout</strong>
+  <img src="assets/icon.svg" alt="oss-scout" width="120">
 </p>
+
+<h1 align="center">oss-scout</h1>
 
 <p align="center">
   Find open source issues personalized to <em>your</em> contribution history
@@ -70,14 +72,9 @@ for (const c of results.candidates) {
 }
 ```
 
-### Claude Code Plugin
+### Claude Code Plugin (coming soon)
 
-```
-/plugin marketplace add costajohnt/oss-scout
-/plugin install oss-scout@oss-scout
-```
-
-Restart Claude Code, then run `/scout`.
+The Claude Code plugin with `/scout` command and issue-scout agent is planned. For now, use the CLI or library API.
 
 ## What Makes It Different
 
@@ -87,7 +84,7 @@ Other tools query `label:"good first issue"` and call it a day. oss-scout builds
 
 ### Deep vetting, not surface filtering
 
-Every candidate is checked against 5 signals in parallel:
+Every candidate is checked against 6 signals in parallel:
 
 | Check | What it detects | Method |
 |-------|----------------|--------|
@@ -96,12 +93,13 @@ Every candidate is checked against 5 signals in parallel:
 | Project health | Is the repo active and maintained? | Commit history, stars, forks |
 | Clear requirements | Can you actually implement this? | Body analysis (steps, code blocks, keywords) |
 | Contribution guidelines | Branch naming, test framework, CLA | CONTRIBUTING.md probing |
+| Your merge history | Have your PRs been merged here before? | Search API (cached 15 min) |
 
 Results are scored and classified as `approve`, `needs_review`, or `skip` with specific reasons for each.
 
 ### Rate-limit aware
 
-GitHub's Search API allows 30 requests per minute. oss-scout tracks budget across phases with a sliding-window rate limiter. When quota is low, it skips expensive phases and tells you why. When quota is critical, it runs only Phase 0 (your highest-value repos). It never burns your API quota on low-value searches.
+GitHub's Search API allows 30 requests per minute (oss-scout reserves a safety margin of 4, using up to 26). It tracks budget across phases with a sliding-window rate limiter. When quota is low, it skips expensive phases and tells you why. When quota is critical, it runs only Phase 0 (your highest-value repos). It never burns your API quota on low-value searches.
 
 ### Spam detection
 
@@ -110,13 +108,18 @@ Label-farming repos (5+ beginner labels per issue), templated-title repos ("Add 
 ## CLI Reference
 
 ```
-oss-scout search [count]   Search for contributable issues (default: 10)
-  --json                   Output as structured JSON
-  --debug                  Enable debug logging
+oss-scout [--debug] <command>
 
-oss-scout vet <issue-url>  Vet a specific GitHub issue
-  --json                   Output as structured JSON
-  --debug                  Enable debug logging
+Commands:
+  search [count]           Search for contributable issues (default: 10)
+    --json                 Output as structured JSON
+
+  vet <issue-url>          Vet a specific GitHub issue
+    --json                 Output as structured JSON
+
+Global flags:
+  --debug                  Enable debug logging (applies to any command)
+  --version                Show version
 ```
 
 ### Search Output (JSON)
@@ -129,6 +132,7 @@ oss-scout vet <issue-url>  Vet a specific GitHub issue
       {
         "issue": {
           "repo": "expressjs/express",
+          "repoUrl": "https://github.com/expressjs/express",
           "number": 6012,
           "title": "Add timeout option to res.download()",
           "url": "https://github.com/expressjs/express/issues/6012",
@@ -146,6 +150,7 @@ oss-scout vet <issue-url>  Vet a specific GitHub issue
         "repoScore": {
           "score": 9,
           "mergedPRCount": 2,
+          "closedWithoutMergeCount": 0,
           "isResponsive": true
         }
       }
@@ -199,10 +204,10 @@ oss-scout vet <issue-url>  Vet a specific GitHub issue
 
 ### `createScout(config)`
 
-Creates an `OssScout` instance. Two modes:
+Creates an `OssScout` instance.
 
 ```typescript
-// Standalone — manages its own state
+// Standalone — fresh state each run (gist persistence coming soon)
 const scout = await createScout({ githubToken: 'ghp_...' });
 
 // Library — caller provides state (e.g., from a parent application)
@@ -297,6 +302,7 @@ scout.updatePreferences({
   minStars: 100,                          // Minimum repo star count
   maxIssueAgeDays: 60,                    // Skip issues older than this
   includeDocIssues: false,                // Exclude doc-only issues
+  minRepoScoreThreshold: 4,              // Skip repos scoring below this (1-10)
   excludeRepos: ['owner/repo'],           // Never search these repos
   aiPolicyBlocklist: ['matplotlib/matplotlib'], // Repos with anti-AI policies
   preferredOrgs: ['expressjs', 'vercel'], // Priority organizations
@@ -324,7 +330,7 @@ scout.updatePreferences({
 
 Key design decisions:
 - **No singletons in the public API** — `OssScout` accepts config via constructor injection
-- **Two persistence modes** — `'gist'` for standalone use, `'provided'` for embedding in other tools
+- **Two persistence modes** — `'provided'` for embedding in other tools, `'gist'` for standalone use (planned)
 - **ScoutStateReader interface** — search engine programs against an interface, not a concrete state manager
 - **Rate-limit-first design** — every search phase respects a shared budget tracker
 

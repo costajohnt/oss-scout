@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-oss-scout is a standalone tool for finding open source issues personalized to your contribution history. It ships as a CLI, MCP server, and Claude Code plugin.
+oss-scout is a standalone tool for finding open source issues personalized to your contribution history. Currently ships as a CLI and library. MCP server and Claude Code plugin are planned.
 
 ### Architecture
 

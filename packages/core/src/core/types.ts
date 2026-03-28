@@ -7,9 +7,7 @@ import type {
   TrackedIssue,
   IssueVettingResult,
   IssueScope,
-  ScoutPreferences,
   ScoutState,
-  RepoScore,
 } from './schemas.js';
 
 // Re-export persisted types for convenience
