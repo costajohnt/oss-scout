@@ -61,27 +61,27 @@ If the user prefers to set values individually:
 
 **Languages** (what to search for):
 ```bash
-GITHUB_TOKEN=$(gh auth token) node "${CLAUDE_PLUGIN_ROOT}/packages/core/dist/cli.bundle.cjs" config --set languages=typescript,javascript,python --json
+GITHUB_TOKEN=$(gh auth token) node "${CLAUDE_PLUGIN_ROOT}/packages/core/dist/cli.bundle.cjs" config set languages "typescript,javascript,python" --json
 ```
 
 **Labels** (issue labels to match):
 ```bash
-GITHUB_TOKEN=$(gh auth token) node "${CLAUDE_PLUGIN_ROOT}/packages/core/dist/cli.bundle.cjs" config --set labels="good first issue,help wanted" --json
+GITHUB_TOKEN=$(gh auth token) node "${CLAUDE_PLUGIN_ROOT}/packages/core/dist/cli.bundle.cjs" config set labels "good first issue,help wanted" --json
 ```
 
 **Project Categories** (types of projects):
 ```bash
-GITHUB_TOKEN=$(gh auth token) node "${CLAUDE_PLUGIN_ROOT}/packages/core/dist/cli.bundle.cjs" config --set projectCategories=devtools,infrastructure --json
+GITHUB_TOKEN=$(gh auth token) node "${CLAUDE_PLUGIN_ROOT}/packages/core/dist/cli.bundle.cjs" config set projectCategories "devtools,infrastructure" --json
 ```
 
 **Preferred Organizations**:
 ```bash
-GITHUB_TOKEN=$(gh auth token) node "${CLAUDE_PLUGIN_ROOT}/packages/core/dist/cli.bundle.cjs" config --set preferredOrgs=vercel,remix-run --json
+GITHUB_TOKEN=$(gh auth token) node "${CLAUDE_PLUGIN_ROOT}/packages/core/dist/cli.bundle.cjs" config set preferredOrgs "vercel,remix-run" --json
 ```
 
 **Excluded Repos** (repos to skip):
 ```bash
-GITHUB_TOKEN=$(gh auth token) node "${CLAUDE_PLUGIN_ROOT}/packages/core/dist/cli.bundle.cjs" config --set excludedRepos=owner/repo1,owner/repo2 --json
+GITHUB_TOKEN=$(gh auth token) node "${CLAUDE_PLUGIN_ROOT}/packages/core/dist/cli.bundle.cjs" config set excludeRepos "owner/repo1,owner/repo2" --json
 ```
 
 ## Step 4: Verify
