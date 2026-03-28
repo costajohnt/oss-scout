@@ -12,6 +12,7 @@ import type {
   ScoutState,
   ScoutPreferences,
   RepoScore,
+  SavedCandidate,
 } from './core/schemas.js';
 import type {
   ScoutConfig,
@@ -219,6 +220,55 @@ export class OssScout implements ScoutStateReader {
   setStarredRepos(repos: string[]): void {
     this.state.starredRepos = repos;
     this.state.starredReposLastFetched = new Date().toISOString();
+    this.dirty = true;
+  }
+
+  // ── Saved Results ───────────────────────────────────────────────────
+
+  /**
+   * Save search candidates to state, deduplicating by URL.
+   * If a candidate already exists, updates score/recommendation/lastSeenAt
+   * but preserves firstSeenAt.
+   */
+  saveResults(candidates: IssueCandidate[]): void {
+    const now = new Date().toISOString();
+    const existing = new Map(
+      (this.state.savedResults ?? []).map((r) => [r.issueUrl, r]),
+    );
+
+    for (const c of candidates) {
+      const prev = existing.get(c.issue.url);
+      existing.set(c.issue.url, {
+        issueUrl: c.issue.url,
+        repo: c.issue.repo,
+        number: c.issue.number,
+        title: c.issue.title,
+        labels: c.issue.labels,
+        recommendation: c.recommendation,
+        viabilityScore: c.viabilityScore,
+        searchPriority: c.searchPriority,
+        firstSeenAt: prev?.firstSeenAt ?? now,
+        lastSeenAt: now,
+        lastScore: c.viabilityScore,
+      });
+    }
+
+    this.state.savedResults = [...existing.values()];
+    this.dirty = true;
+  }
+
+  /**
+   * Get all saved results.
+   */
+  getSavedResults(): SavedCandidate[] {
+    return this.state.savedResults ?? [];
+  }
+
+  /**
+   * Clear all saved results.
+   */
+  clearResults(): void {
+    this.state.savedResults = [];
     this.dirty = true;
   }
 

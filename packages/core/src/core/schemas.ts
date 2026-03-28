@@ -100,6 +100,22 @@ export const TrackedIssueSchema = z.object({
   vettingResult: IssueVettingResultSchema.optional(),
 });
 
+// ── Saved candidate schema ─────────────────────────────────────────
+
+export const SavedCandidateSchema = z.object({
+  issueUrl: z.string(),
+  repo: z.string(),
+  number: z.number(),
+  title: z.string(),
+  labels: z.array(z.string()),
+  recommendation: z.enum(['approve', 'skip', 'needs_review']),
+  viabilityScore: z.number(),
+  searchPriority: z.string(),
+  firstSeenAt: z.string(),
+  lastSeenAt: z.string(),
+  lastScore: z.number(),
+});
+
 // ── Scout preferences schema ────────────────────────────────────────
 
 export const ScoutPreferencesSchema = z.object({
@@ -132,6 +148,8 @@ export const ScoutStateSchema = z.object({
   mergedPRs: z.array(StoredMergedPRSchema).default([]),
   closedPRs: z.array(StoredClosedPRSchema).default([]),
 
+  savedResults: z.array(SavedCandidateSchema).default([]),
+
   lastSearchAt: z.string().optional(),
   lastRunAt: z.string().default(() => new Date().toISOString()),
 
@@ -151,4 +169,5 @@ export type ContributionGuidelines = z.infer<typeof ContributionGuidelinesSchema
 export type IssueVettingResult = z.infer<typeof IssueVettingResultSchema>;
 export type TrackedIssue = z.infer<typeof TrackedIssueSchema>;
 export type ScoutPreferences = z.infer<typeof ScoutPreferencesSchema>;
+export type SavedCandidate = z.infer<typeof SavedCandidateSchema>;
 export type ScoutState = z.infer<typeof ScoutStateSchema>;

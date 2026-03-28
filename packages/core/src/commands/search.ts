@@ -4,6 +4,7 @@
 
 import { createScout } from '../scout.js';
 import { requireGitHubToken } from '../core/utils.js';
+import { saveLocalState } from '../core/local-state.js';
 import type { ScoutState } from '../core/schemas.js';
 
 export interface SearchOutput {
@@ -45,6 +46,10 @@ export async function runSearch(options: SearchCommandOptions): Promise<SearchOu
     ? await createScout({ githubToken: token, persistence: 'provided', initialState: options.state })
     : await createScout({ githubToken: token });
   const result = await scout.search({ maxResults: options.maxResults });
+
+  // Persist results to local state
+  scout.saveResults(result.candidates);
+  saveLocalState(scout.getState() as ScoutState);
 
   return {
     candidates: result.candidates.map((c) => {

@@ -22,6 +22,7 @@ export type {
   IssueVettingResult,
   TrackedIssue,
   ScoutPreferences,
+  SavedCandidate,
   ScoutState,
 } from './schemas.js';
 
