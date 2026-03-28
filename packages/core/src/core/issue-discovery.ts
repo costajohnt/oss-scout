@@ -12,12 +12,10 @@
  * All state is injected via constructor parameters (ScoutStateReader + ScoutPreferences).
  */
 
-import * as fs from 'fs';
-import * as path from 'path';
 import { Octokit } from '@octokit/rest';
 import { getOctokit, checkRateLimit } from './github.js';
 import { getSearchBudgetTracker } from './search-budget.js';
-import { daysBetween, getDataDir, sleep } from './utils.js';
+import { daysBetween, sleep } from './utils.js';
 import { type SearchPriority, type IssueCandidate, SCOPE_LABELS } from './types.js';
 import type { ScoutPreferences } from './schemas.js';
 import { ValidationError, errorMessage, getHttpStatusCode, isRateLimitError } from './errors.js';
@@ -62,9 +60,6 @@ export class IssueDiscovery {
   private githubToken: string;
   private vetter: IssueVetter;
 
-  /** Locally cached starred repos, populated by fetchStarredRepos(). */
-  private starredRepos: string[] | null = null;
-
   /** Set after searchIssues() runs if rate limits affected the search (low pre-flight quota or mid-search rate limit hits). */
   rateLimitWarning: string | null = null;
 
@@ -84,82 +79,10 @@ export class IssueDiscovery {
   }
 
   /**
-   * Fetch the authenticated user's starred repositories from GitHub.
-   * Stores the result locally (caller is responsible for persisting to state).
-   * @returns Array of starred repo names in "owner/repo" format
-   */
-  async fetchStarredRepos(): Promise<string[]> {
-    info(MODULE, 'Fetching starred repositories...');
-    const fetched: string[] = [];
-
-    try {
-      // Paginate through all starred repos (up to 500 to avoid excessive API calls)
-      const iterator = this.octokit.paginate.iterator(this.octokit.activity.listReposStarredByAuthenticatedUser, {
-        per_page: 100,
-      });
-
-      let pageCount = 0;
-      for await (const { data: repos } of iterator) {
-        for (const repo of repos) {
-          // Handle both Repository and StarredRepository response types
-          // Repository has full_name directly, StarredRepository has { repo: Repository }
-          let fullName: string | undefined;
-          if ('full_name' in repo && typeof repo.full_name === 'string') {
-            // Repository type - full_name is directly on the object
-            fullName = repo.full_name;
-          } else if ('repo' in repo && repo.repo && typeof repo.repo === 'object' && 'full_name' in repo.repo) {
-            // StarredRepository type - full_name is nested in repo property
-            fullName = (repo.repo as { full_name: string }).full_name;
-          }
-          if (fullName) {
-            fetched.push(fullName);
-          }
-        }
-        pageCount++;
-        // Limit to 5 pages (500 repos) to avoid excessive API usage
-        if (pageCount >= 5) {
-          info(MODULE, 'Reached pagination limit for starred repos (500)');
-          break;
-        }
-      }
-
-      info(MODULE, `Fetched ${fetched.length} starred repositories`);
-      this.starredRepos = fetched;
-      return fetched;
-    } catch (error) {
-      // Fall back to state reader's cached list
-      const cachedRepos = this.stateReader.getStarredRepos();
-      const errMsg = errorMessage(error);
-      warn(MODULE, 'Error fetching starred repos:', errMsg);
-
-      if (cachedRepos.length === 0) {
-        warn(
-          MODULE,
-          `Failed to fetch starred repositories from GitHub API. ` +
-            `No cached repos available. Error: ${errMsg}\n` +
-            `Tip: Ensure your GITHUB_TOKEN has the 'read:user' scope and try again.`,
-        );
-      } else {
-        warn(
-          MODULE,
-          `Failed to fetch starred repositories from GitHub API. ` +
-            `Using ${cachedRepos.length} cached repos instead. Error: ${errMsg}`,
-        );
-      }
-      this.starredRepos = cachedRepos;
-      return cachedRepos;
-    }
-  }
-
-  /**
-   * Get starred repos — uses locally cached value if available, otherwise
-   * fetches from state reader. Call fetchStarredRepos() explicitly to refresh.
+   * Get starred repos from the state reader.
    * @returns Array of starred repo names in "owner/repo" format
    */
   getStarredRepos(): string[] {
-    if (this.starredRepos !== null) {
-      return this.starredRepos;
-    }
     return this.stateReader.getStarredRepos();
   }
 
@@ -652,85 +575,6 @@ export class IssueDiscovery {
    */
   async vetIssue(issueUrl: string): Promise<IssueCandidate> {
     return this.vetter.vetIssue(issueUrl);
-  }
-
-  /**
-   * Save search results to ~/.oss-scout/found-issues.md.
-   * Results are sorted by viability score (highest first).
-   * @param candidates - Issue candidates to save
-   * @returns Absolute path to the written file
-   */
-  saveSearchResults(candidates: IssueCandidate[]): string {
-    // Sort by viability score descending
-    const sorted = [...candidates].sort((a, b) => b.viabilityScore - a.viabilityScore);
-
-    const outputDir = getDataDir();
-    const outputFile = path.join(outputDir, 'found-issues.md');
-
-    const timestamp = new Date().toISOString();
-    let content = `# Found Issues\n\n`;
-    content += `> Generated at: ${timestamp}\n\n`;
-    content += `| Score | Repo | Issue | Title | Labels | Updated | Recommendation |\n`;
-    content += `|-------|------|-------|-------|--------|---------|----------------|\n`;
-
-    for (const candidate of sorted) {
-      const { issue, viabilityScore, recommendation } = candidate;
-      const labels = issue.labels.slice(0, 3).join(', ');
-      const truncatedLabels = labels.length > 30 ? labels.substring(0, 27) + '...' : labels;
-      const truncatedTitle = issue.title.length > 50 ? issue.title.substring(0, 47) + '...' : issue.title;
-      const updatedDate = new Date(issue.updatedAt).toLocaleDateString();
-      const recIcon = recommendation === 'approve' ? 'Y' : recommendation === 'skip' ? 'N' : '?';
-
-      content += `| ${viabilityScore} | ${issue.repo} | [#${issue.number}](${issue.url}) | ${truncatedTitle} | ${truncatedLabels} | ${updatedDate} | ${recIcon} |\n`;
-    }
-
-    content += `\n## Legend\n\n`;
-    content += `- **Score**: Viability score (0-100)\n`;
-    content += `- **Recommendation**: Y = approve, N = skip, ? = needs_review\n`;
-
-    try {
-      fs.writeFileSync(outputFile, content, 'utf-8');
-      info(MODULE, `Saved ${sorted.length} issues to ${outputFile}`);
-    } catch (err) {
-      warn(MODULE, `Failed to save search results to ${outputFile}: ${errorMessage(err)}`);
-    }
-
-    return outputFile;
-  }
-
-  /**
-   * Format issue candidate as a markdown display string.
-   * @param candidate - The issue candidate to format
-   * @returns Multi-line markdown string with vetting details
-   */
-  formatCandidate(candidate: IssueCandidate): string {
-    const { issue, vettingResult, projectHealth, recommendation, reasonsToApprove, reasonsToSkip } = candidate;
-
-    const statusIcon = recommendation === 'approve' ? '✅' : recommendation === 'skip' ? '❌' : '⚠️';
-
-    return `
-## ${statusIcon} Issue Candidate: ${issue.repo}#${issue.number}
-
-**Title:** ${issue.title}
-**Labels:** ${issue.labels.join(', ')}
-**Created:** ${new Date(issue.createdAt).toLocaleDateString()}
-**URL:** ${issue.url}
-
-### Vetting Results
-${Object.entries(vettingResult.checks)
-  .map(([key, passed]) => `- ${passed ? '✓' : '✗'} ${key.replace(/([A-Z])/g, ' $1').toLowerCase()}`)
-  .join('\n')}
-
-### Project Health
-- Last commit: ${projectHealth.checkFailed ? 'unknown (API error)' : `${projectHealth.daysSinceLastCommit} days ago`}
-- Open issues: ${projectHealth.openIssuesCount}
-- CI status: ${projectHealth.ciStatus}
-
-### Recommendation: **${recommendation.toUpperCase()}**
-${reasonsToApprove.length > 0 ? `\n**Reasons to approve:**\n${reasonsToApprove.map((r) => `- ${r}`).join('\n')}` : ''}
-${reasonsToSkip.length > 0 ? `\n**Reasons to skip:**\n${reasonsToSkip.map((r) => `- ${r}`).join('\n')}` : ''}
-${vettingResult.notes.length > 0 ? `\n**Notes:**\n${vettingResult.notes.map((n) => `- ${n}`).join('\n')}` : ''}
-`;
   }
 
   /**

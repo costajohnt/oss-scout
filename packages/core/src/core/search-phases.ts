@@ -35,7 +35,7 @@ const BATCH_SIZE = 3;
  * @param labels      Full label list
  * @param reservedOps OR operators already consumed by repo/org filters
  */
-export function chunkLabels(labels: string[], reservedOps: number = 0): string[][] {
+function chunkLabels(labels: string[], reservedOps: number = 0): string[][] {
   const maxPerChunk = GITHUB_MAX_BOOLEAN_OPS - reservedOps + 1;
   if (maxPerChunk < 1) {
     if (labels.length > 0) {

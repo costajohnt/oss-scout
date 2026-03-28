@@ -2,10 +2,6 @@
  * Core types for oss-scout — ephemeral types that are never persisted.
  */
 
-import {
-  ScoutPreferencesSchema,
-} from './schemas.js';
-
 import type {
   RepoSignals,
   TrackedIssue,
@@ -89,8 +85,6 @@ export const SCOPE_LABELS: Record<IssueScope, string[]> = {
   intermediate: ['enhancement', 'feature', 'feature-request', 'contributions welcome'],
   advanced: ['proposal', 'RFC', 'accepted', 'design'],
 };
-
-export const DEFAULT_PREFERENCES = ScoutPreferencesSchema.parse({}) as ScoutPreferences;
 
 // ── Config types for the OssScout API ───────────────────────────────
 

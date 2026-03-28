@@ -9,7 +9,7 @@
 
 import { Octokit } from '@octokit/rest';
 import { parseGitHubUrl } from './utils.js';
-import { TrackedIssue, IssueVettingResult, type SearchPriority, type IssueCandidate, type ProjectCategory } from './types.js';
+import { type TrackedIssue, type IssueVettingResult, type SearchPriority, type IssueCandidate, type ProjectCategory } from './types.js';
 import { ValidationError, errorMessage, isRateLimitError } from './errors.js';
 import { debug, warn } from './logger.js';
 import { calculateRepoQualityBonus, calculateViabilityScore } from './issue-scoring.js';

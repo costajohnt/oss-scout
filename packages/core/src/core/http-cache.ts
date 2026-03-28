@@ -94,7 +94,9 @@ export class HttpCache {
       if (code === 'ENOENT') return null;
       if (err instanceof SyntaxError) {
         debug(MODULE, `Corrupt cache entry, deleting: ${url}`);
-        try { fs.unlinkSync(filePath); } catch { /* best effort */ }
+        try { fs.unlinkSync(filePath); } catch (unlinkErr) {
+          debug(MODULE, `Failed to delete corrupt cache entry: ${errorMessage(unlinkErr)}`);
+        }
         return null;
       }
       warn(MODULE, `Cache read failed for ${url}: ${errorMessage(err)}`);
@@ -117,15 +119,8 @@ export class HttpCache {
       debug(MODULE, `Cached response for ${url}`);
     } catch (err) {
       // Non-fatal: cache write failure should not break the request
-      debug(MODULE, `Failed to write cache for ${url}`, err);
+      warn(MODULE, `Failed to write cache for ${url}: ${errorMessage(err)}`);
     }
-  }
-
-  /**
-   * Check whether a URL has an in-flight request.
-   */
-  hasInflight(url: string): boolean {
-    return this.inflightRequests.has(url);
   }
 
   /**
@@ -168,8 +163,12 @@ export class HttpCache {
           }
         } catch (readErr) {
           debug(MODULE, `Removing unreadable cache entry ${file}`);
-          try { fs.unlinkSync(filePath); } catch { /* best effort */ }
-          evicted++;
+          try {
+            fs.unlinkSync(filePath);
+            evicted++;
+          } catch (unlinkErr) {
+            debug(MODULE, `Failed to remove stale cache entry ${file}: ${errorMessage(unlinkErr)}`);
+          }
         }
       }
     } catch (err: unknown) {

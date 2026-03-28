@@ -90,21 +90,7 @@ export async function checkProjectHealth(octokit: Octokit, owner: string, repo: 
       const lastCommitAt = lastCommit?.commit?.author?.date || repoData.pushed_at;
       const daysSinceLastCommit = daysBetween(new Date(lastCommitAt));
 
-      // Check CI status (simplified - just check if workflows exist)
-      let ciStatus: 'passing' | 'failing' | 'unknown' = 'unknown';
-      try {
-        const { data: workflows } = await octokit.actions.listRepoWorkflows({
-          owner,
-          repo,
-          per_page: 1,
-        });
-        if (workflows.total_count > 0) {
-          ciStatus = 'unknown'; // Workflows exist but run status not checked
-        }
-      } catch (error) {
-        const errMsg = errorMessage(error);
-        warn(MODULE, `Failed to check CI status for ${owner}/${repo}: ${errMsg}. Defaulting to unknown.`);
-      }
+      const ciStatus: 'passing' | 'failing' | 'unknown' = 'unknown';
 
       return {
         repo: `${owner}/${repo}`,

@@ -5,8 +5,6 @@
  * Implements ScoutStateReader to bridge state with the search engine.
  */
 
-import { Octokit } from '@octokit/rest';
-import { getOctokit } from './core/github.js';
 import { IssueDiscovery } from './core/issue-discovery.js';
 import type { ScoutStateReader } from './core/issue-vetting.js';
 import { ScoutStateSchema } from './core/schemas.js';
@@ -67,7 +65,6 @@ export async function createScout(config: ScoutConfig): Promise<OssScout> {
  * without knowing about the persistence layer.
  */
 export class OssScout implements ScoutStateReader {
-  private octokit: Octokit;
   private state: ScoutState;
   private dirty = false;
 
@@ -75,7 +72,6 @@ export class OssScout implements ScoutStateReader {
     private githubToken: string,
     initialState: ScoutState,
   ) {
-    this.octokit = getOctokit(githubToken);
     this.state = initialState;
   }
 
