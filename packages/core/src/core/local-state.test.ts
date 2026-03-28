@@ -15,6 +15,11 @@ vi.mock('./utils.js', () => ({
 
 vi.mock('./logger.js', () => ({
   debug: () => {},
+  warn: () => {},
+}));
+
+vi.mock('./errors.js', () => ({
+  errorMessage: (e: unknown) => (e instanceof Error ? e.message : String(e)),
 }));
 
 describe('local-state', () => {
@@ -64,6 +69,11 @@ describe('local-state', () => {
       const state = loadLocalState();
       expect(state.version).toBe(1);
       expect(state.preferences.languages).toEqual(['typescript', 'javascript']);
+
+      // Verify a .corrupt backup was created
+      const files = fs.readdirSync(tmpDir);
+      const backups = files.filter((f) => f.startsWith('state.json.corrupt.'));
+      expect(backups.length).toBe(1);
     });
 
     it('returns fresh state on invalid schema', () => {
@@ -71,6 +81,11 @@ describe('local-state', () => {
 
       const state = loadLocalState();
       expect(state.version).toBe(1);
+
+      // Verify a .corrupt backup was created
+      const files = fs.readdirSync(tmpDir);
+      const backups = files.filter((f) => f.startsWith('state.json.corrupt.'));
+      expect(backups.length).toBe(1);
     });
   });
 

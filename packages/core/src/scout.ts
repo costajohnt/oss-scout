@@ -31,6 +31,7 @@ import { GistStateStore, mergeStates } from './core/gist-state-store.js';
 import type { GistOctokitLike } from './core/gist-state-store.js';
 import { getOctokit } from './core/github.js';
 import { loadLocalState } from './core/local-state.js';
+import { warn } from './core/logger.js';
 
 /**
  * Create an OssScout instance.
@@ -62,6 +63,9 @@ export async function createScout(config: ScoutConfig): Promise<OssScout> {
   } else if (config.persistence === 'gist') {
     gistStore = new GistStateStore(getOctokit(config.githubToken) as unknown as GistOctokitLike);
     const result = await gistStore.bootstrap();
+    if (result.degraded) {
+      warn('scout', 'Gist sync unavailable — running in offline mode. Changes will only be saved locally.');
+    }
     const localState = loadLocalState();
     state = mergeStates(localState, result.state);
     if (config.gistId) {

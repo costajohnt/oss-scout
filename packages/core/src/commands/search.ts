@@ -49,9 +49,10 @@ export async function runSearch(options: SearchCommandOptions): Promise<SearchOu
     : await createScout({ githubToken: token });
   const result = await scout.search({ maxResults: options.maxResults, strategies: options.strategies });
 
-  // Persist results to local state
+  // Persist results to local state and gist
   scout.saveResults(result.candidates);
   saveLocalState(scout.getState() as ScoutState);
+  await scout.checkpoint();
 
   return {
     candidates: result.candidates.map((c) => {

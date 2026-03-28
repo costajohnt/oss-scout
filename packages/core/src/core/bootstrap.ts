@@ -4,7 +4,8 @@
  */
 
 import { getOctokit, checkRateLimit } from './github.js';
-import { debug } from './logger.js';
+import { debug, warn } from './logger.js';
+import { errorMessage } from './errors.js';
 import type { OssScout } from '../scout.js';
 
 const MODULE = 'bootstrap';
@@ -15,6 +16,7 @@ export interface BootstrapResult {
   closedPRCount: number;
   reposScoredCount: number;
   skippedDueToRateLimit: boolean;
+  errors: string[];
 }
 
 const STARRED_MAX_PAGES = 5;
@@ -38,79 +40,96 @@ export async function bootstrapScout(scout: OssScout, token: string): Promise<Bo
       closedPRCount: 0,
       reposScoredCount: 0,
       skippedDueToRateLimit: true,
+      errors: [],
     };
   }
 
   const octokit = getOctokit(token);
+  const errors: string[] = [];
 
   // 1. Fetch starred repos (up to 500)
   const starredRepos: string[] = [];
-  let starredPage = 0;
-  for await (const response of octokit.paginate.iterator(
-    octokit.activity.listReposStarredByAuthenticatedUser,
-    { per_page: PER_PAGE, headers: { accept: 'application/vnd.github.v3+json' } },
-  )) {
-    for (const repo of response.data) {
-      const r = repo as { full_name: string };
-      starredRepos.push(r.full_name);
+  try {
+    let starredPage = 0;
+    for await (const response of octokit.paginate.iterator(
+      octokit.activity.listReposStarredByAuthenticatedUser,
+      { per_page: PER_PAGE, headers: { accept: 'application/vnd.github.v3+json' } },
+    )) {
+      for (const repo of response.data) {
+        const r = repo as { full_name: string };
+        starredRepos.push(r.full_name);
+      }
+      starredPage++;
+      if (starredPage >= STARRED_MAX_PAGES) break;
     }
-    starredPage++;
-    if (starredPage >= STARRED_MAX_PAGES) break;
+    debug(MODULE, `Fetched ${starredRepos.length} starred repos`);
+    scout.setStarredRepos(starredRepos);
+  } catch (err) {
+    warn(MODULE, `Failed to fetch starred repos: ${errorMessage(err)}`);
+    errors.push('starred repos fetch failed');
   }
-  debug(MODULE, `Fetched ${starredRepos.length} starred repos`);
-  scout.setStarredRepos(starredRepos);
 
   // 2. Fetch merged PRs via Search API
   let mergedPRCount = 0;
-  for (let page = 1; page <= SEARCH_MAX_PAGES; page++) {
-    const { data } = await octokit.search.issuesAndPullRequests({
-      q: `is:pr is:merged author:${username}`,
-      per_page: PER_PAGE,
-      page,
-    });
-
-    for (const item of data.items) {
-      const repoMatch = item.html_url.match(/github\.com\/([^/]+\/[^/]+)\//);
-      if (!repoMatch) continue;
-
-      scout.recordMergedPR({
-        url: item.html_url,
-        title: item.title,
-        mergedAt: item.closed_at ?? new Date().toISOString(),
-        repo: repoMatch[1],
+  try {
+    for (let page = 1; page <= SEARCH_MAX_PAGES; page++) {
+      const { data } = await octokit.search.issuesAndPullRequests({
+        q: `is:pr is:merged author:${username}`,
+        per_page: PER_PAGE,
+        page,
       });
-      mergedPRCount++;
-    }
 
-    if (data.items.length < PER_PAGE) break;
+      for (const item of data.items) {
+        const repoMatch = item.html_url.match(/github\.com\/([^/]+\/[^/]+)\//);
+        if (!repoMatch) continue;
+
+        scout.recordMergedPR({
+          url: item.html_url,
+          title: item.title,
+          mergedAt: item.closed_at ?? new Date().toISOString(),
+          repo: repoMatch[1],
+        });
+        mergedPRCount++;
+      }
+
+      if (data.items.length < PER_PAGE) break;
+    }
+    debug(MODULE, `Imported ${mergedPRCount} merged PRs`);
+  } catch (err) {
+    warn(MODULE, `Failed to fetch merged PRs: ${errorMessage(err)}`);
+    errors.push('merged PR fetch failed');
   }
-  debug(MODULE, `Imported ${mergedPRCount} merged PRs`);
 
   // 3. Fetch closed-without-merge PRs via Search API
   let closedPRCount = 0;
-  for (let page = 1; page <= SEARCH_MAX_PAGES; page++) {
-    const { data } = await octokit.search.issuesAndPullRequests({
-      q: `is:pr is:closed is:unmerged author:${username}`,
-      per_page: PER_PAGE,
-      page,
-    });
-
-    for (const item of data.items) {
-      const repoMatch = item.html_url.match(/github\.com\/([^/]+\/[^/]+)\//);
-      if (!repoMatch) continue;
-
-      scout.recordClosedPR({
-        url: item.html_url,
-        title: item.title,
-        closedAt: item.closed_at ?? new Date().toISOString(),
-        repo: repoMatch[1],
+  try {
+    for (let page = 1; page <= SEARCH_MAX_PAGES; page++) {
+      const { data } = await octokit.search.issuesAndPullRequests({
+        q: `is:pr is:closed is:unmerged author:${username}`,
+        per_page: PER_PAGE,
+        page,
       });
-      closedPRCount++;
-    }
 
-    if (data.items.length < PER_PAGE) break;
+      for (const item of data.items) {
+        const repoMatch = item.html_url.match(/github\.com\/([^/]+\/[^/]+)\//);
+        if (!repoMatch) continue;
+
+        scout.recordClosedPR({
+          url: item.html_url,
+          title: item.title,
+          closedAt: item.closed_at ?? new Date().toISOString(),
+          repo: repoMatch[1],
+        });
+        closedPRCount++;
+      }
+
+      if (data.items.length < PER_PAGE) break;
+    }
+    debug(MODULE, `Imported ${closedPRCount} closed PRs`);
+  } catch (err) {
+    warn(MODULE, `Failed to fetch closed PRs: ${errorMessage(err)}`);
+    errors.push('closed PR fetch failed');
   }
-  debug(MODULE, `Imported ${closedPRCount} closed PRs`);
 
   const state = scout.getState();
   const reposScoredCount = Object.keys(state.repoScores).length;
@@ -121,5 +140,6 @@ export async function bootstrapScout(scout: OssScout, token: string): Promise<Bo
     closedPRCount,
     reposScoredCount,
     skippedDueToRateLimit: false,
+    errors,
   };
 }

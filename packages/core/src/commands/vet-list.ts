@@ -22,5 +22,6 @@ export async function runVetList(options: VetListCommandOptions): Promise<VetLis
   });
 
   saveLocalState(scout.getState() as ScoutState);
+  await scout.checkpoint();
   return result;
 }
