@@ -27,6 +27,10 @@ import type {
   VetListResult,
   VetListEntry,
 } from './core/types.js';
+import { GistStateStore, mergeStates } from './core/gist-state-store.js';
+import type { GistOctokitLike } from './core/gist-state-store.js';
+import { getOctokit } from './core/github.js';
+import { loadLocalState } from './core/local-state.js';
 
 /**
  * Create an OssScout instance.
@@ -38,8 +42,8 @@ import type {
  * ```typescript
  * import { createScout } from '@oss-scout/core';
  *
- * // Standalone with gist persistence (default)
- * const scout = await createScout({ githubToken: 'ghp_...' });
+ * // Standalone with gist persistence
+ * const scout = await createScout({ githubToken: 'ghp_...', persistence: 'gist' });
  *
  * // As a library (host application provides state)
  * const scout = await createScout({
@@ -51,15 +55,25 @@ import type {
  */
 export async function createScout(config: ScoutConfig): Promise<OssScout> {
   let state: ScoutState;
+  let gistStore: GistStateStore | null = null;
 
   if (config.persistence === 'provided') {
     state = config.initialState;
+  } else if (config.persistence === 'gist') {
+    gistStore = new GistStateStore(getOctokit(config.githubToken) as unknown as GistOctokitLike);
+    const result = await gistStore.bootstrap();
+    const localState = loadLocalState();
+    state = mergeStates(localState, result.state);
+    if (config.gistId) {
+      state.gistId = config.gistId;
+    } else if (result.gistId) {
+      state.gistId = result.gistId;
+    }
   } else {
-    // Default: use local state (gist persistence not yet implemented)
     state = ScoutStateSchema.parse({ version: 1 });
   }
 
-  return new OssScout(config.githubToken, state);
+  return new OssScout(config.githubToken, state, gistStore);
 }
 
 /**
@@ -75,6 +89,7 @@ export class OssScout implements ScoutStateReader {
   constructor(
     private githubToken: string,
     initialState: ScoutState,
+    private gistStore: GistStateStore | null = null,
   ) {
     this.state = initialState;
   }
@@ -107,7 +122,11 @@ export class OssScout implements ScoutStateReader {
    * Vet a single issue URL for claimability.
    */
   async vetIssue(issueUrl: string): Promise<IssueCandidate> {
-    const discovery = new IssueDiscovery(this.githubToken, this.state.preferences, this);
+    const discovery = new IssueDiscovery(
+      this.githubToken,
+      this.state.preferences,
+      this,
+    );
     return discovery.vetIssue(issueUrl);
   }
 
@@ -246,7 +265,10 @@ export class OssScout implements ScoutStateReader {
     // Deduplicate by URL
     if (existing.some((p) => p.url === pr.url)) return;
 
-    this.state.mergedPRs = [...existing, { url: pr.url, title: pr.title, mergedAt: pr.mergedAt }];
+    this.state.mergedPRs = [
+      ...existing,
+      { url: pr.url, title: pr.title, mergedAt: pr.mergedAt },
+    ];
     this.updateRepoScoreFromPRs(pr.repo);
     this.dirty = true;
   }
@@ -258,7 +280,10 @@ export class OssScout implements ScoutStateReader {
     const existing = this.state.closedPRs ?? [];
     if (existing.some((p) => p.url === pr.url)) return;
 
-    this.state.closedPRs = [...existing, { url: pr.url, title: pr.title, closedAt: pr.closedAt }];
+    this.state.closedPRs = [
+      ...existing,
+      { url: pr.url, title: pr.title, closedAt: pr.closedAt },
+    ];
     this.updateRepoScoreFromPRs(pr.repo);
     this.dirty = true;
   }
@@ -275,7 +300,11 @@ export class OssScout implements ScoutStateReader {
       closedWithoutMergeCount: 0,
       avgResponseDays: null,
       lastEvaluatedAt: new Date().toISOString(),
-      signals: { hasActiveMaintainers: false, isResponsive: false, hasHostileComments: false },
+      signals: {
+        hasActiveMaintainers: false,
+        isResponsive: false,
+        hasHostileComments: false,
+      },
     };
 
     const updated: RepoScore = {
@@ -369,12 +398,17 @@ export class OssScout implements ScoutStateReader {
 
   /**
    * Push pending changes to the persistence layer.
-   * Currently a no-op — gist persistence not yet implemented.
+   * Pushes to gist if gist persistence is configured.
    */
   async checkpoint(): Promise<boolean> {
     if (!this.dirty) return true;
-    // TODO: implement gist-backed persistence
     this.state.lastRunAt = new Date().toISOString();
+
+    if (this.gistStore) {
+      const ok = await this.gistStore.push(this.state);
+      if (!ok) return false;
+    }
+
     this.dirty = false;
     return true;
   }
@@ -404,11 +438,13 @@ export class OssScout implements ScoutStateReader {
     this.updateRepoScore(repo, {
       mergedPRCount: mergedCount,
       closedWithoutMergeCount: closedCount,
-      lastMergedAt: mergedCount > 0
-        ? (this.state.mergedPRs ?? [])
-            .filter((p) => this.extractRepoFromUrl(p.url) === repo)
-            .sort((a, b) => b.mergedAt.localeCompare(a.mergedAt))[0]?.mergedAt
-        : undefined,
+      lastMergedAt:
+        mergedCount > 0
+          ? (this.state.mergedPRs ?? [])
+              .filter((p) => this.extractRepoFromUrl(p.url) === repo)
+              .sort((a, b) => b.mergedAt.localeCompare(a.mergedAt))[0]
+              ?.mergedAt
+          : undefined,
     });
   }
 
