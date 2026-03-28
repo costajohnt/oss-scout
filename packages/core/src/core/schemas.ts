@@ -139,6 +139,7 @@ export const ScoutPreferencesSchema = z.object({
   includeDocIssues: z.boolean().default(true),
   minRepoScoreThreshold: z.number().default(4),
   persistence: PersistenceModeSchema.default('local'),
+  defaultStrategy: z.array(SearchStrategySchema).optional(),
 });
 
 // ── Root state schema ───────────────────────────────────────────────
