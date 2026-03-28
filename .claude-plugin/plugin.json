@@ -16,6 +16,18 @@
     "vetting",
     "contributions",
     "cli",
-    "mcp"
+    "mcp",
+    "claude-code-plugin"
+  ],
+  "commands": [
+    "commands/scout.md",
+    "commands/scout-setup.md"
+  ],
+  "agents": [
+    "agents/issue-scout.md",
+    "agents/repo-evaluator.md"
+  ],
+  "skills": [
+    "skills/oss-search/SKILL.md"
   ]
 }
