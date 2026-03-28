@@ -28,19 +28,11 @@ function createMockScout(overrides: Partial<OssScout> = {}): OssScout {
 describe('registerTools', () => {
   let server: McpServer;
   let scout: OssScout;
-  let registeredTools: Map<string, { description: string; callback: Function }>;
 
   beforeEach(() => {
     server = new McpServer({ name: 'test', version: '0.0.1' });
     scout = createMockScout();
-    registeredTools = new Map();
-
-    // Spy on server.tool to capture registrations
-    const originalTool = server.tool.bind(server);
-    vi.spyOn(server, 'tool').mockImplementation((...args: unknown[]) => {
-      return originalTool(...args as Parameters<typeof server.tool>);
-    });
-
+    vi.spyOn(server, 'tool');
     registerTools(server, scout);
   });
 
