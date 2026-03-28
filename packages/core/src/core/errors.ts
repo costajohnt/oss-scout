@@ -1,5 +1,12 @@
 /**
  * Custom error type hierarchy for oss-scout.
+ *
+ * Error strategy:
+ * - Auth errors (401) and rate limit errors (429, 403+rate-limit): ALWAYS propagate
+ * - Network errors (ENOTFOUND, ECONNREFUSED, ETIMEDOUT): propagate with context
+ * - Validation errors: propagate
+ * - Cache/filesystem errors: degrade gracefully with warn logging
+ * - API data errors (unexpected shapes): degrade gracefully with warn logging
  */
 
 export class OssScoutError extends Error {

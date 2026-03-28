@@ -19,10 +19,15 @@ import { daysBetween, extractRepoFromUrl, sleep } from "./utils.js";
 import {
   type SearchPriority,
   type IssueCandidate,
+  type ProjectCategory,
   SCOPE_LABELS,
 } from "./types.js";
 import { CONCRETE_STRATEGIES } from "./schemas.js";
-import type { ScoutPreferences, SearchStrategy } from "./schemas.js";
+import type {
+  IssueScope,
+  ScoutPreferences,
+  SearchStrategy,
+} from "./schemas.js";
 import {
   ValidationError,
   errorMessage,
@@ -56,6 +61,393 @@ const LOW_BUDGET_THRESHOLD = 20;
 
 /** If remaining search quota is below this, only run Phase 0. */
 const CRITICAL_BUDGET_THRESHOLD = 10;
+
+// ── Extracted types and standalone functions ──────────────────────────
+
+/** Result from a single search phase. */
+interface PhaseResult {
+  candidates: IssueCandidate[];
+  error: string | null;
+  rateLimitHit: boolean;
+}
+
+/** Configuration for the issue filter function. */
+interface IssueFilterConfig {
+  excludedRepos: Set<string>;
+  excludeOrgs: Set<string>;
+  aiBlocklisted: Set<string>;
+  lowScoringRepos: Set<string>;
+  maxAgeDays: number;
+  now: Date;
+  includeDocIssues: boolean;
+}
+
+/** Build a reusable filter function from config. */
+function buildIssueFilter(
+  config: IssueFilterConfig,
+): (items: GitHubSearchItem[]) => GitHubSearchItem[] {
+  return (items: GitHubSearchItem[]) => {
+    return items.filter((item) => {
+      const repoFullName = extractRepoFromUrl(item.repository_url);
+      if (!repoFullName) return false;
+      if (config.excludedRepos.has(repoFullName)) return false;
+      if (config.excludeOrgs.size > 0) {
+        const orgName = repoFullName.split("/")[0]?.toLowerCase();
+        if (orgName && config.excludeOrgs.has(orgName)) return false;
+      }
+      if (config.aiBlocklisted.has(repoFullName)) return false;
+      if (config.lowScoringRepos.has(repoFullName)) return false;
+      const updatedAt = new Date(item.updated_at);
+      const ageDays = daysBetween(updatedAt, config.now);
+      if (ageDays > config.maxAgeDays) return false;
+      if (!config.includeDocIssues && isDocOnlyIssue(item)) return false;
+      return true;
+    });
+  };
+}
+
+/** Phase 0: Search repos where user has merged PRs (highest merge probability). */
+async function runPhase0(
+  octokit: Octokit,
+  vetter: IssueVetter,
+  repos: string[],
+  baseQualifiers: string,
+  maxResults: number,
+  filterIssues: (items: GitHubSearchItem[]) => GitHubSearchItem[],
+): Promise<PhaseResult> {
+  info(
+    MODULE,
+    `Phase 0: Searching issues in ${repos.length} merged-PR repos (no label filter)...`,
+  );
+
+  const {
+    candidates,
+    allBatchesFailed,
+    rateLimitHit,
+  } = await searchInRepos(
+    octokit,
+    vetter,
+    repos,
+    baseQualifiers,
+    [],
+    maxResults,
+    "merged_pr",
+    filterIssues,
+  );
+
+  info(MODULE, `Found ${candidates.length} candidates from merged-PR repos`);
+
+  return {
+    candidates,
+    error: allBatchesFailed ? "All merged-PR repo batches failed" : null,
+    rateLimitHit,
+  };
+}
+
+/** Phase 0.5: Search preferred organizations. */
+async function runPhase05(
+  octokit: Octokit,
+  vetter: IssueVetter,
+  orgsToSearch: string[],
+  baseQualifiers: string,
+  labels: string[],
+  maxResults: number,
+  phase0RepoSet: Set<string>,
+  filterIssues: (items: GitHubSearchItem[]) => GitHubSearchItem[],
+): Promise<PhaseResult> {
+  info(
+    MODULE,
+    `Phase 0.5: Searching issues in ${orgsToSearch.length} preferred org(s)...`,
+  );
+
+  const orgRepoFilter = orgsToSearch
+    .map((org) => `org:${org}`)
+    .join(" OR ");
+  const orgOps = orgsToSearch.length - 1;
+
+  try {
+    const allItems = await searchWithChunkedLabels(
+      octokit,
+      labels,
+      orgOps,
+      (labelQ) =>
+        `${baseQualifiers} ${labelQ} (${orgRepoFilter})`
+          .replace(/  +/g, " ")
+          .trim(),
+      maxResults * 3,
+    );
+
+    if (allItems.length === 0) {
+      return { candidates: [], error: null, rateLimitHit: false };
+    }
+
+    const filtered = filterIssues(allItems).filter((item) => {
+      const repoFullName = extractRepoFromUrl(item.repository_url);
+      if (!repoFullName) return false;
+      return !phase0RepoSet.has(repoFullName);
+    });
+
+    const {
+      candidates,
+      allFailed: allVetFailed,
+      rateLimitHit,
+    } = await vetter.vetIssuesParallel(
+      filtered.slice(0, maxResults * 2).map((i) => i.html_url),
+      maxResults,
+      "preferred_org",
+    );
+
+    info(MODULE, `Found ${candidates.length} candidates from preferred orgs`);
+
+    return {
+      candidates,
+      error: allVetFailed ? "All preferred org issue vetting failed" : null,
+      rateLimitHit,
+    };
+  } catch (error) {
+    const errMsg = errorMessage(error);
+    warn(MODULE, `Error searching preferred orgs: ${errMsg}`);
+    return {
+      candidates: [],
+      error: errMsg,
+      rateLimitHit: isRateLimitError(error),
+    };
+  }
+}
+
+/** Phase 1: Search starred repos. */
+async function runPhase1(
+  octokit: Octokit,
+  vetter: IssueVetter,
+  repos: string[],
+  baseQualifiers: string,
+  labels: string[],
+  maxResults: number,
+  filterIssues: (items: GitHubSearchItem[]) => GitHubSearchItem[],
+): Promise<PhaseResult> {
+  info(
+    MODULE,
+    `Phase 1: Searching issues in ${repos.length} starred repos...`,
+  );
+
+  // Cap labels to reduce Search API calls: starred repos already signal user
+  // interest, so fewer labels suffice.
+  const phase1Labels = labels.slice(0, 3);
+  const {
+    candidates,
+    allBatchesFailed,
+    rateLimitHit,
+  } = await searchInRepos(
+    octokit,
+    vetter,
+    repos.slice(0, 10),
+    baseQualifiers,
+    phase1Labels,
+    maxResults,
+    "starred",
+    filterIssues,
+  );
+
+  info(MODULE, `Found ${candidates.length} candidates from starred repos`);
+
+  return {
+    candidates,
+    error: allBatchesFailed ? "All starred repo batches failed" : null,
+    rateLimitHit,
+  };
+}
+
+/** Phase 2: General label-filtered search with multi-tier interleaving. */
+async function runPhase2(
+  octokit: Octokit,
+  vetter: IssueVetter,
+  scopes: IssueScope[] | undefined,
+  labels: string[],
+  configLabels: string[],
+  baseQualifiers: string,
+  maxResults: number,
+  minStars: number,
+  phase0RepoSet: Set<string>,
+  starredRepoSet: Set<string>,
+  existingCandidates: IssueCandidate[],
+  filterIssues: (items: GitHubSearchItem[]) => GitHubSearchItem[],
+): Promise<PhaseResult> {
+  info(MODULE, "Phase 2: General issue search...");
+  const seenRepos = new Set(existingCandidates.map((c) => c.issue.repo));
+
+  // Build per-tier label groups. Multi-tier when 2+ scopes; single-tier otherwise.
+  const tierLabelGroups: { tier: string; tierLabels: string[] }[] = [];
+  if (scopes && scopes.length > 1) {
+    for (const scope of scopes) {
+      const scopeLabels = SCOPE_LABELS[scope] ?? [];
+      if (scopeLabels.length === 0) {
+        warn(MODULE, `Scope "${scope}" has no labels, skipping tier`);
+        continue;
+      }
+      tierLabelGroups.push({ tier: scope, tierLabels: scopeLabels });
+    }
+    const allScopeLabels = new Set(
+      scopes.flatMap((s) => SCOPE_LABELS[s] ?? []),
+    );
+    const customOnly = configLabels.filter((l) => !allScopeLabels.has(l));
+    if (customOnly.length > 0) {
+      tierLabelGroups.push({ tier: "custom", tierLabels: customOnly });
+    }
+  } else {
+    tierLabelGroups.push({ tier: "general", tierLabels: labels });
+  }
+
+  const budgetPerTier = Math.ceil(maxResults / tierLabelGroups.length);
+  const tierResults: IssueCandidate[][] = [];
+  let error: string | null = null;
+  let rateLimitHit = false;
+
+  for (const { tier, tierLabels } of tierLabelGroups) {
+    try {
+      const allItems = await searchWithChunkedLabels(
+        octokit,
+        tierLabels,
+        0,
+        (labelQ) =>
+          `${baseQualifiers} ${labelQ}`.replace(/  +/g, " ").trim(),
+        budgetPerTier * 3,
+      );
+
+      info(
+        MODULE,
+        `Phase 2 [${tier}]: processing ${allItems.length} items...`,
+      );
+
+      const {
+        candidates: tierCandidates,
+        allVetFailed,
+        rateLimitHit: vetRateLimitHit,
+      } = await filterVetAndScore(
+        vetter,
+        allItems,
+        filterIssues,
+        [phase0RepoSet, starredRepoSet, seenRepos],
+        budgetPerTier,
+        minStars,
+        `Phase 2 [${tier}]`,
+      );
+
+      tierResults.push(tierCandidates);
+      for (const c of tierCandidates) seenRepos.add(c.issue.repo);
+      if (allVetFailed) {
+        error =
+          (error ? error + "; " : "") + `${tier}: all vetting failed`;
+      }
+      if (vetRateLimitHit) {
+        rateLimitHit = true;
+      }
+      info(
+        MODULE,
+        `Found ${tierCandidates.length} candidates from ${tier} tier`,
+      );
+    } catch (err) {
+      if (getHttpStatusCode(err) === 401) throw err;
+      const errMsg = errorMessage(err);
+      error = (error ? error + "; " : "") + `${tier}: ${errMsg}`;
+      if (isRateLimitError(err)) {
+        rateLimitHit = true;
+      }
+      warn(MODULE, `Error in ${tier} tier search: ${errMsg}`);
+      tierResults.push([]);
+    }
+  }
+
+  const interleaved = interleaveArrays(tierResults);
+  if (interleaved.length === 0 && error) {
+    warn(
+      MODULE,
+      `All ${tierLabelGroups.length} scope tiers failed in Phase 2: ${error}`,
+    );
+  }
+
+  return {
+    candidates: interleaved.slice(0, maxResults),
+    error,
+    rateLimitHit,
+  };
+}
+
+/** Phase 3: Actively maintained repos. */
+async function runPhase3(
+  octokit: Octokit,
+  vetter: IssueVetter,
+  langQuery: string,
+  minStars: number,
+  projectCategories: ProjectCategory[],
+  maxResults: number,
+  phase0RepoSet: Set<string>,
+  starredRepoSet: Set<string>,
+  existingCandidates: IssueCandidate[],
+  filterIssues: (items: GitHubSearchItem[]) => GitHubSearchItem[],
+): Promise<PhaseResult> {
+  info(MODULE, "Phase 3: Searching actively maintained repos...");
+
+  const thirtyDaysAgo = new Date();
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+  const pushedSince = thirtyDaysAgo.toISOString().split("T")[0];
+  const categoryTopics = getTopicsForCategories(projectCategories);
+  const topicQuery =
+    categoryTopics.length > 0 ? `topic:${categoryTopics[0]}` : "";
+  const phase3Query =
+    `is:issue is:open no:assignee ${langQuery} ${topicQuery} stars:>=${minStars} pushed:>=${pushedSince} archived:false`
+      .replace(/  +/g, " ")
+      .trim();
+
+  try {
+    const data = await cachedSearchIssues(octokit, {
+      q: phase3Query,
+      sort: "updated",
+      order: "desc",
+      per_page: maxResults * 3,
+    });
+
+    info(
+      MODULE,
+      `Found ${data.total_count} issues in maintained-repo search, processing top ${data.items.length}...`,
+    );
+
+    const seenRepos = new Set(existingCandidates.map((c) => c.issue.repo));
+    const {
+      candidates,
+      allVetFailed,
+      rateLimitHit: vetRateLimitHit,
+    } = await filterVetAndScore(
+      vetter,
+      data.items,
+      filterIssues,
+      [phase0RepoSet, starredRepoSet, seenRepos],
+      maxResults,
+      minStars,
+      "Phase 3",
+    );
+
+    info(
+      MODULE,
+      `Found ${candidates.length} candidates from maintained-repo search`,
+    );
+
+    return {
+      candidates,
+      error: allVetFailed ? "all vetting failed" : null,
+      rateLimitHit: vetRateLimitHit,
+    };
+  } catch (error) {
+    const errMsg = errorMessage(error);
+    warn(MODULE, `Error in maintained-repo search: ${errMsg}`);
+    return {
+      candidates: [],
+      error: errMsg,
+      rateLimitHit: isRateLimitError(error),
+    };
+  }
+}
+
+// ── IssueDiscovery class ─────────────────────────────────────────────
 
 /**
  * Multi-phase issue discovery engine that searches GitHub for contributable issues.
@@ -137,14 +529,14 @@ export class IssueDiscovery {
   }> {
     const config = this.preferences;
     const languages = options.languages || config.languages;
-    const scopes = config.scope; // undefined = legacy mode
+    const scopes = config.scope;
     const labels =
       options.labels ||
       (scopes ? buildEffectiveLabels(scopes, config.labels) : config.labels);
     const maxResults = options.maxResults || 10;
     const minStars = config.minStars ?? 50;
 
-    // Strategy selection: resolve which phases to run
+    // Strategy selection
     const ALL_STRATEGIES: readonly SearchStrategy[] = CONCRETE_STRATEGIES;
     const rawStrategies = options.strategies ??
       config.defaultStrategy ?? ["all"];
@@ -154,14 +546,13 @@ export class IssueDiscovery {
     const strategiesUsed: SearchStrategy[] = [];
 
     const allCandidates: IssueCandidate[] = [];
-    let phase0Error: string | null = null;
-    let phase1Error: string | null = null;
+    const phaseErrors: Record<string, string | null> = {};
     let rateLimitHitDuringSearch = false;
 
-    // Pre-flight rate limit check — also determines adaptive phase budget
+    // Pre-flight rate limit check
     this.rateLimitWarning = null;
     const tracker = getSearchBudgetTracker();
-    let searchBudget = LOW_BUDGET_THRESHOLD - 1; // conservative: below threshold to skip heavy phases
+    let searchBudget = LOW_BUDGET_THRESHOLD - 1;
     try {
       const rateLimit = await checkRateLimit(this.githubToken);
       searchBudget = rateLimit.remaining;
@@ -186,12 +577,7 @@ export class IssueDiscovery {
         );
       }
     } catch (error) {
-      // Fail fast on auth errors — no point searching with a bad token
-      if (getHttpStatusCode(error) === 401) {
-        throw error;
-      }
-      // Non-fatal: proceed with conservative budget for transient/network errors.
-      // Initialize tracker with conservative defaults so it doesn't fly blind.
+      if (getHttpStatusCode(error) === 401) throw error;
       tracker.init(
         CRITICAL_BUDGET_THRESHOLD,
         new Date(Date.now() + 60000).toISOString(),
@@ -203,41 +589,24 @@ export class IssueDiscovery {
       );
     }
 
-    // Get merged-PR repos (highest merge probability)
+    // Derive search context
     const mergedPRRepos = this.stateReader.getReposWithMergedPRs();
-
-    // Get starred repos (from local cache or state reader)
     const starredRepos = this.getStarredRepos();
     const starredRepoSet = new Set(starredRepos);
-
-    // Get low-scoring repos from state reader
-    const minRepoScoreThreshold = config.minRepoScoreThreshold;
     const lowScoringRepos = new Set(
-      this.deriveLowScoringRepos(minRepoScoreThreshold),
+      this.deriveLowScoringRepos(config.minRepoScoreThreshold),
     );
-
-    // Common filters
-    const excludedRepos = new Set(config.excludeRepos);
-    const excludeOrgs = new Set(
-      (config.excludeOrgs ?? []).map((o) => o.toLowerCase()),
-    );
-    const maxAgeDays = config.maxIssueAgeDays || 90;
-    const now = new Date();
 
     // Build query parts
-    // When languages includes 'any', omit the language filter entirely
     const isAnyLanguage = languages.some((l) => l.toLowerCase() === "any");
     const langQuery = isAnyLanguage
       ? ""
       : languages.map((l) => `language:${l}`).join(" ");
-    // Phase 0 uses a broader query — established contributors don't need beginner labels
-    // Phases 1+ pass labels separately to searchInRepos/searchWithChunkedLabels
     const baseQualifiers = `is:issue is:open ${langQuery} no:assignee`
       .replace(/  +/g, " ")
       .trim();
 
-    // Helper to filter issues
-    const includeDocIssues = config.includeDocIssues ?? true;
+    // Build reusable filter
     const aiBlocklisted = new Set(config.aiPolicyBlocklist);
     if (aiBlocklisted.size > 0) {
       debug(
@@ -245,74 +614,37 @@ export class IssueDiscovery {
         `[AI_POLICY_FILTER] Filtering issues from ${aiBlocklisted.size} blocklisted repo(s): ${[...aiBlocklisted].join(", ")}`,
       );
     }
-    const filterIssues = (items: GitHubSearchItem[]) => {
-      return items.filter((item) => {
-        const repoFullName = extractRepoFromUrl(item.repository_url);
-        if (!repoFullName) return false;
-        if (excludedRepos.has(repoFullName)) return false;
-        // Filter out entire orgs
-        if (excludeOrgs.size > 0) {
-          const orgName = repoFullName.split("/")[0]?.toLowerCase();
-          if (orgName && excludeOrgs.has(orgName)) return false;
-        }
-        // Filter repos with known anti-AI contribution policies
-        if (aiBlocklisted.has(repoFullName)) return false;
-        // Filter OUT low-scoring repos
-        if (lowScoringRepos.has(repoFullName)) return false;
-        // Filter by issue age based on updated_at
-        const updatedAt = new Date(item.updated_at);
-        const ageDays = daysBetween(updatedAt, now);
-        if (ageDays > maxAgeDays) return false;
-        // Filter out doc-only issues unless opted in
-        if (!includeDocIssues && isDocOnlyIssue(item)) return false;
-        return true;
-      });
-    };
+    const filterIssues = buildIssueFilter({
+      excludedRepos: new Set(config.excludeRepos),
+      excludeOrgs: new Set(
+        (config.excludeOrgs ?? []).map((o) => o.toLowerCase()),
+      ),
+      aiBlocklisted,
+      lowScoringRepos,
+      maxAgeDays: config.maxIssueAgeDays || 90,
+      now: new Date(),
+      includeDocIssues: config.includeDocIssues ?? true,
+    });
 
-    // Phase 0: Search repos where user has merged PRs (highest merge probability)
+    // Phase 0: Merged-PR repos
     const phase0Repos = mergedPRRepos.slice(0, 10);
     const phase0RepoSet = new Set(phase0Repos);
 
     if (phase0Repos.length > 0 && enabledStrategies.has("merged")) {
-      info(
-        MODULE,
-        `Phase 0: Searching issues in ${phase0Repos.length} merged-PR repos (no label filter)...`,
-      );
-
-      const remainingNeeded = maxResults - allCandidates.length;
-      if (remainingNeeded > 0) {
-        const {
-          candidates: mergedCandidates,
-          allBatchesFailed,
-          rateLimitHit,
-        } = await searchInRepos(
-          this.octokit,
-          this.vetter,
-          phase0Repos,
-          baseQualifiers,
-          [],
-          remainingNeeded,
-          "merged_pr",
-          filterIssues,
+      const remaining = maxResults - allCandidates.length;
+      if (remaining > 0) {
+        const result = await runPhase0(
+          this.octokit, this.vetter, phase0Repos,
+          baseQualifiers, remaining, filterIssues,
         );
-        allCandidates.push(...mergedCandidates);
-        if (allBatchesFailed) {
-          phase0Error = "All merged-PR repo batches failed";
-        }
-        if (rateLimitHit) {
-          rateLimitHitDuringSearch = true;
-        }
-        info(
-          MODULE,
-          `Found ${mergedCandidates.length} candidates from merged-PR repos`,
-        );
+        allCandidates.push(...result.candidates);
+        phaseErrors["0"] = result.error;
+        if (result.rateLimitHit) rateLimitHitDuringSearch = true;
       }
       strategiesUsed.push("merged");
     }
 
-    // Phase 0.5: Search preferred organizations (explicit user preference)
-    // Skip if budget is critical — Phase 0 results are sufficient
-    let phase0_5Error: string | null = null;
+    // Phase 0.5: Preferred organizations
     const preferredOrgs = config.preferredOrgs ?? [];
     if (
       allCandidates.length < maxResults &&
@@ -320,9 +652,7 @@ export class IssueDiscovery {
       searchBudget >= CRITICAL_BUDGET_THRESHOLD &&
       enabledStrategies.has("orgs")
     ) {
-      // Inter-phase delay to let GitHub's rate limit window cool down
       if (phase0Repos.length > 0) await sleep(INTER_PHASE_DELAY_MS);
-      // Filter out orgs already covered by Phase 0 repos
       const phase0Orgs = new Set(
         phase0Repos.map((r) => r.split("/")[0]?.toLowerCase()),
       );
@@ -331,69 +661,19 @@ export class IssueDiscovery {
         .slice(0, 5);
 
       if (orgsToSearch.length > 0) {
-        info(
-          MODULE,
-          `Phase 0.5: Searching issues in ${orgsToSearch.length} preferred org(s)...`,
+        const remaining = maxResults - allCandidates.length;
+        const result = await runPhase05(
+          this.octokit, this.vetter, orgsToSearch,
+          baseQualifiers, labels, remaining, phase0RepoSet, filterIssues,
         );
-        const remainingNeeded = maxResults - allCandidates.length;
-        const orgRepoFilter = orgsToSearch
-          .map((org) => `org:${org}`)
-          .join(" OR ");
-        const orgOps = orgsToSearch.length - 1;
-
-        try {
-          const allItems = await searchWithChunkedLabels(
-            this.octokit,
-            labels,
-            orgOps,
-            (labelQ) =>
-              `${baseQualifiers} ${labelQ} (${orgRepoFilter})`
-                .replace(/  +/g, " ")
-                .trim(),
-            remainingNeeded * 3,
-          );
-
-          if (allItems.length > 0) {
-            const filtered = filterIssues(allItems).filter((item) => {
-              const repoFullName = extractRepoFromUrl(item.repository_url);
-              if (!repoFullName) return false;
-              return !phase0RepoSet.has(repoFullName);
-            });
-            const {
-              candidates: orgCandidates,
-              allFailed: allVetFailed,
-              rateLimitHit,
-            } = await this.vetter.vetIssuesParallel(
-              filtered.slice(0, remainingNeeded * 2).map((i) => i.html_url),
-              remainingNeeded,
-              "preferred_org",
-            );
-            allCandidates.push(...orgCandidates);
-            if (allVetFailed) {
-              phase0_5Error = "All preferred org issue vetting failed";
-            }
-            if (rateLimitHit) {
-              rateLimitHitDuringSearch = true;
-            }
-            info(
-              MODULE,
-              `Found ${orgCandidates.length} candidates from preferred orgs`,
-            );
-          }
-        } catch (error) {
-          const errMsg = errorMessage(error);
-          phase0_5Error = errMsg;
-          if (isRateLimitError(error)) {
-            rateLimitHitDuringSearch = true;
-          }
-          warn(MODULE, `Error searching preferred orgs: ${errMsg}`);
-        }
+        allCandidates.push(...result.candidates);
+        phaseErrors["0.5"] = result.error;
+        if (result.rateLimitHit) rateLimitHitDuringSearch = true;
       }
       strategiesUsed.push("orgs");
     }
 
-    // Phase 1: Search starred repos (filter out already-searched Phase 0 repos)
-    // Skip if budget is critical
+    // Phase 1: Starred repos
     if (
       allCandidates.length < maxResults &&
       starredRepos.length > 0 &&
@@ -403,233 +683,59 @@ export class IssueDiscovery {
       await sleep(INTER_PHASE_DELAY_MS);
       const reposToSearch = starredRepos.filter((r) => !phase0RepoSet.has(r));
       if (reposToSearch.length > 0) {
-        info(
-          MODULE,
-          `Phase 1: Searching issues in ${reposToSearch.length} starred repos...`,
-        );
-        const remainingNeeded = maxResults - allCandidates.length;
-        if (remainingNeeded > 0) {
-          // Cap labels to reduce Search API calls: starred repos already signal user
-          // interest, so fewer labels suffice. With 3 labels and batch size 3 (2 repo ORs),
-          // each batch fits in a single label chunk instead of 3+, cutting Phase 1 calls
-          // from ~12 to ~4.
-          const phase1Labels = labels.slice(0, 3);
-          const {
-            candidates: starredCandidates,
-            allBatchesFailed,
-            rateLimitHit,
-          } = await searchInRepos(
-            this.octokit,
-            this.vetter,
-            reposToSearch.slice(0, 10),
-            baseQualifiers,
-            phase1Labels,
-            remainingNeeded,
-            "starred",
-            filterIssues,
+        const remaining = maxResults - allCandidates.length;
+        if (remaining > 0) {
+          const result = await runPhase1(
+            this.octokit, this.vetter, reposToSearch,
+            baseQualifiers, labels, remaining, filterIssues,
           );
-          allCandidates.push(...starredCandidates);
-          if (allBatchesFailed) {
-            phase1Error = "All starred repo batches failed";
-          }
-          if (rateLimitHit) {
-            rateLimitHitDuringSearch = true;
-          }
-          info(
-            MODULE,
-            `Found ${starredCandidates.length} candidates from starred repos`,
-          );
+          allCandidates.push(...result.candidates);
+          phaseErrors["1"] = result.error;
+          if (result.rateLimitHit) rateLimitHitDuringSearch = true;
         }
       }
       strategiesUsed.push("starred");
     }
 
-    // Phase 2: General search (if still need more)
-    // Skip if budget is low — Phases 0, 0.5, 1 are cheaper and higher-value
-    // When multiple scope tiers are active, fire one query per tier and interleave
-    // results to prevent high-volume tiers (e.g., "enhancement") from drowning out
-    // beginner results.
-    let phase2Error: string | null = null;
+    // Phase 2: General search
     if (
       allCandidates.length < maxResults &&
       searchBudget >= LOW_BUDGET_THRESHOLD &&
       enabledStrategies.has("broad")
     ) {
       await sleep(INTER_PHASE_DELAY_MS);
-      info(MODULE, "Phase 2: General issue search...");
-      const remainingNeeded = maxResults - allCandidates.length;
-      const seenRepos = new Set(allCandidates.map((c) => c.issue.repo));
-
-      // Build per-tier label groups. Multi-tier when 2+ scopes; single-tier otherwise.
-      const tierLabelGroups: { tier: string; tierLabels: string[] }[] = [];
-      if (scopes && scopes.length > 1) {
-        for (const scope of scopes) {
-          const scopeLabels = SCOPE_LABELS[scope] ?? [];
-          if (scopeLabels.length === 0) {
-            warn(MODULE, `Scope "${scope}" has no labels, skipping tier`);
-            continue;
-          }
-          tierLabelGroups.push({ tier: scope, tierLabels: scopeLabels });
-        }
-        // Custom labels not in any tier get their own pseudo-tier
-        const allScopeLabels = new Set(
-          scopes.flatMap((s) => SCOPE_LABELS[s] ?? []),
-        );
-        const customOnly = config.labels.filter((l) => !allScopeLabels.has(l));
-        if (customOnly.length > 0) {
-          tierLabelGroups.push({ tier: "custom", tierLabels: customOnly });
-        }
-      } else {
-        tierLabelGroups.push({ tier: "general", tierLabels: labels });
-      }
-
-      const budgetPerTier = Math.ceil(remainingNeeded / tierLabelGroups.length);
-      const tierResults: IssueCandidate[][] = [];
-
-      for (const { tier, tierLabels } of tierLabelGroups) {
-        try {
-          const allItems = await searchWithChunkedLabels(
-            this.octokit,
-            tierLabels,
-            0, // no repo/org ORs in Phase 2
-            (labelQ) =>
-              `${baseQualifiers} ${labelQ}`.replace(/  +/g, " ").trim(),
-            budgetPerTier * 3,
-          );
-
-          info(
-            MODULE,
-            `Phase 2 [${tier}]: processing ${allItems.length} items...`,
-          );
-
-          const {
-            candidates: tierCandidates,
-            allVetFailed,
-            rateLimitHit: vetRateLimitHit,
-          } = await filterVetAndScore(
-            this.vetter,
-            allItems,
-            filterIssues,
-            [phase0RepoSet, starredRepoSet, seenRepos],
-            budgetPerTier,
-            minStars,
-            `Phase 2 [${tier}]`,
-          );
-
-          tierResults.push(tierCandidates);
-          // Update seenRepos so later tiers don't return duplicate repos
-          for (const c of tierCandidates) seenRepos.add(c.issue.repo);
-          if (allVetFailed) {
-            phase2Error =
-              (phase2Error ? phase2Error + "; " : "") +
-              `${tier}: all vetting failed`;
-          }
-          if (vetRateLimitHit) {
-            rateLimitHitDuringSearch = true;
-          }
-          info(
-            MODULE,
-            `Found ${tierCandidates.length} candidates from ${tier} tier`,
-          );
-        } catch (error) {
-          if (getHttpStatusCode(error) === 401) throw error;
-          const errMsg = errorMessage(error);
-          phase2Error =
-            (phase2Error ? phase2Error + "; " : "") + `${tier}: ${errMsg}`;
-          if (isRateLimitError(error)) {
-            rateLimitHitDuringSearch = true;
-          }
-          warn(MODULE, `Error in ${tier} tier search: ${errMsg}`);
-          tierResults.push([]);
-        }
-      }
-
-      const interleaved = interleaveArrays(tierResults);
-      if (interleaved.length === 0 && phase2Error) {
-        warn(
-          MODULE,
-          `All ${tierLabelGroups.length} scope tiers failed in Phase 2: ${phase2Error}`,
-        );
-      }
-      allCandidates.push(...interleaved.slice(0, remainingNeeded));
+      const remaining = maxResults - allCandidates.length;
+      const result = await runPhase2(
+        this.octokit, this.vetter, scopes, labels, config.labels,
+        baseQualifiers, remaining, minStars,
+        phase0RepoSet, starredRepoSet, allCandidates, filterIssues,
+      );
+      allCandidates.push(...result.candidates);
+      phaseErrors["2"] = result.error;
+      if (result.rateLimitHit) rateLimitHitDuringSearch = true;
       strategiesUsed.push("broad");
     }
 
     // Phase 3: Actively maintained repos
-    // Skip if budget is low — this phase is API-heavy with broad queries
-    let phase3Error: string | null = null;
     if (
       allCandidates.length < maxResults &&
       searchBudget >= LOW_BUDGET_THRESHOLD &&
       enabledStrategies.has("maintained")
     ) {
       await sleep(INTER_PHASE_DELAY_MS);
-      info(MODULE, "Phase 3: Searching actively maintained repos...");
-      const remainingNeeded = maxResults - allCandidates.length;
-      const thirtyDaysAgo = new Date();
-      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-      const pushedSince = thirtyDaysAgo.toISOString().split("T")[0];
-      const categoryTopics = getTopicsForCategories(
-        config.projectCategories ?? [],
+      const remaining = maxResults - allCandidates.length;
+      const result = await runPhase3(
+        this.octokit, this.vetter, langQuery, minStars,
+        config.projectCategories ?? [], remaining,
+        phase0RepoSet, starredRepoSet, allCandidates, filterIssues,
       );
-      const topicQuery =
-        categoryTopics.length > 0 ? `topic:${categoryTopics[0]}` : "";
-      const phase3Query =
-        `is:issue is:open no:assignee ${langQuery} ${topicQuery} stars:>=${minStars} pushed:>=${pushedSince} archived:false`
-          .replace(/  +/g, " ")
-          .trim();
-
-      try {
-        const data = await cachedSearchIssues(this.octokit, {
-          q: phase3Query,
-          sort: "updated",
-          order: "desc",
-          per_page: remainingNeeded * 3,
-        });
-
-        info(
-          MODULE,
-          `Found ${data.total_count} issues in maintained-repo search, processing top ${data.items.length}...`,
-        );
-
-        const seenRepos = new Set(allCandidates.map((c) => c.issue.repo));
-        const {
-          candidates: starFiltered,
-          allVetFailed,
-          rateLimitHit: vetRateLimitHit,
-        } = await filterVetAndScore(
-          this.vetter,
-          data.items,
-          filterIssues,
-          [phase0RepoSet, starredRepoSet, seenRepos],
-          remainingNeeded,
-          minStars,
-          "Phase 3",
-        );
-
-        allCandidates.push(...starFiltered);
-        if (allVetFailed) {
-          phase3Error = "all vetting failed";
-        }
-        if (vetRateLimitHit) {
-          rateLimitHitDuringSearch = true;
-        }
-        info(
-          MODULE,
-          `Found ${starFiltered.length} candidates from maintained-repo search`,
-        );
-      } catch (error) {
-        const errMsg = errorMessage(error);
-        phase3Error = errMsg;
-        if (isRateLimitError(error)) {
-          rateLimitHitDuringSearch = true;
-        }
-        warn(MODULE, `Error in maintained-repo search: ${errMsg}`);
-      }
+      allCandidates.push(...result.candidates);
+      phaseErrors["3"] = result.error;
+      if (result.rateLimitHit) rateLimitHitDuringSearch = true;
       strategiesUsed.push("maintained");
     }
 
-    // Determine if phases were skipped due to budget constraints
+    // Build result / error summary
     const phasesSkippedForBudget = searchBudget < LOW_BUDGET_THRESHOLD;
     let budgetNote = "";
     if (searchBudget < CRITICAL_BUDGET_THRESHOLD) {
@@ -639,15 +745,15 @@ export class IssueDiscovery {
     }
 
     if (allCandidates.length === 0) {
-      const phaseErrors = [
-        phase0Error ? `Phase 0 (merged-PR repos): ${phase0Error}` : null,
-        phase0_5Error ? `Phase 0.5 (preferred orgs): ${phase0_5Error}` : null,
-        phase1Error ? `Phase 1 (starred repos): ${phase1Error}` : null,
-        phase2Error ? `Phase 2 (general): ${phase2Error}` : null,
-        phase3Error ? `Phase 3 (maintained repos): ${phase3Error}` : null,
+      const errorDetails = [
+        phaseErrors["0"] ? `Phase 0 (merged-PR repos): ${phaseErrors["0"]}` : null,
+        phaseErrors["0.5"] ? `Phase 0.5 (preferred orgs): ${phaseErrors["0.5"]}` : null,
+        phaseErrors["1"] ? `Phase 1 (starred repos): ${phaseErrors["1"]}` : null,
+        phaseErrors["2"] ? `Phase 2 (general): ${phaseErrors["2"]}` : null,
+        phaseErrors["3"] ? `Phase 3 (maintained repos): ${phaseErrors["3"]}` : null,
       ].filter(Boolean);
       const details =
-        phaseErrors.length > 0 ? ` ${phaseErrors.join(". ")}.` : "";
+        errorDetails.length > 0 ? ` ${errorDetails.join(". ")}.` : "";
 
       if (rateLimitHitDuringSearch || phasesSkippedForBudget) {
         this.rateLimitWarning =
@@ -662,7 +768,6 @@ export class IssueDiscovery {
       );
     }
 
-    // Surface rate limit warning even with partial results
     if (rateLimitHitDuringSearch || phasesSkippedForBudget) {
       this.rateLimitWarning =
         `Search results may be incomplete: GitHub API rate limits were hit during search.${budgetNote} ` +
@@ -670,7 +775,7 @@ export class IssueDiscovery {
         `Try again after the rate limit resets for complete results.`;
     }
 
-    // Sort by priority first, then by recommendation, then by viability score
+    // Sort by priority, recommendation, then viability score
     allCandidates.sort((a, b) => {
       const priorityOrder: Record<SearchPriority, number> = {
         merged_pr: 0,
@@ -691,7 +796,6 @@ export class IssueDiscovery {
       return b.viabilityScore - a.viabilityScore;
     });
 
-    // Apply per-repo cap: max 2 issues from any single repo
     const capped = applyPerRepoCap(allCandidates, 2);
 
     info(
@@ -717,9 +821,6 @@ export class IssueDiscovery {
    */
   private deriveLowScoringRepos(threshold: number): string[] {
     const lowScoring: string[] = [];
-    // The ScoutStateReader doesn't expose a bulk "get all repos with scores" method,
-    // so we rely on the mergedPRRepos + starredRepos as the universe of known repos
-    // and check each one's score. Repos not in state simply return null (no penalty).
     const knownRepos = new Set([
       ...this.stateReader.getReposWithMergedPRs(),
       ...this.stateReader.getStarredRepos(),
