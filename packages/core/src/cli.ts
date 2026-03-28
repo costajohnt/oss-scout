@@ -51,6 +51,42 @@ program
   });
 
 program
+  .command('bootstrap')
+  .description('Import starred repos and PR history from GitHub')
+  .option('--json', 'Output as JSON')
+  .action(async (options: { json?: boolean }) => {
+    try {
+      const { bootstrapScout } = await import('./core/bootstrap.js');
+      const { createScout } = await import('./scout.js');
+      const { requireGitHubToken } = await import('./core/utils.js');
+      const token = requireGitHubToken();
+      const state = loadLocalState();
+      const scout = await createScout({ githubToken: token, persistence: 'provided', initialState: state });
+      const result = await bootstrapScout(scout, token);
+      saveLocalState(scout.getState());
+
+      if (options.json) {
+        console.log(formatJsonSuccess(result));
+      } else {
+        if (result.skippedDueToRateLimit) {
+          console.log('Skipped: GitHub API rate limit too low. Try again later.');
+        } else {
+          console.log(`Imported ${result.mergedPRCount} merged PRs, ${result.closedPRCount} closed PRs, ${result.starredRepoCount} starred repos`);
+          console.log(`Scored ${result.reposScoredCount} repositories`);
+        }
+      }
+    } catch (err) {
+      if (options.json) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.log(formatJsonError(msg, resolveErrorCode(err)));
+      } else {
+        console.error('Error:', err instanceof Error ? err.message : String(err));
+      }
+      process.exit(1);
+    }
+  });
+
+program
   .command('search [count]')
   .description('Search for contributable issues using multi-strategy discovery')
   .option('--json', 'Output as JSON')
@@ -66,6 +102,13 @@ program
         process.exit(1);
       }
       const state = loadLocalState();
+      if (
+        state.mergedPRs.length === 0 &&
+        state.starredRepos.length === 0 &&
+        state.preferences.githubUsername
+      ) {
+        console.log('Run `oss-scout bootstrap` to import your starred repos and PR history for better results.\n');
+      }
       const results = await runSearch({ maxResults, state });
       if (options.json) {
         console.log(formatJsonSuccess(results));
