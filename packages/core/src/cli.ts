@@ -213,6 +213,79 @@ resultsCmd
     }
   });
 
+// ── config command ──────────────────────────────────────────────────
+
+const configCmd = program
+  .command('config')
+  .description('View and update preferences')
+  .option('--json', 'Output as JSON')
+  .action(async (options: { json?: boolean }) => {
+    try {
+      const { runConfigShow, getConfigData } = await import('./commands/config.js');
+      if (options.json) {
+        console.log(formatJsonSuccess(getConfigData()));
+      } else {
+        runConfigShow(options);
+      }
+    } catch (err) {
+      if (options.json) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.log(formatJsonError(msg, resolveErrorCode(err)));
+      } else {
+        console.error('Error:', err instanceof Error ? err.message : String(err));
+      }
+      process.exit(1);
+    }
+  });
+
+configCmd
+  .command('set <key> <value>')
+  .description('Update a single preference (e.g. config set minStars 100)')
+  .option('--json', 'Output as JSON')
+  .action(async (key: string, value: string, options: { json?: boolean }) => {
+    try {
+      const { runConfigSet } = await import('./commands/config.js');
+      const updated = runConfigSet(key, value);
+      if (options.json) {
+        console.log(formatJsonSuccess(updated));
+      } else {
+        console.log(`✅ Updated "${key}" successfully.`);
+      }
+    } catch (err) {
+      if (options.json) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.log(formatJsonError(msg, resolveErrorCode(err)));
+      } else {
+        console.error('Error:', err instanceof Error ? err.message : String(err));
+      }
+      process.exit(1);
+    }
+  });
+
+configCmd
+  .command('reset')
+  .description('Reset all preferences to defaults')
+  .option('--json', 'Output as JSON')
+  .action(async (options: { json?: boolean }) => {
+    try {
+      const { runConfigReset } = await import('./commands/config.js');
+      const defaults = runConfigReset();
+      if (options.json) {
+        console.log(formatJsonSuccess(defaults));
+      } else {
+        console.log('✅ Preferences reset to defaults.');
+      }
+    } catch (err) {
+      if (options.json) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.log(formatJsonError(msg, resolveErrorCode(err)));
+      } else {
+        console.error('Error:', err instanceof Error ? err.message : String(err));
+      }
+      process.exit(1);
+    }
+  });
+
 program
   .command('vet <issue-url>')
   .description('Vet a specific GitHub issue for claimability and project health')
