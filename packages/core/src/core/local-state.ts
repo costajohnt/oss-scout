@@ -7,7 +7,8 @@ import * as path from 'path';
 import { ScoutStateSchema } from './schemas.js';
 import type { ScoutState } from './schemas.js';
 import { getDataDir } from './utils.js';
-import { debug } from './logger.js';
+import { debug, warn } from './logger.js';
+import { errorMessage } from './errors.js';
 
 const MODULE = 'local-state';
 
@@ -27,18 +28,22 @@ export function hasLocalState(): boolean {
  */
 export function loadLocalState(): ScoutState {
   const statePath = getStatePath();
-
-  if (!fs.existsSync(statePath)) {
-    debug(MODULE, 'No state file found, returning fresh state');
-    return ScoutStateSchema.parse({ version: 1 });
-  }
-
   try {
     const raw = fs.readFileSync(statePath, 'utf-8');
-    const parsed = JSON.parse(raw);
-    return ScoutStateSchema.parse(parsed);
+    return ScoutStateSchema.parse(JSON.parse(raw));
   } catch (err) {
-    debug(MODULE, `Failed to load state: ${err instanceof Error ? err.message : String(err)}`);
+    const code = (err as NodeJS.ErrnoException)?.code;
+    if (code === 'ENOENT') {
+      return ScoutStateSchema.parse({ version: 1 });
+    }
+    // State file exists but is corrupt or unreadable
+    warn(MODULE, `Failed to load state from ${statePath}: ${errorMessage(err)}. Using defaults.`);
+    // Backup corrupt file
+    try {
+      const backupPath = `${statePath}.corrupt.${Date.now()}`;
+      fs.copyFileSync(statePath, backupPath);
+      warn(MODULE, `Corrupt state backed up to ${backupPath}`);
+    } catch { /* best effort backup */ }
     return ScoutStateSchema.parse({ version: 1 });
   }
 }

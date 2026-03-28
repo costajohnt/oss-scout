@@ -11,6 +11,7 @@ import { ScoutStateSchema } from './schemas.js';
 import type { ScoutState, RepoScore, SavedCandidate } from './schemas.js';
 import { getDataDir } from './utils.js';
 import { debug, warn } from './logger.js';
+import { errorMessage } from './errors.js';
 
 const MODULE = 'gist-state';
 
@@ -77,7 +78,7 @@ export class GistStateStore {
     try {
       return await this.bootstrapFromApi();
     } catch (err) {
-      warn(MODULE, `API bootstrap failed: ${err instanceof Error ? err.message : String(err)}`);
+      warn(MODULE, `API bootstrap failed: ${errorMessage(err)}`);
       return this.bootstrapFromCache();
     }
   }
@@ -103,7 +104,7 @@ export class GistStateStore {
       debug(MODULE, 'State pushed to gist');
       return true;
     } catch (err) {
-      warn(MODULE, `Failed to push: ${err instanceof Error ? err.message : String(err)}`);
+      warn(MODULE, `Failed to push: ${errorMessage(err)}`);
       return false;
     }
   }
@@ -121,7 +122,7 @@ export class GistStateStore {
       }
       return state;
     } catch (err) {
-      warn(MODULE, `Failed to pull: ${err instanceof Error ? err.message : String(err)}`);
+      warn(MODULE, `Failed to pull: ${errorMessage(err)}`);
       return null;
     }
   }
@@ -145,8 +146,8 @@ export class GistStateStore {
           this.writeCache(state);
           return { gistId: cachedId, state, created: false };
         }
-      } catch {
-        // Cached ID is stale or deleted — continue to search
+      } catch (err) {
+        debug(MODULE, `Cached gist ID invalid: ${errorMessage(err)}`);
       }
       debug(MODULE, 'Cached gist ID invalid, searching...');
     }
@@ -203,8 +204,8 @@ export class GistStateStore {
     try {
       const parsed = JSON.parse(file.content);
       return ScoutStateSchema.parse(parsed);
-    } catch {
-      warn(MODULE, 'Gist content failed validation');
+    } catch (err) {
+      warn(MODULE, `Gist content failed validation: ${errorMessage(err)}`);
       return null;
     }
   }
@@ -241,7 +242,11 @@ export class GistStateStore {
     try {
       const id = fs.readFileSync(getGistIdPath(), 'utf-8').trim();
       return id || null;
-    } catch {
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException)?.code;
+      if (code !== 'ENOENT') {
+        warn(MODULE, `Failed to read cached gist ID: ${errorMessage(err)}`);
+      }
       return null;
     }
   }
@@ -254,7 +259,11 @@ export class GistStateStore {
     try {
       const raw = fs.readFileSync(getCachePath(), 'utf-8');
       return ScoutStateSchema.parse(JSON.parse(raw));
-    } catch {
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException)?.code;
+      if (code !== 'ENOENT') {
+        warn(MODULE, `Failed to read state cache: ${errorMessage(err)}`);
+      }
       return null;
     }
   }
@@ -267,7 +276,7 @@ export class GistStateStore {
         { mode: 0o600 },
       );
     } catch (err) {
-      debug(MODULE, `Failed to write cache: ${err instanceof Error ? err.message : String(err)}`);
+      warn(MODULE, `Failed to write cache: ${errorMessage(err)}`);
     }
   }
 }
