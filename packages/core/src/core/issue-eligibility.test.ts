@@ -33,8 +33,6 @@ vi.mock('./pagination.js', () => ({
 
 import { checkNoExistingPR, checkNotClaimed, checkUserMergedPRsInRepo, analyzeRequirements } from './issue-eligibility.js';
 import { paginateAll } from './pagination.js';
-import { getHttpCache } from './http-cache.js';
-import { getSearchBudgetTracker } from './search-budget.js';
 import { warn } from './logger.js';
 
 const mockedPaginateAll = vi.mocked(paginateAll);
