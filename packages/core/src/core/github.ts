@@ -10,7 +10,7 @@ const MODULE = 'github';
 
 const ThrottledOctokit = Octokit.plugin(throttling);
 
-export interface RateLimitInfo {
+interface RateLimitInfo {
   remaining: number;
   limit: number;
   resetAt: string;

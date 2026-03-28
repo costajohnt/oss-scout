@@ -4,7 +4,7 @@
 
 import type { ErrorCode } from '../core/errors.js';
 
-export interface JsonOutput<T = unknown> {
+interface JsonOutput<T = unknown> {
   success: boolean;
   data?: T;
   error?: string;

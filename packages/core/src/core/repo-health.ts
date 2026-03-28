@@ -196,7 +196,7 @@ export async function fetchContributionGuidelines(
  * Parse the raw content of a CONTRIBUTING.md file to extract structured guidelines:
  * branch naming, commit format, test framework, linter, formatter, CLA requirement.
  */
-export function parseContributionGuidelines(content: string): ContributionGuidelines {
+function parseContributionGuidelines(content: string): ContributionGuidelines {
   const guidelines: ContributionGuidelines = {
     rawContent: content,
   };

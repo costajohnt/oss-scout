@@ -177,8 +177,6 @@ export class IssueVetter {
       reasonsToApprove.push(
         `Trusted project (${effectiveMergedCount} PR${effectiveMergedCount > 1 ? 's' : ''} merged)`,
       );
-    } else if (reposWithMergedPRs.includes(repoFullName)) {
-      reasonsToApprove.push('Trusted project (previous PR merged)');
     }
 
     // Check for org-level affinity (user has merged PRs in another repo under same org)

@@ -20,7 +20,7 @@ import { errorMessage, getHttpStatusCode } from './errors.js';
 const MODULE = 'http-cache';
 
 /** Shape of a single cache entry on disk. */
-export interface CacheEntry {
+interface CacheEntry {
   etag: string;
   url: string;
   body: unknown;
@@ -166,8 +166,8 @@ export class HttpCache {
             fs.unlinkSync(filePath);
             evicted++;
           }
-        } catch {
-          // Corrupt entry — delete it
+        } catch (readErr) {
+          debug(MODULE, `Removing unreadable cache entry ${file}`);
           try { fs.unlinkSync(filePath); } catch { /* best effort */ }
           evicted++;
         }

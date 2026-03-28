@@ -18,7 +18,7 @@ import { Octokit } from '@octokit/rest';
 import { getOctokit, checkRateLimit } from './github.js';
 import { getSearchBudgetTracker } from './search-budget.js';
 import { daysBetween, getDataDir, sleep } from './utils.js';
-import { DEFAULT_PREFERENCES, type SearchPriority, type IssueCandidate, SCOPE_LABELS } from './types.js';
+import { type SearchPriority, type IssueCandidate, SCOPE_LABELS } from './types.js';
 import type { ScoutPreferences } from './schemas.js';
 import { ValidationError, errorMessage, getHttpStatusCode, isRateLimitError } from './errors.js';
 import { debug, info, warn } from './logger.js';
@@ -241,23 +241,16 @@ export class IssueDiscovery {
 
     // Get merged-PR repos (highest merge probability)
     const mergedPRRepos = this.stateReader.getReposWithMergedPRs();
-    const mergedPRRepoSet = new Set(mergedPRRepos);
-
-    // oss-scout doesn't track open PRs — this is always empty.
-    // The pipeline still accepts this array so Phase 0 can process repos from multiple sources.
-    const openPRRepos: string[] = [];
 
     // Get starred repos (from local cache or state reader)
     const starredRepos = this.getStarredRepos();
     const starredRepoSet = new Set(starredRepos);
 
     // Get low-scoring repos from state reader
-    const minRepoScoreThreshold = config.minRepoScoreThreshold ?? DEFAULT_PREFERENCES.minRepoScoreThreshold;
+    const minRepoScoreThreshold = config.minRepoScoreThreshold;
     const lowScoringRepos = new Set(this.deriveLowScoringRepos(minRepoScoreThreshold));
 
     // Common filters
-    // No active issue tracking — nothing to exclude
-    const trackedUrls = new Set<string>();
     const excludedRepos = new Set(config.excludeRepos);
     const maxAgeDays = config.maxIssueAgeDays || 90;
     const now = new Date();
@@ -272,7 +265,7 @@ export class IssueDiscovery {
 
     // Helper to filter issues
     const includeDocIssues = config.includeDocIssues ?? true;
-    const aiBlocklisted = new Set(config.aiPolicyBlocklist ?? DEFAULT_PREFERENCES.aiPolicyBlocklist ?? []);
+    const aiBlocklisted = new Set(config.aiPolicyBlocklist);
     if (aiBlocklisted.size > 0) {
       debug(
         MODULE,
@@ -281,7 +274,6 @@ export class IssueDiscovery {
     }
     const filterIssues = (items: GitHubSearchItem[]) => {
       return items.filter((item) => {
-        if (trackedUrls.has(item.html_url)) return false;
         const repoFullName = item.repository_url.split('/').slice(-2).join('/');
         if (excludedRepos.has(repoFullName)) return false;
         // Filter repos with known anti-AI contribution policies
@@ -298,77 +290,40 @@ export class IssueDiscovery {
       });
     };
 
-    // Phase 0: Search repos where user has merged PRs + open-PR repos (highest merge probability)
-    const phase0Repos = [...mergedPRRepos, ...openPRRepos.filter((r) => !mergedPRRepoSet.has(r))].slice(0, 10);
+    // Phase 0: Search repos where user has merged PRs (highest merge probability)
+    const phase0Repos = mergedPRRepos.slice(0, 10);
     const phase0RepoSet = new Set(phase0Repos);
 
     if (phase0Repos.length > 0) {
-      const mergedInPhase0 = Math.min(mergedPRRepos.length, phase0Repos.length);
-      const openInPhase0 = phase0Repos.length - mergedInPhase0;
       info(
         MODULE,
-        `Phase 0: Searching issues in ${phase0Repos.length} repos (${mergedInPhase0} merged-PR, ${openInPhase0} open-PR, no label filter)...`,
+        `Phase 0: Searching issues in ${phase0Repos.length} merged-PR repos (no label filter)...`,
       );
 
-      // Phase 0a: merged-PR repos (priority: merged_pr)
-      const mergedPhase0Repos = phase0Repos.slice(0, mergedInPhase0);
-      if (mergedPhase0Repos.length > 0) {
-        const remainingNeeded = maxResults - allCandidates.length;
-        if (remainingNeeded > 0) {
-          const {
-            candidates: mergedCandidates,
-            allBatchesFailed,
-            rateLimitHit,
-          } = await searchInRepos(
-            this.octokit,
-            this.vetter,
-            mergedPhase0Repos,
-            baseQualifiers,
-            [],
-            remainingNeeded,
-            'merged_pr',
-            filterIssues,
-          );
-          allCandidates.push(...mergedCandidates);
-          if (allBatchesFailed) {
-            phase0Error = 'All merged-PR repo batches failed';
-          }
-          if (rateLimitHit) {
-            rateLimitHitDuringSearch = true;
-          }
-          info(MODULE, `Found ${mergedCandidates.length} candidates from merged-PR repos`);
+      const remainingNeeded = maxResults - allCandidates.length;
+      if (remainingNeeded > 0) {
+        const {
+          candidates: mergedCandidates,
+          allBatchesFailed,
+          rateLimitHit,
+        } = await searchInRepos(
+          this.octokit,
+          this.vetter,
+          phase0Repos,
+          baseQualifiers,
+          [],
+          remainingNeeded,
+          'merged_pr',
+          filterIssues,
+        );
+        allCandidates.push(...mergedCandidates);
+        if (allBatchesFailed) {
+          phase0Error = 'All merged-PR repo batches failed';
         }
-      }
-
-      // Phase 0b: open-PR repos (priority: starred — intermediate tier)
-      const openPhase0Repos = phase0Repos.slice(mergedInPhase0);
-      if (openPhase0Repos.length > 0 && allCandidates.length < maxResults) {
-        const remainingNeeded = maxResults - allCandidates.length;
-        if (remainingNeeded > 0) {
-          const {
-            candidates: openCandidates,
-            allBatchesFailed,
-            rateLimitHit,
-          } = await searchInRepos(
-            this.octokit,
-            this.vetter,
-            openPhase0Repos,
-            baseQualifiers,
-            [],
-            remainingNeeded,
-            'starred',
-            filterIssues,
-          );
-          allCandidates.push(...openCandidates);
-          if (allBatchesFailed) {
-            const msg = 'All open-PR repo batches failed';
-            phase0Error = phase0Error ? `${phase0Error}; ${msg}` : msg;
-          }
-          if (rateLimitHit) {
-            rateLimitHitDuringSearch = true;
-          }
-          info(MODULE, `Found ${openCandidates.length} candidates from open-PR repos`);
+        if (rateLimitHit) {
+          rateLimitHitDuringSearch = true;
         }
+        info(MODULE, `Found ${mergedCandidates.length} candidates from merged-PR repos`);
       }
     }
 
@@ -733,8 +688,12 @@ export class IssueDiscovery {
     content += `- **Score**: Viability score (0-100)\n`;
     content += `- **Recommendation**: Y = approve, N = skip, ? = needs_review\n`;
 
-    fs.writeFileSync(outputFile, content, 'utf-8');
-    info(MODULE, `Saved ${sorted.length} issues to ${outputFile}`);
+    try {
+      fs.writeFileSync(outputFile, content, 'utf-8');
+      info(MODULE, `Saved ${sorted.length} issues to ${outputFile}`);
+    } catch (err) {
+      warn(MODULE, `Failed to save search results to ${outputFile}: ${errorMessage(err)}`);
+    }
 
     return outputFile;
   }

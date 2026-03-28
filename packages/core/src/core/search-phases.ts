@@ -18,7 +18,7 @@ import { getSearchBudgetTracker } from './search-budget.js';
 const MODULE = 'search-phases';
 
 /** GitHub Search API enforces a max of 5 AND/OR/NOT operators per query. */
-export const GITHUB_MAX_BOOLEAN_OPS = 5;
+const GITHUB_MAX_BOOLEAN_OPS = 5;
 
 /** Delay between search API calls to avoid GitHub's secondary rate limit (~30 req/min).
  * Set to 2000ms as a safety floor (max 30/min at the limit). The SearchBudgetTracker
@@ -63,7 +63,7 @@ export function chunkLabels(labels: string[], reservedOps: number = 0): string[]
 // ── Pure utilities ──
 
 /** Build a GitHub Search API label filter from a list of labels. */
-export function buildLabelQuery(labels: string[]): string {
+function buildLabelQuery(labels: string[]): string {
   if (labels.length === 0) return '';
   if (labels.length === 1) return `label:"${labels[0]}"`;
   return `(${labels.map((l) => `label:"${l}"`).join(' OR ')})`;
@@ -92,7 +92,7 @@ export function interleaveArrays<T>(arrays: T[][]): T[] {
 }
 
 /** Split repos into batches of the specified size. */
-export function batchRepos(repos: string[], batchSize: number): string[][] {
+function batchRepos(repos: string[], batchSize: number): string[][] {
   const batches: string[][] = [];
   for (let i = 0; i < repos.length; i += batchSize) {
     batches.push(repos.slice(i, i + batchSize));

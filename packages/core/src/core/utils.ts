@@ -6,7 +6,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { execFileSync } from 'child_process';
-import { ConfigurationError } from './errors.js';
+import { ConfigurationError, errorMessage } from './errors.js';
 import { debug } from './logger.js';
 
 export function sleep(ms: number): Promise<void> {
@@ -74,20 +74,13 @@ export function daysBetween(from: Date, to: Date = new Date()): number {
   return Math.max(0, Math.floor((to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24)));
 }
 
-export function splitRepo(repoFullName: string): { owner: string; repo: string } {
-  const [owner, repo] = repoFullName.split('/');
-  if (!owner || !repo) {
-    throw new Error(`Invalid repo format: expected "owner/repo", got "${repoFullName}"`);
-  }
-  return { owner, repo };
-}
-
 export function getCLIVersion(): string {
   try {
     const pkgPath = path.join(path.dirname(process.argv[1]), '..', 'package.json');
     return JSON.parse(fs.readFileSync(pkgPath, 'utf-8')).version;
-  } catch {
-    return '0.0.0';
+  } catch (err) {
+    debug(MODULE, `Could not read CLI version: ${errorMessage(err)}`);
+    return 'unknown';
   }
 }
 

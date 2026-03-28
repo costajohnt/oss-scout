@@ -18,7 +18,6 @@ import type {
 
 // Re-export persisted types for convenience
 export type {
-  IssueStatus,
   ProjectCategory,
   IssueScope,
   RepoSignals,
