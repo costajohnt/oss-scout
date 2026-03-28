@@ -1,0 +1,49 @@
+{
+  "name": "@oss-scout/mcp",
+  "version": "0.1.0",
+  "description": "MCP server for oss-scout — exposes issue discovery and vetting as MCP tools",
+  "type": "module",
+  "bin": {
+    "oss-scout-mcp": "./dist/mcp-server.bundle.cjs"
+  },
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist/"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "bundle": "esbuild src/index.ts --bundle --platform=node --target=node20 --format=cjs --outfile=dist/mcp-server.bundle.cjs",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "pnpm run build && pnpm run bundle"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.27.1",
+    "@oss-scout/core": "workspace:^",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "esbuild": "^0.27.4",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3",
+    "@vitest/coverage-v8": "^4.1.0",
+    "vitest": "^4.1.0"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/costajohnt/oss-scout.git",
+    "directory": "packages/mcp-server"
+  }
+}

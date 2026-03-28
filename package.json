@@ -1,0 +1,48 @@
+{
+  "name": "oss-scout",
+  "description": "Find open source issues personalized to your contribution history",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "pnpm -r run build",
+    "bundle": "pnpm -r run bundle",
+    "start": "pnpm --filter @oss-scout/core run start",
+    "test": "pnpm -r run test",
+    "test:watch": "pnpm -r run test:watch",
+    "test:coverage": "pnpm -r run test:coverage",
+    "typecheck": "pnpm -r run typecheck",
+    "lint": "eslint packages/",
+    "lint:fix": "eslint packages/ --fix",
+    "format": "prettier --write packages/",
+    "format:check": "prettier --check packages/"
+  },
+  "keywords": [
+    "claude-code-plugin",
+    "open-source",
+    "github",
+    "issue-discovery",
+    "cli",
+    "mcp"
+  ],
+  "author": "John Costa",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/costajohnt/oss-scout.git"
+  },
+  "homepage": "https://github.com/costajohnt/oss-scout#readme",
+  "bugs": {
+    "url": "https://github.com/costajohnt/oss-scout/issues"
+  },
+  "packageManager": "pnpm@10.27.0",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.0.3",
+    "eslint-config-prettier": "^10.1.8",
+    "prettier": "^3.8.1",
+    "typescript-eslint": "^8.57.1"
+  }
+}

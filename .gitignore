@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+
+# Build output
+packages/*/dist/
+
+# Test coverage
+coverage/
+
+# Logs
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+
+# Local settings
+.claude/*.local.md
+.claude/settings.json
+
+# Worktrees
+.worktrees/

@@ -1,0 +1,21 @@
+{
+  "name": "oss-scout",
+  "version": "0.1.0",
+  "description": "Find open source issues personalized to your contribution history. Three-strategy search, deep vetting, and viability scoring.",
+  "author": {
+    "name": "John Costa",
+    "url": "https://github.com/costajohnt"
+  },
+  "repository": "https://github.com/costajohnt/oss-scout",
+  "homepage": "https://github.com/costajohnt/oss-scout#readme",
+  "license": "MIT",
+  "keywords": [
+    "open-source",
+    "github",
+    "issue-discovery",
+    "vetting",
+    "contributions",
+    "cli",
+    "mcp"
+  ]
+}
