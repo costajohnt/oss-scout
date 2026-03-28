@@ -3,7 +3,7 @@
  */
 
 import { loadLocalState, saveLocalState } from '../core/local-state.js';
-import { ScoutPreferencesSchema, IssueScopeSchema, ProjectCategorySchema } from '../core/schemas.js';
+import { ScoutPreferencesSchema, IssueScopeSchema, ProjectCategorySchema, PersistenceModeSchema } from '../core/schemas.js';
 import type { ScoutPreferences } from '../core/schemas.js';
 import { ValidationError } from '../core/errors.js';
 
@@ -25,11 +25,16 @@ const STRING_FIELDS = new Set(['githubUsername']);
 
 const SCOPE_FIELD = 'scope';
 
+const ENUM_FIELDS: Record<string, readonly string[]> = {
+  persistence: PersistenceModeSchema.options as readonly string[],
+};
+
 const ALL_FIELDS = new Set([
   ...ARRAY_FIELDS,
   ...NUMBER_FIELDS,
   ...BOOLEAN_FIELDS,
   ...STRING_FIELDS,
+  ...Object.keys(ENUM_FIELDS),
   SCOPE_FIELD,
 ]);
 
@@ -106,6 +111,7 @@ export function runConfigShow(options: { json?: boolean }): void {
   console.log(`  projectCategories:    ${formatArray(prefs.projectCategories)}`);
   console.log(`  excludeRepos:         ${formatArray(prefs.excludeRepos)}`);
   console.log(`  aiPolicyBlocklist:    ${formatArray(prefs.aiPolicyBlocklist)}`);
+  console.log(`  persistence:          ${prefs.persistence}`);
   console.log();
 }
 
@@ -154,6 +160,14 @@ export function runConfigSet(key: string, value: string): ScoutPreferences {
       );
     }
     prefs.projectCategories = updated as typeof prefs.projectCategories;
+  } else if (key in ENUM_FIELDS) {
+    const validValues = ENUM_FIELDS[key];
+    if (!validValues.includes(value)) {
+      throw new ValidationError(
+        `Invalid value for "${key}": "${value}". Valid: ${validValues.join(', ')}`,
+      );
+    }
+    (prefs as Record<string, unknown>)[key] = value;
   } else if (ARRAY_FIELDS.has(key)) {
     const current = ((prefs as Record<string, unknown>)[key] as string[] | undefined) ?? [];
     (prefs as Record<string, unknown>)[key] = updateArray(current, value);
