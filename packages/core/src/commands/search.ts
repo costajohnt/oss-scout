@@ -4,6 +4,7 @@
 
 import { createScout } from '../scout.js';
 import { requireGitHubToken } from '../core/utils.js';
+import type { ScoutState } from '../core/schemas.js';
 
 export interface SearchOutput {
   candidates: Array<{
@@ -35,11 +36,14 @@ export interface SearchOutput {
 
 interface SearchCommandOptions {
   maxResults: number;
+  state?: ScoutState;
 }
 
 export async function runSearch(options: SearchCommandOptions): Promise<SearchOutput> {
   const token = requireGitHubToken();
-  const scout = await createScout({ githubToken: token });
+  const scout = options.state
+    ? await createScout({ githubToken: token, persistence: 'provided', initialState: options.state })
+    : await createScout({ githubToken: token });
   const result = await scout.search({ maxResults: options.maxResults });
 
   return {
