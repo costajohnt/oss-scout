@@ -30,9 +30,51 @@ import type {
 import { GistStateStore, mergeStates } from "./core/gist-state-store.js";
 import type { GistOctokitLike } from "./core/gist-state-store.js";
 import { getOctokit } from "./core/github.js";
+import type { Octokit } from "@octokit/rest";
 import { loadLocalState } from "./core/local-state.js";
 import { warn } from "./core/logger.js";
 import { extractRepoFromUrl } from "./core/utils.js";
+
+/** Wrap a real Octokit instance as GistOctokitLike without unsafe double casts. */
+function toGistOctokit(octokit: Octokit): GistOctokitLike {
+  return {
+    gists: {
+      async get(params) {
+        const { data } = await octokit.gists.get(params);
+        if (!data.id) throw new Error("Gist get returned no id");
+        const files: Record<string, { content?: string } | undefined> | null =
+          data.files
+            ? Object.fromEntries(
+                Object.entries(data.files).map(([k, v]) => [
+                  k,
+                  v ? { content: v.content } : undefined,
+                ]),
+              )
+            : null;
+        return { data: { id: data.id, files } };
+      },
+      async create(params) {
+        const { data } = await octokit.gists.create(params);
+        if (!data.id) throw new Error("Gist create returned no id");
+        return { data: { id: data.id } };
+      },
+      async update(params) {
+        const { data } = await octokit.gists.update(params);
+        if (!data.id) throw new Error("Gist update returned no id");
+        return { data: { id: data.id } };
+      },
+      async list(params) {
+        const { data } = await octokit.gists.list(params);
+        return {
+          data: data.map((g) => ({
+            id: g.id,
+            description: g.description ?? null,
+          })),
+        };
+      },
+    },
+  };
+}
 
 /**
  * Create an OssScout instance.
@@ -63,7 +105,7 @@ export async function createScout(config: ScoutConfig): Promise<OssScout> {
     state = config.initialState;
   } else if (config.persistence === "gist") {
     gistStore = new GistStateStore(
-      getOctokit(config.githubToken) as unknown as GistOctokitLike,
+      toGistOctokit(getOctokit(config.githubToken)),
     );
     const result = await gistStore.bootstrap();
     if (result.degraded) {
