@@ -48,7 +48,7 @@ The CLI automatically:
 GITHUB_TOKEN=$(gh auth token) node "${CLAUDE_PLUGIN_ROOT}/packages/core/dist/cli.bundle.cjs" search 10 --strategy starred --json
 ```
 
-Available strategies: `starred`, `language`, `category`, `all` (default).
+Available strategies: `merged`, `orgs`, `starred`, `broad`, `maintained`, `all` (default).
 
 ## Step 3: Present Results
 
@@ -70,13 +70,13 @@ Parse the JSON output and present results in a formatted list:
 ---
 
 #### 2. [owner/repo#456](https://github.com/owner/repo/issues/456) — Issue Title
-**Score:** 72/100 | **Recommendation:** review
+**Score:** 72/100 | **Recommendation:** needs_review
 ...
 ```
 
 **Key fields from JSON output:**
 - `candidates[].viabilityScore` — Overall score (0-100)
-- `candidates[].recommendation` — `approve`, `review`, or `skip`
+- `candidates[].recommendation` — `approve`, `needs_review`, or `skip`
 - `candidates[].issue` — Issue metadata (title, url, repo, number, labels)
 - `candidates[].repoScore` — Repository health metrics
 - `candidates[].reasonsToApprove` / `reasonsToSkip` — Scoring explanations

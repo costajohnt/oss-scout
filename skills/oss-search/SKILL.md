@@ -87,7 +87,7 @@ Each issue is scored on multiple dimensions:
 ### Recommendation Mapping
 
 - **approve** (score >= 60): Issue looks good, proceed
-- **review** (score 40-59): Worth looking at, but vet more carefully
+- **needs_review** (score 40-59): Worth looking at, but vet more carefully
 - **skip** (score < 40): Not recommended, significant issues found
 
 ## Vetting Workflow

@@ -47,7 +47,7 @@ GITHUB_TOKEN=$(gh auth token) node "${CLAUDE_PLUGIN_ROOT}/packages/core/dist/cli
 | Command | Purpose |
 |---------|---------|
 | `search [n] --json` | Search for new issues (n = number of results, default 10) |
-| `search [n] --strategy <s> --json` | Search with specific strategy (starred, language, category, all) |
+| `search [n] --strategy <s> --json` | Search with specific strategy (merged, orgs, starred, broad, maintained, all) |
 | `vet <issue-url> --json` | Deep-vet a specific issue for suitability |
 | `results --json` | Show saved search results |
 | `results clear --json` | Clear saved results |
@@ -62,18 +62,18 @@ Returns structured data including:
 - Issue details (title, body, labels, assignees)
 - Repository context and health metrics
 - Viability scores (0-100) with scoring breakdown
-- Recommendations (approve, review, skip)
+- Recommendations (approve, needs_review, skip)
 
 **Strategy-Specific Search:**
 ```bash
 # Search only starred repos
 GITHUB_TOKEN=$(gh auth token) node "${CLAUDE_PLUGIN_ROOT}/packages/core/dist/cli.bundle.cjs" search 10 --strategy starred --json
 
-# Search by language preferences
-GITHUB_TOKEN=$(gh auth token) node "${CLAUDE_PLUGIN_ROOT}/packages/core/dist/cli.bundle.cjs" search 10 --strategy language --json
+# Search by language-based broad discovery
+GITHUB_TOKEN=$(gh auth token) node "${CLAUDE_PLUGIN_ROOT}/packages/core/dist/cli.bundle.cjs" search 10 --strategy broad --json
 
-# Search by project categories
-GITHUB_TOKEN=$(gh auth token) node "${CLAUDE_PLUGIN_ROOT}/packages/core/dist/cli.bundle.cjs" search 10 --strategy category --json
+# Search by well-maintained project categories
+GITHUB_TOKEN=$(gh auth token) node "${CLAUDE_PLUGIN_ROOT}/packages/core/dist/cli.bundle.cjs" search 10 --strategy maintained --json
 ```
 
 **Vet a Specific Issue:**
@@ -239,7 +239,7 @@ Viability Score: [X/100]
 ### Lower Confidence
 
 #### 3. [owner/repo#789](https://github.com/owner/repo/issues/789) — Issue Title (Score: 55/100)
-**Recommendation:** review
+**Recommendation:** needs_review
 **Concerns:**
 - [Any issues noted]
 

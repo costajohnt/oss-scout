@@ -8,10 +8,19 @@ import { Command } from 'commander';
 import { enableDebug } from './core/logger.js';
 import { getCLIVersion } from './core/utils.js';
 import { formatJsonSuccess, formatJsonError } from './formatters/json.js';
-import { resolveErrorCode } from './core/errors.js';
+import { errorMessage, resolveErrorCode } from './core/errors.js';
 import { hasLocalState, loadLocalState, saveLocalState } from './core/local-state.js';
 import { CONCRETE_STRATEGIES, SearchStrategySchema } from './core/schemas.js';
 import type { SearchStrategy } from './core/schemas.js';
+
+function handleCommandError(err: unknown, options: { json?: boolean }): never {
+  if (options.json) {
+    console.log(formatJsonError(errorMessage(err), resolveErrorCode(err)));
+  } else {
+    console.error('Error:', errorMessage(err));
+  }
+  process.exit(1);
+}
 
 const program = new Command();
 
@@ -42,13 +51,7 @@ program
         console.log(formatJsonSuccess(prefs));
       }
     } catch (err) {
-      if (options.json) {
-        const msg = err instanceof Error ? err.message : String(err);
-        console.log(formatJsonError(msg, resolveErrorCode(err)));
-      } else {
-        console.error('Error:', err instanceof Error ? err.message : String(err));
-      }
-      process.exit(1);
+      handleCommandError(err, options);
     }
   });
 
@@ -78,13 +81,7 @@ program
         }
       }
     } catch (err) {
-      if (options.json) {
-        const msg = err instanceof Error ? err.message : String(err);
-        console.log(formatJsonError(msg, resolveErrorCode(err)));
-      } else {
-        console.error('Error:', err instanceof Error ? err.message : String(err));
-      }
-      process.exit(1);
+      handleCommandError(err, options);
     }
   });
 
@@ -146,13 +143,7 @@ program
         }
       }
     } catch (err) {
-      if (options.json) {
-        const msg = err instanceof Error ? err.message : String(err);
-        console.log(formatJsonError(msg, resolveErrorCode(err)));
-      } else {
-        console.error('Error:', err instanceof Error ? err.message : String(err));
-      }
-      process.exit(1);
+      handleCommandError(err, options);
     }
   });
 
@@ -195,13 +186,7 @@ resultsCmd
         console.log();
       }
     } catch (err) {
-      if (options.json) {
-        const msg = err instanceof Error ? err.message : String(err);
-        console.log(formatJsonError(msg, resolveErrorCode(err)));
-      } else {
-        console.error('Error:', err instanceof Error ? err.message : String(err));
-      }
-      process.exit(1);
+      handleCommandError(err, options);
     }
   });
 
@@ -219,13 +204,7 @@ resultsCmd
         console.log('Saved results cleared.');
       }
     } catch (err) {
-      if (options.json) {
-        const msg = err instanceof Error ? err.message : String(err);
-        console.log(formatJsonError(msg, resolveErrorCode(err)));
-      } else {
-        console.error('Error:', err instanceof Error ? err.message : String(err));
-      }
-      process.exit(1);
+      handleCommandError(err, options);
     }
   });
 
@@ -244,13 +223,7 @@ const configCmd = program
         runConfigShow(options);
       }
     } catch (err) {
-      if (options.json) {
-        const msg = err instanceof Error ? err.message : String(err);
-        console.log(formatJsonError(msg, resolveErrorCode(err)));
-      } else {
-        console.error('Error:', err instanceof Error ? err.message : String(err));
-      }
-      process.exit(1);
+      handleCommandError(err, options);
     }
   });
 
@@ -268,13 +241,7 @@ configCmd
         console.log(`✅ Updated "${key}" successfully.`);
       }
     } catch (err) {
-      if (options.json) {
-        const msg = err instanceof Error ? err.message : String(err);
-        console.log(formatJsonError(msg, resolveErrorCode(err)));
-      } else {
-        console.error('Error:', err instanceof Error ? err.message : String(err));
-      }
-      process.exit(1);
+      handleCommandError(err, options);
     }
   });
 
@@ -292,13 +259,7 @@ configCmd
         console.log('✅ Preferences reset to defaults.');
       }
     } catch (err) {
-      if (options.json) {
-        const msg = err instanceof Error ? err.message : String(err);
-        console.log(formatJsonError(msg, resolveErrorCode(err)));
-      } else {
-        console.error('Error:', err instanceof Error ? err.message : String(err));
-      }
-      process.exit(1);
+      handleCommandError(err, options);
     }
   });
 
@@ -310,6 +271,10 @@ program
   .option('--json', 'Output as JSON')
   .action(async (options: { prune?: boolean; concurrency?: number; json?: boolean }) => {
     try {
+      if (options.concurrency !== undefined && (isNaN(options.concurrency) || options.concurrency < 1)) {
+        console.error('Error: --concurrency must be a positive integer');
+        process.exit(1);
+      }
       const { runVetList } = await import('./commands/vet-list.js');
       const state = loadLocalState();
       const result = await runVetList({
@@ -342,13 +307,7 @@ program
         console.log();
       }
     } catch (err) {
-      if (options.json) {
-        const msg = err instanceof Error ? err.message : String(err);
-        console.log(formatJsonError(msg, resolveErrorCode(err)));
-      } else {
-        console.error('Error:', err instanceof Error ? err.message : String(err));
-      }
-      process.exit(1);
+      handleCommandError(err, options);
     }
   });
 
@@ -381,13 +340,7 @@ program
         console.log(`  CI status: ${result.projectHealth.ciStatus}`);
       }
     } catch (err) {
-      if (options.json) {
-        const msg = err instanceof Error ? err.message : String(err);
-        console.log(formatJsonError(msg, resolveErrorCode(err)));
-      } else {
-        console.error('Error:', err instanceof Error ? err.message : String(err));
-      }
-      process.exit(1);
+      handleCommandError(err, options);
     }
   });
 
