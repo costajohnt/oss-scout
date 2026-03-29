@@ -1,0 +1,19 @@
+{
+  "name": "oss-scout",
+  "owner": {
+    "name": "John Costa"
+  },
+  "icon": "assets/icon.svg",
+  "metadata": {
+    "description": "Find open source issues personalized to your contribution history with multi-strategy search, deep vetting, and viability scoring",
+    "categories": ["productivity", "open-source", "github", "developer-tools"],
+    "installInstructions": "After install, restart Claude Code and run /scout-setup to configure your preferences. Then run /scout to search for issues."
+  },
+  "plugins": [
+    {
+      "name": "oss-scout",
+      "source": "./",
+      "description": "Find open source issues personalized to your contribution history - multi-strategy search, deep vetting, and viability scoring"
+    }
+  ]
+}

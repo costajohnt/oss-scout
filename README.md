@@ -11,8 +11,10 @@
 <p align="center">
   <a href="https://www.npmjs.com/package/@oss-scout/core"><img src="https://img.shields.io/npm/v/@oss-scout/core" alt="npm"></a>
   <img src="https://img.shields.io/npm/dm/@oss-scout/core" alt="downloads">
+  <img src="https://github.com/costajohnt/oss-scout/actions/workflows/ci.yml/badge.svg" alt="CI">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
   <img src="https://img.shields.io/badge/node-%3E%3D20-brightgreen" alt="Node 20+">
+  <img src="https://img.shields.io/badge/Claude_Code-Plugin-blueviolet" alt="Claude Code Plugin">
 </p>
 
 Most issue finders search GitHub for `good first issue` labels and hand you a list. You could do that yourself in 30 seconds.

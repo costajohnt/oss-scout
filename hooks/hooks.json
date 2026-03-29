@@ -1,0 +1,6 @@
+[
+  {
+    "event": "SessionStart",
+    "command": "./hooks/session-start.sh"
+  }
+]
