@@ -47,7 +47,7 @@ $ oss-scout setup
 
 Detecting GitHub username...
 GitHub username [yourname]:
-Preferred languages [typescript, javascript]: typescript, rust
+Preferred languages (or "any" for all) [any]: typescript, rust
 Issue labels to search for [good first issue, help wanted]:
 Difficulty scope (beginner, intermediate, advanced) [all]: beginner, intermediate
 Minimum repo stars [50]: 100
@@ -205,7 +205,7 @@ oss-scout config reset                               # reset to defaults
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `languages` | string[] | typescript, javascript | Programming language filter |
+| `languages` | string[] | any (all languages) | Programming language filter (use "any" for no filter) |
 | `labels` | string[] | good first issue, help wanted | Issue label filter |
 | `scope` | enum[] | all | Difficulty: beginner, intermediate, advanced |
 | `minStars` | number | 50 | Minimum repo star count |

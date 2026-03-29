@@ -100,11 +100,12 @@ export async function runSetup(
     const githubUsername = usernameInput || usernameDefault;
 
     // Languages
-    const defaultLangs = "typescript, javascript";
-    const langsInput = await ask(rl, `Preferred languages [${defaultLangs}]: `);
-    const languages = langsInput
-      ? parseCSV(langsInput)
-      : ["typescript", "javascript"];
+    const defaultLangs = "any (all languages)";
+    const langsInput = await ask(
+      rl,
+      `Preferred languages (comma-separated, or "any" for all) [${defaultLangs}]: `,
+    );
+    const languages = langsInput ? parseCSV(langsInput) : ["any"];
 
     // Issue labels
     const defaultLabels = "good first issue, help wanted";

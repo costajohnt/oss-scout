@@ -149,7 +149,7 @@ export const PersistenceModeSchema = z.enum(["local", "gist"]);
 
 export const ScoutPreferencesSchema = z.object({
   githubUsername: z.string().default(""),
-  languages: z.array(z.string()).default(["typescript", "javascript"]),
+  languages: z.array(z.string()).default(["any"]),
   labels: z.array(z.string()).default(["good first issue", "help wanted"]),
   scope: z.array(IssueScopeSchema).optional(),
   excludeRepos: z.array(z.string()).default([]),

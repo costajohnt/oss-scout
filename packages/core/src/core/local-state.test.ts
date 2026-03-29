@@ -51,7 +51,7 @@ describe("local-state", () => {
     it("returns fresh default state when no file exists", () => {
       const state = loadLocalState();
       expect(state.version).toBe(1);
-      expect(state.preferences.languages).toEqual(["typescript", "javascript"]);
+      expect(state.preferences.languages).toEqual(["any"]);
       expect(state.repoScores).toEqual({});
     });
 
@@ -75,7 +75,7 @@ describe("local-state", () => {
 
       const state = loadLocalState();
       expect(state.version).toBe(1);
-      expect(state.preferences.languages).toEqual(["typescript", "javascript"]);
+      expect(state.preferences.languages).toEqual(["any"]);
 
       // Verify a .corrupt backup was created
       const files = fs.readdirSync(tmpDir);

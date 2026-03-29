@@ -33,7 +33,7 @@ describe("runSetup", () => {
     });
 
     expect(prefs.githubUsername).toBe("detected-user");
-    expect(prefs.languages).toEqual(["typescript", "javascript"]);
+    expect(prefs.languages).toEqual(["any"]);
     expect(prefs.labels).toEqual(["good first issue", "help wanted"]);
     expect(prefs.scope).toEqual(["beginner", "intermediate", "advanced"]);
     expect(prefs.minStars).toBe(50);

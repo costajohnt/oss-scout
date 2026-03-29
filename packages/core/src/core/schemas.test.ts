@@ -9,7 +9,7 @@ describe("ScoutStateSchema", () => {
   it("parses minimal valid state", () => {
     const state = ScoutStateSchema.parse({ version: 1 });
     expect(state.version).toBe(1);
-    expect(state.preferences.languages).toEqual(["typescript", "javascript"]);
+    expect(state.preferences.languages).toEqual(["any"]);
     expect(state.repoScores).toEqual({});
     expect(state.starredRepos).toEqual([]);
     expect(state.mergedPRs).toEqual([]);
@@ -96,7 +96,7 @@ describe("ScoutPreferencesSchema", () => {
   it("applies all defaults", () => {
     const prefs = ScoutPreferencesSchema.parse({});
     expect(prefs.githubUsername).toBe("");
-    expect(prefs.languages).toEqual(["typescript", "javascript"]);
+    expect(prefs.languages).toEqual(["any"]);
     expect(prefs.labels).toEqual(["good first issue", "help wanted"]);
     expect(prefs.excludeRepos).toEqual([]);
     expect(prefs.preferredOrgs).toEqual([]);

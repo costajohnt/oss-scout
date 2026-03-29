@@ -56,7 +56,7 @@ describe("OssScout", () => {
     it("returns preferences", () => {
       const scout = makeScout();
       const prefs = scout.getPreferences();
-      expect(prefs.languages).toEqual(["typescript", "javascript"]);
+      expect(prefs.languages).toEqual(["any"]);
     });
 
     it("returns null for unknown repo score", () => {
