@@ -28,6 +28,9 @@ export async function runVetList(
   });
 
   saveLocalState(scout.getState() as ScoutState);
-  await scout.checkpoint();
+  const persisted = await scout.checkpoint();
+  if (!persisted) {
+    console.error("Warning: changes saved locally but gist sync failed.");
+  }
   return result;
 }

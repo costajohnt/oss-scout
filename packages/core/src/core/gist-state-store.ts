@@ -160,6 +160,13 @@ export class GistStateStore {
         this.writeCache(state);
         return { gistId: foundId, state, created: false };
       }
+      // Gist exists but content failed validation — fall back to cache
+      // to avoid overwriting the user's data by creating a new gist.
+      warn(
+        MODULE,
+        `Found existing gist ${foundId} but content failed validation. Using local cache to avoid data loss.`,
+      );
+      return this.bootstrapFromCache();
     }
 
     // 3. Create new gist

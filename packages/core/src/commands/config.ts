@@ -8,6 +8,7 @@ import {
   IssueScopeSchema,
   ProjectCategorySchema,
   PersistenceModeSchema,
+  SearchStrategySchema,
 } from "../core/schemas.js";
 import type { ScoutPreferences } from "../core/schemas.js";
 import { ValidationError } from "../core/errors.js";
@@ -33,6 +34,10 @@ const FIELD_CONFIGS: Record<string, FieldConfig> = {
     validValues: ProjectCategorySchema.options,
   },
   persistence: { type: "enum", validValues: PersistenceModeSchema.options },
+  defaultStrategy: {
+    type: "enum-array",
+    validValues: SearchStrategySchema.options,
+  },
   githubUsername: { type: "string" },
 };
 
@@ -116,6 +121,9 @@ export function runConfigShow(options: { json?: boolean }): void {
   console.log(`  excludeOrgs:          ${formatArray(prefs.excludeOrgs)}`);
   console.log(
     `  aiPolicyBlocklist:    ${formatArray(prefs.aiPolicyBlocklist)}`,
+  );
+  console.log(
+    `  defaultStrategy:      ${prefs.defaultStrategy ? formatArray(prefs.defaultStrategy) : "(all)"}`,
   );
   console.log(`  persistence:          ${prefs.persistence}`);
   console.log();

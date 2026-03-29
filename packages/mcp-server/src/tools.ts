@@ -20,18 +20,31 @@ export function registerTools(server: McpServer, scout: OssScout): void {
         ),
     },
     async ({ maxResults, strategies }) => {
-      const parsedStrategies = strategies
-        ? strategies.split(",").map((s) => SearchStrategySchema.parse(s.trim()))
-        : undefined;
+      try {
+        const parsedStrategies = strategies
+          ? strategies
+              .split(",")
+              .map((s) => SearchStrategySchema.parse(s.trim()))
+          : undefined;
 
-      const result = await scout.search({
-        maxResults: maxResults ?? 10,
-        strategies: parsedStrategies,
-      });
+        const result = await scout.search({
+          maxResults: maxResults ?? 10,
+          strategies: parsedStrategies,
+        });
 
-      return {
-        content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
-      };
+        scout.saveResults(result.candidates);
+        await scout.checkpoint();
+
+        return {
+          content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+        };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return {
+          content: [{ type: "text", text: `Error: ${msg}` }],
+          isError: true,
+        };
+      }
     },
   );
 
@@ -46,10 +59,18 @@ export function registerTools(server: McpServer, scout: OssScout): void {
         ),
     },
     async ({ issueUrl }) => {
-      const candidate = await scout.vetIssue(issueUrl);
-      return {
-        content: [{ type: "text", text: JSON.stringify(candidate, null, 2) }],
-      };
+      try {
+        const candidate = await scout.vetIssue(issueUrl);
+        return {
+          content: [{ type: "text", text: JSON.stringify(candidate, null, 2) }],
+        };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return {
+          content: [{ type: "text", text: `Error: ${msg}` }],
+          isError: true,
+        };
+      }
     },
   );
 
@@ -71,6 +92,7 @@ export function registerTools(server: McpServer, scout: OssScout): void {
     "preferredOrgs",
     "projectCategories",
     "excludeRepos",
+    "excludeOrgs",
     "aiPolicyBlocklist",
     "scope",
     "defaultStrategy",
@@ -174,6 +196,7 @@ export function registerTools(server: McpServer, scout: OssScout): void {
       }
 
       scout.updatePreferences({ [key]: parsed });
+      await scout.checkpoint();
       const updated = scout.getPreferences();
       return {
         content: [{ type: "text", text: JSON.stringify(updated, null, 2) }],

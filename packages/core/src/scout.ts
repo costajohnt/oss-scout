@@ -66,10 +66,12 @@ function toGistOctokit(octokit: Octokit): GistOctokitLike {
       async list(params) {
         const { data } = await octokit.gists.list(params);
         return {
-          data: data.map((g) => ({
-            id: g.id,
-            description: g.description ?? null,
-          })),
+          data: data
+            .filter((g) => g.id)
+            .map((g) => ({
+              id: g.id,
+              description: g.description ?? null,
+            })),
         };
       },
     },

@@ -61,7 +61,10 @@ export async function runSearch(
   // Persist results to local state and gist
   scout.saveResults(result.candidates);
   saveLocalState(scout.getState() as ScoutState);
-  await scout.checkpoint();
+  const persisted = await scout.checkpoint();
+  if (!persisted) {
+    console.error("Warning: changes saved locally but gist sync failed.");
+  }
 
   return {
     candidates: result.candidates.map((c) => {
