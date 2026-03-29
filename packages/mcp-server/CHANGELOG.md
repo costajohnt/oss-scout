@@ -2,10 +2,9 @@
 
 ## [0.2.1](https://github.com/costajohnt/oss-scout/compare/mcp-server-v0.2.0...mcp-server-v0.2.1) (2026-03-29)
 
-
 ### Bug Fixes
 
-* address review findings — gist safety, MCP error handling, persistence ([5d1743c](https://github.com/costajohnt/oss-scout/commit/5d1743c962a0040a17aa108a7739cc267099dc7b))
+- address review findings — gist safety, MCP error handling, persistence ([5d1743c](https://github.com/costajohnt/oss-scout/commit/5d1743c962a0040a17aa108a7739cc267099dc7b))
 
 ## [0.2.0](https://github.com/costajohnt/oss-scout/compare/mcp-server-v0.1.0...mcp-server-v0.2.0) (2026-03-28)
 
