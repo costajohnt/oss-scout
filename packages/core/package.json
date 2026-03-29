@@ -1,6 +1,6 @@
 {
   "name": "@oss-scout/core",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Find open source issues personalized to your contribution history",
   "type": "module",
   "bin": {
