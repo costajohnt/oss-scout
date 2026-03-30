@@ -8,7 +8,12 @@
 import * as fs from "fs";
 import * as path from "path";
 import { ScoutStateSchema } from "./schemas.js";
-import type { ScoutState, RepoScore, SavedCandidate } from "./schemas.js";
+import type {
+  ScoutState,
+  RepoScore,
+  SavedCandidate,
+  SkippedIssue,
+} from "./schemas.js";
 import { getDataDir } from "./utils.js";
 import { debug, warn } from "./logger.js";
 import { errorMessage } from "./errors.js";
@@ -318,6 +323,10 @@ export function mergeStates(local: ScoutState, remote: ScoutState): ScoutState {
       local.savedResults ?? [],
       remote.savedResults ?? [],
     ),
+    skippedIssues: mergeSkippedIssues(
+      local.skippedIssues ?? [],
+      remote.skippedIssues ?? [],
+    ),
     lastSearchAt: pickFresherTimestamp(local.lastSearchAt, remote.lastSearchAt),
     lastRunAt:
       pickFresherTimestamp(local.lastRunAt, remote.lastRunAt) ??
@@ -375,6 +384,21 @@ function mergeSavedResults(
     const existing = merged.get(item.issueUrl);
     if (!existing || item.lastSeenAt > existing.lastSeenAt) {
       merged.set(item.issueUrl, item);
+    }
+  }
+  return [...merged.values()];
+}
+
+function mergeSkippedIssues(
+  local: SkippedIssue[],
+  remote: SkippedIssue[],
+): SkippedIssue[] {
+  const merged = new Map<string, SkippedIssue>();
+  for (const item of local) merged.set(item.url, item);
+  for (const item of remote) {
+    const existing = merged.get(item.url);
+    if (!existing || item.skippedAt > existing.skippedAt) {
+      merged.set(item.url, item);
     }
   }
   return [...merged.values()];

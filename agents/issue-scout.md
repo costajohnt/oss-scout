@@ -53,6 +53,10 @@ GITHUB_TOKEN=$(gh auth token) node "${CLAUDE_PLUGIN_ROOT}/packages/core/dist/cli
 | `results clear --json` | Clear saved results |
 | `vet-list --json` | Re-vet all saved results for availability |
 | `vet-list --prune --json` | Re-vet and remove unavailable issues |
+| `skip add <issue-url> --json` | Skip an issue (exclude from future searches) |
+| `skip list --json` | Show all skipped issues |
+| `skip remove <issue-url> --json` | Unskip a specific issue |
+| `skip clear --json` | Clear all skipped issues |
 
 **Search for Issues:**
 ```bash

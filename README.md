@@ -178,6 +178,19 @@ oss-scout results clear       # wipe saved results
 oss-scout vet-list --prune    # re-vet and remove stale issues
 ```
 
+### Skip list
+
+Skip issues you don't want to see again. Skipped issues are excluded from future search results and auto-expire after 90 days.
+
+```bash
+oss-scout skip add https://github.com/owner/repo/issues/123    # skip an issue
+oss-scout skip list                                              # show skipped issues
+oss-scout skip remove https://github.com/owner/repo/issues/123  # unskip
+oss-scout skip clear                                             # clear all skips
+```
+
+Skipping an issue also removes it from saved results. When you skip an issue that was in your saved results, metadata (repo, title, number) is preserved in the skip entry for context.
+
 ### Cross-machine sync with gist persistence
 
 Enable gist persistence to sync your state (preferences, repo scores, PR history, saved results) across machines via a private GitHub gist:
@@ -266,7 +279,7 @@ Agents (dispatched automatically by Claude):
 }
 ```
 
-**Tools:** search, vet, config, config-set
+**Tools:** search, vet, skip, config, config-set
 **Resources:** scout://config, scout://results, scout://scores
 
 ### As a Library
@@ -343,6 +356,12 @@ Search:
 Results:
   results                       Show saved search results
   results clear                 Clear saved results
+
+Skip:
+  skip add <issue-url>          Skip an issue (exclude from searches)
+  skip list                     Show all skipped issues
+  skip remove <issue-url>       Unskip an issue
+  skip clear                    Clear all skipped issues
 
 Config:
   config                        Show current preferences

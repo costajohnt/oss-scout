@@ -13,6 +13,7 @@ import type {
   ScoutPreferences,
   RepoScore,
   SavedCandidate,
+  SkippedIssue,
 } from "./core/schemas.js";
 import type {
   ScoutConfig,
@@ -152,8 +153,15 @@ export class OssScout implements ScoutStateReader {
 
   /**
    * Multi-strategy issue search. Returns scored, sorted candidates.
+   * Automatically culls expired skip entries and filters skipped issues.
    */
   async search(options?: SearchOptions): Promise<SearchResult> {
+    // Auto-cull expired skips before searching
+    this.cullExpiredSkips();
+
+    const skippedUrls = new Set(
+      (this.state.skippedIssues ?? []).map((s) => s.url),
+    );
     const discovery = new IssueDiscovery(
       this.githubToken,
       this.state.preferences,
@@ -162,6 +170,7 @@ export class OssScout implements ScoutStateReader {
     const { candidates, strategiesUsed } = await discovery.searchIssues({
       maxResults: options?.maxResults,
       strategies: options?.strategies,
+      skippedUrls,
     });
 
     this.state.lastSearchAt = new Date().toISOString();
@@ -442,6 +451,77 @@ export class OssScout implements ScoutStateReader {
   clearResults(): void {
     this.state.savedResults = [];
     this.dirty = true;
+  }
+
+  // ── Skip List ───────────────────────────────────────────────────────
+
+  /**
+   * Skip an issue — excludes it from future searches. Auto-culled after 90 days.
+   */
+  skipIssue(
+    url: string,
+    metadata?: { repo?: string; number?: number; title?: string },
+  ): void {
+    const existing = this.state.skippedIssues ?? [];
+    if (existing.some((s) => s.url === url)) return; // already skipped
+    this.state.skippedIssues = [
+      ...existing,
+      {
+        url,
+        repo: metadata?.repo ?? "",
+        number: metadata?.number ?? 0,
+        title: metadata?.title ?? "",
+        skippedAt: new Date().toISOString(),
+      },
+    ];
+    // Also remove from saved results if present
+    if (this.state.savedResults) {
+      this.state.savedResults = this.state.savedResults.filter(
+        (r) => r.issueUrl !== url,
+      );
+    }
+    this.dirty = true;
+  }
+
+  /**
+   * Get all skipped issues.
+   */
+  getSkippedIssues(): SkippedIssue[] {
+    return this.state.skippedIssues ?? [];
+  }
+
+  /**
+   * Remove a specific issue from the skip list.
+   */
+  unskipIssue(url: string): void {
+    this.state.skippedIssues = (this.state.skippedIssues ?? []).filter(
+      (s) => s.url !== url,
+    );
+    this.dirty = true;
+  }
+
+  /**
+   * Clear all skipped issues.
+   */
+  clearSkippedIssues(): void {
+    this.state.skippedIssues = [];
+    this.dirty = true;
+  }
+
+  /**
+   * Remove skipped issues older than maxDays (default 90). Called automatically during search.
+   * @returns The number of expired entries that were removed.
+   */
+  cullExpiredSkips(maxDays: number = 90): number {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - maxDays);
+    const before = (this.state.skippedIssues ?? []).length;
+    this.state.skippedIssues = (this.state.skippedIssues ?? []).filter(
+      (s) => new Date(s.skippedAt) >= cutoff,
+    );
+    const culled = before - this.state.skippedIssues.length;
+    if (culled > 0) this.dirty = true;
+    return culled;
   }
 
   // ── Persistence ─────────────────────────────────────────────────────
