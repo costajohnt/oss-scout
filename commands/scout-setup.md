@@ -74,11 +74,6 @@ GITHUB_TOKEN=$(gh auth token) node "${CLAUDE_PLUGIN_ROOT}/packages/core/dist/cli
 GITHUB_TOKEN=$(gh auth token) node "${CLAUDE_PLUGIN_ROOT}/packages/core/dist/cli.bundle.cjs" config set projectCategories "devtools,infrastructure" --json
 ```
 
-**Preferred Organizations**:
-```bash
-GITHUB_TOKEN=$(gh auth token) node "${CLAUDE_PLUGIN_ROOT}/packages/core/dist/cli.bundle.cjs" config set preferredOrgs "vercel,remix-run" --json
-```
-
 **Excluded Repos** (repos to skip):
 ```bash
 GITHUB_TOKEN=$(gh auth token) node "${CLAUDE_PLUGIN_ROOT}/packages/core/dist/cli.bundle.cjs" config set excludeRepos "owner/repo1,owner/repo2" --json
@@ -104,7 +99,6 @@ Show summary:
 - **Languages**: [list]
 - **Labels**: [list]
 - **Project Categories**: [list or "No preference"]
-- **Preferred Orgs**: [list or "None"]
 
 ### Next Steps
 - Run `/scout` to search for contribution opportunities

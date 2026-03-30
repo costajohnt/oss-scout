@@ -22,7 +22,6 @@ describe("createScout", () => {
         labels: ["help wanted"],
         excludeRepos: [],
         aiPolicyBlocklist: [],
-        preferredOrgs: [],
         projectCategories: [],
         minStars: 100,
         maxIssueAgeDays: 60,
@@ -50,7 +49,6 @@ describe("OssScout", () => {
       const scout = makeScout();
       expect(scout.getReposWithMergedPRs()).toEqual([]);
       expect(scout.getStarredRepos()).toEqual([]);
-      expect(scout.getPreferredOrgs()).toEqual([]);
     });
 
     it("returns preferences", () => {

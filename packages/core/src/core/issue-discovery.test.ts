@@ -40,11 +40,6 @@ vi.mock("./search-budget.js", () => ({
   })),
 }));
 
-let lastVetterInstance: {
-  vetIssue: ReturnType<typeof vi.fn>;
-  vetIssuesParallel: ReturnType<typeof vi.fn>;
-} | null = null;
-
 vi.mock("./issue-vetting.js", () => ({
   IssueVetter: vi.fn().mockImplementation(function (
     this: Record<string, unknown>,
@@ -55,7 +50,6 @@ vi.mock("./issue-vetting.js", () => ({
       allFailed: false,
       rateLimitHit: false,
     });
-    lastVetterInstance = this as unknown as typeof lastVetterInstance;
   }),
 }));
 
@@ -124,7 +118,7 @@ import type { ScoutPreferences } from "./schemas.js";
 
 function makeCandidate(
   repo: string,
-  priority: "merged_pr" | "preferred_org" | "starred" | "normal" = "normal",
+  priority: "merged_pr" | "starred" | "normal" = "normal",
   recommendation: "approve" | "skip" | "needs_review" = "approve",
   score = 80,
 ): IssueCandidate {
@@ -187,7 +181,6 @@ function makeStateReader(
   return {
     getReposWithMergedPRs: vi.fn(() => []),
     getStarredRepos: vi.fn(() => []),
-    getPreferredOrgs: vi.fn(() => []),
     getProjectCategories: vi.fn(() => []),
     getRepoScore: vi.fn(() => null),
     ...overrides,
@@ -276,37 +269,6 @@ describe("IssueDiscovery", () => {
         "merged_pr",
         expect.any(Function),
       );
-    });
-
-    it("Phase 0.5: calls searchWithChunkedLabels for preferred orgs", async () => {
-      const c = makeCandidate("preferred-org/repo", "preferred_org");
-      mockSearchWithChunkedLabels.mockResolvedValue([
-        {
-          html_url: "https://github.com/preferred-org/repo/issues/1",
-          repository_url: "https://api.github.com/repos/preferred-org/repo",
-          updated_at: "2026-01-01T00:00:00Z",
-        },
-      ]);
-
-      const discovery = makeDiscovery(
-        {
-          getReposWithMergedPRs: vi.fn(() => []),
-        },
-        {
-          preferredOrgs: ["preferred-org"],
-        },
-      );
-
-      // After constructing discovery, configure the vetter mock to return candidates
-      lastVetterInstance!.vetIssuesParallel.mockResolvedValue({
-        candidates: [c],
-        allFailed: false,
-        rateLimitHit: false,
-      });
-
-      const { candidates } = await discovery.searchIssues({ maxResults: 5 });
-      expect(mockSearchWithChunkedLabels).toHaveBeenCalled();
-      expect(candidates.length).toBeGreaterThanOrEqual(1);
     });
 
     it("Phase 1: calls searchInRepos with starred repos, priority starred", async () => {

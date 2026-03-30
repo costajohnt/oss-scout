@@ -103,7 +103,6 @@ function makeStubStateReader(
   return {
     getReposWithMergedPRs: vi.fn(() => []),
     getStarredRepos: vi.fn(() => []),
-    getPreferredOrgs: vi.fn(() => []),
     getProjectCategories: vi.fn(() => []),
     getRepoScore: vi.fn(() => null),
     ...overrides,

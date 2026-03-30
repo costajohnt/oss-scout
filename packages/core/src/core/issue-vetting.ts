@@ -52,8 +52,6 @@ export interface ScoutStateReader {
   getReposWithMergedPRs(): string[];
   /** User's starred repos (from GitHub). */
   getStarredRepos(): string[];
-  /** Preferred GitHub orgs from user preferences. */
-  getPreferredOrgs(): string[];
   /** Preferred project categories from user preferences. */
   getProjectCategories(): ProjectCategory[];
   /** Numeric quality score for a repo, or null if not evaluated. */
@@ -295,14 +293,9 @@ export class IssueVetter {
     });
 
     const starredRepos = this.stateReader.getStarredRepos();
-    const preferredOrgs = this.stateReader.getPreferredOrgs();
     let searchPriority: SearchPriority = "normal";
     if (effectiveMergedCount > 0) {
       searchPriority = "merged_pr";
-    } else if (
-      preferredOrgs.some((o) => o.toLowerCase() === orgName?.toLowerCase())
-    ) {
-      searchPriority = "preferred_org";
     } else if (starredRepos.includes(repoFullName)) {
       searchPriority = "starred";
     }

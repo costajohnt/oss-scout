@@ -47,11 +47,7 @@ export interface ProjectHealth {
 }
 
 /** Priority tier for issue search results. */
-export type SearchPriority =
-  | "merged_pr"
-  | "preferred_org"
-  | "starred"
-  | "normal";
+export type SearchPriority = "merged_pr" | "starred" | "normal";
 
 /** A fully vetted issue candidate with scoring. */
 export interface IssueCandidate {

@@ -8,7 +8,7 @@ version: 1.1.0
 
 ## Multi-Strategy Search
 
-OSS Scout uses five search strategies, run as phases in priority order. Each targets a different source of issues. Use `--strategy` to select specific strategies or `all` (default) to run them all.
+OSS Scout uses four search strategies, run as phases in priority order. Each targets a different source of issues. Use `--strategy` to select specific strategies or `all` (default) to run them all.
 
 ### Strategy: `merged` (Phase 0)
 
@@ -18,15 +18,6 @@ Searches repos where you have previously had PRs merged.
 
 **Strengths:** Highest merge probability, established trust with maintainers.
 **Weaknesses:** Only works if you have prior contribution history.
-
-### Strategy: `orgs` (Phase 0.5)
-
-Searches your preferred organizations (configured via `oss-scout config set preferredOrgs`).
-
-**When to use:** When you have specific orgs you want to contribute to.
-
-**Strengths:** Targeted to orgs you care about.
-**Weaknesses:** Requires explicit configuration.
 
 ### Strategy: `starred` (Phase 1)
 
@@ -71,7 +62,7 @@ oss-scout search --strategy merged,starred
 oss-scout config set defaultStrategy "merged,starred"
 ```
 
-The `all` strategy runs phases in order: merged (0) -> orgs (0.5) -> starred (1) -> broad (2) -> maintained (3). Results are deduplicated and sorted by priority, then recommendation, then score. Rate-limit-aware: heavy phases (broad, maintained) are skipped when API budget is low.
+The `all` strategy runs phases in order: merged (0) -> starred (1) -> broad (2) -> maintained (3). Results are deduplicated and sorted by priority, then recommendation, then score. Rate-limit-aware: heavy phases (broad, maintained) are skipped when API budget is low.
 
 ## Viability Scoring (0-100)
 
@@ -139,7 +130,7 @@ Or use the CLI directly for specific strategies.
 
 Look at the top-scored issues. Pay attention to:
 - Viability score and recommendation
-- Search priority (merged_pr > preferred_org > starred > normal)
+- Search priority (merged_pr > starred > normal)
 - Reasons to approve vs. skip
 
 ### 3. Deep Vet
