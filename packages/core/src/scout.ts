@@ -516,9 +516,13 @@ export class OssScout implements ScoutStateReader {
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - maxDays);
     const before = (this.state.skippedIssues ?? []).length;
-    this.state.skippedIssues = (this.state.skippedIssues ?? []).filter(
-      (s) => new Date(s.skippedAt) >= cutoff,
-    );
+    this.state.skippedIssues = (this.state.skippedIssues ?? []).filter((s) => {
+      const d = new Date(s.skippedAt);
+      if (isNaN(d.getTime())) {
+        return true; // keep entries with invalid dates rather than silently dropping
+      }
+      return d >= cutoff;
+    });
     const culled = before - this.state.skippedIssues.length;
     if (culled > 0) this.dirty = true;
     return culled;

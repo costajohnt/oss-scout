@@ -4,18 +4,42 @@
 
 import { loadLocalState, saveLocalState } from "../core/local-state.js";
 import type { SkippedIssue, ScoutState } from "../core/schemas.js";
-import { OssScout } from "../scout.js";
+import { createScout } from "../scout.js";
+import { getGitHubToken } from "../core/utils.js";
+
+/**
+ * Create an OssScout instance for skip operations.
+ * Uses gist persistence when a token is available, otherwise provided-state mode.
+ */
+async function createSkipScout(state: ScoutState) {
+  const token = getGitHubToken() ?? "";
+  if (token) {
+    return createScout({
+      githubToken: token,
+      persistence: "provided",
+      initialState: state,
+    });
+  }
+  return createScout({
+    githubToken: "",
+    persistence: "provided",
+    initialState: state,
+  });
+}
 
 /**
  * Skip an issue by URL — adds it to the skip list and removes it from saved results.
  * Tries to enrich metadata from saved results if available.
  */
-export function runSkip(options: { issueUrl: string; state?: ScoutState }): {
+export async function runSkip(options: {
+  issueUrl: string;
+  state?: ScoutState;
+}): Promise<{
   skipped: boolean;
   alreadySkipped: boolean;
-} {
+}> {
   const state = options.state ?? loadLocalState();
-  const scout = new OssScout("", state);
+  const scout = await createSkipScout(state);
 
   const alreadySkipped = scout
     .getSkippedIssues()
@@ -34,6 +58,7 @@ export function runSkip(options: { issueUrl: string; state?: ScoutState }): {
 
   scout.skipIssue(options.issueUrl, metadata);
   saveLocalState(scout.getState() as ScoutState);
+  await scout.checkpoint();
   return { skipped: true, alreadySkipped: false };
 }
 
@@ -48,25 +73,27 @@ export function runSkipList(options?: { state?: ScoutState }): SkippedIssue[] {
 /**
  * Clear all skipped issues.
  */
-export function runSkipClear(): void {
+export async function runSkipClear(): Promise<void> {
   const state = loadLocalState();
-  state.skippedIssues = [];
-  saveLocalState(state);
+  const scout = await createSkipScout(state);
+  scout.clearSkippedIssues();
+  saveLocalState(scout.getState() as ScoutState);
+  await scout.checkpoint();
 }
 
 /**
  * Remove a specific issue from the skip list (unskip).
  */
-export function runSkipRemove(options: { issueUrl: string }): {
+export async function runSkipRemove(options: { issueUrl: string }): Promise<{
   removed: boolean;
-} {
+}> {
   const state = loadLocalState();
-  const before = (state.skippedIssues ?? []).length;
-  state.skippedIssues = (state.skippedIssues ?? []).filter(
-    (s) => s.url !== options.issueUrl,
-  );
-  const removed = before !== state.skippedIssues.length;
-  saveLocalState(state);
+  const scout = await createSkipScout(state);
+  const before = scout.getSkippedIssues().length;
+  scout.unskipIssue(options.issueUrl);
+  const removed = before !== scout.getSkippedIssues().length;
+  saveLocalState(scout.getState() as ScoutState);
+  await scout.checkpoint();
   return { removed };
 }
 

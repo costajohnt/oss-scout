@@ -404,7 +404,7 @@ skipCmd
     try {
       const { runSkip } = await import("./commands/skip.js");
       const state = loadLocalState();
-      const result = runSkip({ issueUrl, state });
+      const result = await runSkip({ issueUrl, state });
       if (options.json) {
         console.log(formatJsonSuccess(result));
       } else {
@@ -465,7 +465,7 @@ skipCmd
   .action(async (issueUrl: string, options: { json?: boolean }) => {
     try {
       const { runSkipRemove } = await import("./commands/skip.js");
-      const result = runSkipRemove({ issueUrl });
+      const result = await runSkipRemove({ issueUrl });
       if (options.json) {
         console.log(formatJsonSuccess(result));
       } else {
@@ -487,7 +487,7 @@ skipCmd
   .action(async (options: { json?: boolean }) => {
     try {
       const { runSkipClear } = await import("./commands/skip.js");
-      runSkipClear();
+      await runSkipClear();
       if (options.json) {
         console.log(formatJsonSuccess({ cleared: true }));
       } else {

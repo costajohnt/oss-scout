@@ -18,6 +18,15 @@ vi.mock("../core/local-state.js", () => {
   };
 });
 
+// Mock getGitHubToken to return null (no token needed for skip operations in tests)
+vi.mock("../core/utils.js", async (importOriginal) => {
+  const actual = (await importOriginal()) as Record<string, unknown>;
+  return {
+    ...actual,
+    getGitHubToken: () => null,
+  };
+});
+
 const { runSkip, runSkipList, runSkipClear, runSkipRemove } =
   await import("./skip.js");
 
@@ -58,7 +67,7 @@ describe("skip command", () => {
 
   describe("runSkip", () => {
     it("adds an issue to the skip list", async () => {
-      const result = runSkip({
+      const result = await runSkip({
         issueUrl: "https://github.com/owner/repo/issues/1",
       });
       expect(result.skipped).toBe(true);
@@ -75,8 +84,8 @@ describe("skip command", () => {
 
     it("deduplicates — same URL not added twice", async () => {
       const url = "https://github.com/owner/repo/issues/1";
-      runSkip({ issueUrl: url });
-      const result = runSkip({ issueUrl: url });
+      await runSkip({ issueUrl: url });
+      const result = await runSkip({ issueUrl: url });
 
       expect(result.skipped).toBe(false);
       expect(result.alreadySkipped).toBe(true);
@@ -91,7 +100,7 @@ describe("skip command", () => {
       state.savedResults = [makeSavedCandidate({ issueUrl: url })];
       await setMockState(state);
 
-      runSkip({ issueUrl: url, state });
+      await runSkip({ issueUrl: url, state });
 
       const updated = await getMockState();
       expect(updated.savedResults).toHaveLength(0);
@@ -111,7 +120,7 @@ describe("skip command", () => {
       ];
       await setMockState(state);
 
-      runSkip({ issueUrl: url, state });
+      await runSkip({ issueUrl: url, state });
 
       const updated = await getMockState();
       expect(updated.skippedIssues[0].repo).toBe("owner/repo");
@@ -160,15 +169,15 @@ describe("skip command", () => {
       ];
       await setMockState(state);
 
-      const result = runSkipRemove({ issueUrl: url });
+      const result = await runSkipRemove({ issueUrl: url });
       expect(result.removed).toBe(true);
 
       const updated = await getMockState();
       expect(updated.skippedIssues).toHaveLength(0);
     });
 
-    it("returns removed=false for unknown URL", () => {
-      const result = runSkipRemove({
+    it("returns removed=false for unknown URL", async () => {
+      const result = await runSkipRemove({
         issueUrl: "https://github.com/x/y/issues/999",
       });
       expect(result.removed).toBe(false);
@@ -196,14 +205,14 @@ describe("skip command", () => {
       ];
       await setMockState(state);
 
-      runSkipClear();
+      await runSkipClear();
 
       const updated = await getMockState();
       expect(updated.skippedIssues).toEqual([]);
     });
 
     it("is a no-op when already empty", async () => {
-      runSkipClear();
+      await runSkipClear();
       const updated = await getMockState();
       expect(updated.skippedIssues).toEqual([]);
     });

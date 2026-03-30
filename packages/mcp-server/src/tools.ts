@@ -138,27 +138,53 @@ export function registerTools(server: McpServer, scout: OssScout): void {
         }
 
         if (action === "clear") {
+          const count = scout.getSkippedIssues().length;
           scout.clearSkippedIssues();
-          await scout.checkpoint();
-          return {
-            content: [{ type: "text", text: "Skip list cleared." }],
-          };
-        }
-
-        if (action === "remove") {
-          scout.unskipIssue(issueUrl!);
-          await scout.checkpoint();
+          const synced = await scout.checkpoint();
+          const syncNote = synced ? "" : " (saved locally, gist sync failed)";
           return {
             content: [
               {
                 type: "text",
-                text: `Removed from skip list: ${issueUrl}`,
+                text:
+                  count > 0
+                    ? `Skip list cleared (${count} entries removed)${syncNote}`
+                    : `Skip list already empty${syncNote}`,
+              },
+            ],
+          };
+        }
+
+        if (action === "remove") {
+          const wasPresent = scout
+            .getSkippedIssues()
+            .some((s) => s.url === issueUrl);
+          scout.unskipIssue(issueUrl!);
+          const synced = await scout.checkpoint();
+          const syncNote = synced ? "" : " (saved locally, gist sync failed)";
+          return {
+            content: [
+              {
+                type: "text",
+                text: wasPresent
+                  ? `Removed from skip list: ${issueUrl}${syncNote}`
+                  : `Not in skip list: ${issueUrl}`,
               },
             ],
           };
         }
 
         // action === "add"
+        const alreadySkipped = scout
+          .getSkippedIssues()
+          .some((s) => s.url === issueUrl);
+        if (alreadySkipped) {
+          return {
+            content: [
+              { type: "text", text: `Already in skip list: ${issueUrl}` },
+            ],
+          };
+        }
         const saved = scout
           .getSavedResults()
           .find((r) => r.issueUrl === issueUrl);
@@ -170,9 +196,10 @@ export function registerTools(server: McpServer, scout: OssScout): void {
             }
           : undefined;
         scout.skipIssue(issueUrl!, metadata);
-        await scout.checkpoint();
+        const synced = await scout.checkpoint();
+        const syncNote = synced ? "" : " (saved locally, gist sync failed)";
         return {
-          content: [{ type: "text", text: `Skipped: ${issueUrl}` }],
+          content: [{ type: "text", text: `Skipped: ${issueUrl}${syncNote}` }],
         };
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
