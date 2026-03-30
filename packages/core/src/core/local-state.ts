@@ -46,8 +46,11 @@ export function loadLocalState(): ScoutState {
       const backupPath = `${statePath}.corrupt.${Date.now()}`;
       fs.copyFileSync(statePath, backupPath);
       warn(MODULE, `Corrupt state backed up to ${backupPath}`);
-    } catch {
-      /* best effort backup */
+    } catch (backupErr) {
+      warn(
+        MODULE,
+        `Failed to back up corrupt state: ${errorMessage(backupErr)}`,
+      );
     }
     return ScoutStateSchema.parse({ version: 1 });
   }

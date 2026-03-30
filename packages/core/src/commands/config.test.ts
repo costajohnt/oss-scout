@@ -60,21 +60,11 @@ describe("config command", () => {
       const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
       writeState(makeState({ githubUsername: "testuser", minStars: 100 }));
 
-      runConfigShow({});
+      runConfigShow();
 
       const output = consoleSpy.mock.calls.map((c) => c[0]).join("\n");
       expect(output).toContain("testuser");
       expect(output).toContain("100");
-      consoleSpy.mockRestore();
-    });
-
-    it("should not print when json option is set (caller handles JSON)", () => {
-      const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
-      writeState(makeState());
-
-      runConfigShow({ json: true });
-
-      expect(consoleSpy).not.toHaveBeenCalled();
       consoleSpy.mockRestore();
     });
   });

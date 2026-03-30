@@ -17,7 +17,7 @@ async function main(): Promise<void> {
   const scout = await createScout({ githubToken: token });
 
   const server = new McpServer(
-    { name: "@oss-scout/core", version: "0.1.0" },
+    { name: "oss-scout-mcp", version: "0.2.1" },
     { capabilities: { resources: {}, tools: {} } },
   );
 

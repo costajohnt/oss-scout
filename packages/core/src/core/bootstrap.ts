@@ -5,7 +5,7 @@
 
 import { getOctokit, checkRateLimit } from "./github.js";
 import { debug, warn } from "./logger.js";
-import { errorMessage } from "./errors.js";
+import { ConfigurationError, errorMessage } from "./errors.js";
 import { extractRepoFromUrl } from "./utils.js";
 import type { OssScout } from "../scout.js";
 
@@ -30,7 +30,7 @@ export async function bootstrapScout(
 ): Promise<BootstrapResult> {
   const username = scout.getPreferences().githubUsername;
   if (!username) {
-    throw new Error(
+    throw new ConfigurationError(
       "GitHub username not configured. Run `oss-scout setup` first.",
     );
   }

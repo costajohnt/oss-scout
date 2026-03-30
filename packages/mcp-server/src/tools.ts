@@ -9,15 +9,14 @@ function withTimeout<T>(
   promise: Promise<T>,
   ms: number = TOOL_TIMEOUT_MS,
 ): Promise<T> {
-  return Promise.race([
-    promise,
-    new Promise<T>((_, reject) =>
-      setTimeout(
-        () => reject(new Error(`Request timed out after ${ms / 1000}s`)),
-        ms,
-      ),
-    ),
-  ]);
+  let timeoutId: ReturnType<typeof setTimeout>;
+  const timer = new Promise<T>((_, reject) => {
+    timeoutId = setTimeout(
+      () => reject(new Error(`Request timed out after ${ms / 1000}s`)),
+      ms,
+    );
+  });
+  return Promise.race([promise, timer]).finally(() => clearTimeout(timeoutId!));
 }
 
 export function registerTools(server: McpServer, scout: OssScout): void {

@@ -270,7 +270,7 @@ const configCmd = program
       if (options.json) {
         console.log(formatJsonSuccess(getConfigData()));
       } else {
-        runConfigShow(options);
+        runConfigShow();
       }
     } catch (err) {
       handleCommandError(err, options);

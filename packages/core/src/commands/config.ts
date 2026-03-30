@@ -91,14 +91,9 @@ function formatArray(arr: string[]): string {
 /**
  * Display current preferences in human-readable format.
  */
-export function runConfigShow(options: { json?: boolean }): void {
+export function runConfigShow(): void {
   const state = loadLocalState();
   const prefs = state.preferences;
-
-  if (options.json) {
-    // JSON output handled by caller
-    return;
-  }
 
   console.log("\n⚙️  oss-scout preferences\n");
   console.log(

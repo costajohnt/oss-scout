@@ -192,7 +192,6 @@ export const ScoutStateSchema = z.object({
 
 // ── Inferred types ──────────────────────────────────────────────────
 
-export type IssueStatus = z.infer<typeof IssueStatusSchema>;
 export type ProjectCategory = z.infer<typeof ProjectCategorySchema>;
 export type IssueScope = z.infer<typeof IssueScopeSchema>;
 export type SearchStrategy = z.infer<typeof SearchStrategySchema>;
@@ -205,7 +204,6 @@ export type ContributionGuidelines = z.infer<
 >;
 export type IssueVettingResult = z.infer<typeof IssueVettingResultSchema>;
 export type TrackedIssue = z.infer<typeof TrackedIssueSchema>;
-export type PersistenceMode = z.infer<typeof PersistenceModeSchema>;
 export type ScoutPreferences = z.infer<typeof ScoutPreferencesSchema>;
 export type SavedCandidate = z.infer<typeof SavedCandidateSchema>;
 export type ScoutState = z.infer<typeof ScoutStateSchema>;
