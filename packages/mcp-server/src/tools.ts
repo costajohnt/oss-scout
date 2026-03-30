@@ -103,6 +103,87 @@ export function registerTools(server: McpServer, scout: OssScout): void {
     },
   );
 
+  server.tool(
+    "skip",
+    "Skip, unskip, list, or clear skipped issues. Skipped issues are excluded from future searches and auto-expire after 90 days.",
+    {
+      action: z
+        .enum(["add", "remove", "list", "clear"])
+        .default("add")
+        .describe("Action to perform (default: add)"),
+      issueUrl: z
+        .string()
+        .optional()
+        .describe("GitHub issue URL (required for add/remove actions)"),
+    },
+    async ({ action, issueUrl }) => {
+      try {
+        if ((action === "add" || action === "remove") && !issueUrl) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: `Error: issueUrl is required for the "${action}" action.`,
+              },
+            ],
+            isError: true,
+          };
+        }
+
+        if (action === "list") {
+          const skipped = scout.getSkippedIssues();
+          return {
+            content: [{ type: "text", text: JSON.stringify(skipped, null, 2) }],
+          };
+        }
+
+        if (action === "clear") {
+          scout.clearSkippedIssues();
+          await scout.checkpoint();
+          return {
+            content: [{ type: "text", text: "Skip list cleared." }],
+          };
+        }
+
+        if (action === "remove") {
+          scout.unskipIssue(issueUrl!);
+          await scout.checkpoint();
+          return {
+            content: [
+              {
+                type: "text",
+                text: `Removed from skip list: ${issueUrl}`,
+              },
+            ],
+          };
+        }
+
+        // action === "add"
+        const saved = scout
+          .getSavedResults()
+          .find((r) => r.issueUrl === issueUrl);
+        const metadata = saved
+          ? {
+              repo: saved.repo,
+              number: saved.number,
+              title: saved.title,
+            }
+          : undefined;
+        scout.skipIssue(issueUrl!, metadata);
+        await scout.checkpoint();
+        return {
+          content: [{ type: "text", text: `Skipped: ${issueUrl}` }],
+        };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return {
+          content: [{ type: "text", text: `Error: ${msg}` }],
+          isError: true,
+        };
+      }
+    },
+  );
+
   const VALID_KEYS = Object.keys(ScoutPreferencesSchema.shape);
   const ARRAY_KEYS = new Set([
     "languages",

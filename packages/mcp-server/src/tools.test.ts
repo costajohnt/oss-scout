@@ -27,6 +27,11 @@ function createMockScout(overrides: Partial<OssScout> = {}): OssScout {
     }),
     updatePreferences: vi.fn(),
     saveResults: vi.fn(),
+    getSavedResults: vi.fn().mockReturnValue([]),
+    getSkippedIssues: vi.fn().mockReturnValue([]),
+    skipIssue: vi.fn(),
+    unskipIssue: vi.fn(),
+    clearSkippedIssues: vi.fn(),
     checkpoint: vi.fn().mockResolvedValue(true),
     ...overrides,
   } as unknown as OssScout;
@@ -59,13 +64,14 @@ describe("registerTools", () => {
     registerTools(server, scout);
   });
 
-  it("registers all four tools", () => {
-    expect(server.tool).toHaveBeenCalledTimes(4);
+  it("registers all five tools", () => {
+    expect(server.tool).toHaveBeenCalledTimes(5);
 
     const calls = vi.mocked(server.tool).mock.calls;
     const names = calls.map((c) => c[0]);
     expect(names).toContain("search");
     expect(names).toContain("vet");
+    expect(names).toContain("skip");
     expect(names).toContain("config");
     expect(names).toContain("config-set");
   });

@@ -77,6 +77,7 @@ interface IssueFilterConfig {
   excludeOrgs: Set<string>;
   aiBlocklisted: Set<string>;
   lowScoringRepos: Set<string>;
+  skippedUrls: Set<string>;
   maxAgeDays: number;
   now: Date;
   includeDocIssues: boolean;
@@ -97,6 +98,7 @@ function buildIssueFilter(
       }
       if (config.aiBlocklisted.has(repoFullName)) return false;
       if (config.lowScoringRepos.has(repoFullName)) return false;
+      if (config.skippedUrls.has(item.html_url)) return false;
       const updatedAt = new Date(item.updated_at);
       const ageDays = daysBetween(updatedAt, config.now);
       if (ageDays > config.maxAgeDays) return false;
@@ -434,6 +436,7 @@ export class IssueDiscovery {
       labels?: string[];
       maxResults?: number;
       strategies?: SearchStrategy[];
+      skippedUrls?: Set<string>;
     } = {},
   ): Promise<{
     candidates: IssueCandidate[];
@@ -539,6 +542,7 @@ export class IssueDiscovery {
       ),
       aiBlocklisted,
       lowScoringRepos,
+      skippedUrls: options.skippedUrls ?? new Set(),
       maxAgeDays: config.maxIssueAgeDays || 90,
       now: new Date(),
       includeDocIssues: config.includeDocIssues ?? true,

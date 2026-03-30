@@ -92,19 +92,29 @@ After presenting results, offer:
    GITHUB_TOKEN=$(gh auth token) node "${CLAUDE_PLUGIN_ROOT}/packages/core/dist/cli.bundle.cjs" vet https://github.com/owner/repo/issues/123 --json
    ```
 
-2. **"Search again"** — Run another search with different parameters (more results, different strategy)
+2. **"Skip an issue"** — Skip an issue to exclude it from future searches (auto-expires after 90 days):
+   ```bash
+   GITHUB_TOKEN=$(gh auth token) node "${CLAUDE_PLUGIN_ROOT}/packages/core/dist/cli.bundle.cjs" skip add https://github.com/owner/repo/issues/123 --json
+   ```
 
-3. **"View saved results"** — Show previously saved search results:
+3. **"Search again"** — Run another search with different parameters (more results, different strategy)
+
+4. **"View saved results"** — Show previously saved search results:
    ```bash
    GITHUB_TOKEN=$(gh auth token) node "${CLAUDE_PLUGIN_ROOT}/packages/core/dist/cli.bundle.cjs" results --json
    ```
 
-4. **"Re-vet saved results"** — Check availability of all saved results:
+5. **"Re-vet saved results"** — Check availability of all saved results:
    ```bash
    GITHUB_TOKEN=$(gh auth token) node "${CLAUDE_PLUGIN_ROOT}/packages/core/dist/cli.bundle.cjs" vet-list --json
    ```
 
-5. **"Done"** — End the search session
+6. **"View skip list"** — Show issues excluded from search:
+   ```bash
+   GITHUB_TOKEN=$(gh auth token) node "${CLAUDE_PLUGIN_ROOT}/packages/core/dist/cli.bundle.cjs" skip list --json
+   ```
+
+7. **"Done"** — End the search session
 
 ## Error Handling
 

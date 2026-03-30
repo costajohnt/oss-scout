@@ -390,6 +390,114 @@ program
     },
   );
 
+// ── skip command ───────────────────────────────────────────────────
+
+const skipCmd = program
+  .command("skip")
+  .description("Manage the skip list — exclude issues from future searches");
+
+skipCmd
+  .command("add <issue-url>")
+  .description("Skip an issue by URL")
+  .option("--json", "Output as JSON")
+  .action(async (issueUrl: string, options: { json?: boolean }) => {
+    try {
+      const { runSkip } = await import("./commands/skip.js");
+      const state = loadLocalState();
+      const result = runSkip({ issueUrl, state });
+      if (options.json) {
+        console.log(formatJsonSuccess(result));
+      } else {
+        if (result.alreadySkipped) {
+          console.log("Issue already in skip list.");
+        } else {
+          console.log(`Skipped: ${issueUrl}`);
+        }
+      }
+    } catch (err) {
+      handleCommandError(err, options);
+    }
+  });
+
+skipCmd
+  .command("list")
+  .description("Show all skipped issues")
+  .option("--json", "Output as JSON")
+  .action(async (options: { json?: boolean }) => {
+    try {
+      const { runSkipList } = await import("./commands/skip.js");
+      const results = runSkipList();
+      if (options.json) {
+        console.log(formatJsonSuccess(results));
+      } else {
+        if (results.length === 0) {
+          console.log("\nNo skipped issues.\n");
+          return;
+        }
+        console.log(`\nSkipped issues (${results.length}):\n`);
+        console.log(
+          "  Repo                              Issue   Skipped     Title",
+        );
+        console.log(
+          "  ────────────────────────────────  ──────  ──────────  ─────",
+        );
+        for (const s of results) {
+          const repo = (s.repo || "unknown").padEnd(32).slice(0, 32);
+          const issue = s.number ? `#${s.number}`.padEnd(6) : "—".padEnd(6);
+          const skippedDate = s.skippedAt.split("T")[0] ?? "";
+          const title =
+            s.title.length > 50
+              ? s.title.slice(0, 47) + "..."
+              : s.title || s.url;
+          console.log(`  ${repo}  ${issue}  ${skippedDate}  ${title}`);
+        }
+        console.log();
+      }
+    } catch (err) {
+      handleCommandError(err, options);
+    }
+  });
+
+skipCmd
+  .command("remove <issue-url>")
+  .description("Remove an issue from the skip list (unskip)")
+  .option("--json", "Output as JSON")
+  .action(async (issueUrl: string, options: { json?: boolean }) => {
+    try {
+      const { runSkipRemove } = await import("./commands/skip.js");
+      const result = runSkipRemove({ issueUrl });
+      if (options.json) {
+        console.log(formatJsonSuccess(result));
+      } else {
+        if (result.removed) {
+          console.log(`Removed from skip list: ${issueUrl}`);
+        } else {
+          console.log("Issue was not in the skip list.");
+        }
+      }
+    } catch (err) {
+      handleCommandError(err, options);
+    }
+  });
+
+skipCmd
+  .command("clear")
+  .description("Clear all skipped issues")
+  .option("--json", "Output as JSON")
+  .action(async (options: { json?: boolean }) => {
+    try {
+      const { runSkipClear } = await import("./commands/skip.js");
+      runSkipClear();
+      if (options.json) {
+        console.log(formatJsonSuccess({ cleared: true }));
+      } else {
+        console.log("Skip list cleared.");
+      }
+    } catch (err) {
+      handleCommandError(err, options);
+    }
+  });
+
 program
   .command("vet <issue-url>")
   .description(

@@ -49,6 +49,7 @@ export type {
   StoredMergedPR,
   StoredClosedPR,
   SearchStrategy,
+  SkippedIssue,
 } from "./core/schemas.js";
 
 // Schemas (for consumers who need runtime validation)
@@ -59,6 +60,7 @@ export {
   IssueScopeSchema,
   ProjectCategorySchema,
   SearchStrategySchema,
+  SkippedIssueSchema,
 } from "./core/schemas.js";
 
 // Utilities
