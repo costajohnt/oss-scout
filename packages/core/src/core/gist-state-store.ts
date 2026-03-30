@@ -91,11 +91,20 @@ export class GistStateStore {
       return false;
     }
 
+    const json = JSON.stringify(state, null, 2);
+    if (json.length > 900000) {
+      warn(
+        MODULE,
+        `State too large for gist (${Math.round(json.length / 1024)}KB). Consider clearing old results with 'oss-scout results clear'.`,
+      );
+      return false;
+    }
+
     try {
       await this.octokit.gists.update({
         gist_id: this.gistId,
         files: {
-          [GIST_FILENAME]: { content: JSON.stringify(state, null, 2) },
+          [GIST_FILENAME]: { content: json },
         },
       });
       debug(MODULE, "State pushed to gist");

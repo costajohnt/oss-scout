@@ -3,6 +3,23 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { OssScout } from "@oss-scout/core";
 import { SearchStrategySchema, ScoutPreferencesSchema } from "@oss-scout/core";
 
+const TOOL_TIMEOUT_MS = 60000;
+
+function withTimeout<T>(
+  promise: Promise<T>,
+  ms: number = TOOL_TIMEOUT_MS,
+): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(
+        () => reject(new Error(`Request timed out after ${ms / 1000}s`)),
+        ms,
+      ),
+    ),
+  ]);
+}
+
 export function registerTools(server: McpServer, scout: OssScout): void {
   server.tool(
     "search",
@@ -27,10 +44,12 @@ export function registerTools(server: McpServer, scout: OssScout): void {
               .map((s) => SearchStrategySchema.parse(s.trim()))
           : undefined;
 
-        const result = await scout.search({
-          maxResults: maxResults ?? 10,
-          strategies: parsedStrategies,
-        });
+        const result = await withTimeout(
+          scout.search({
+            maxResults: maxResults ?? 10,
+            strategies: parsedStrategies,
+          }),
+        );
 
         scout.saveResults(result.candidates);
         await scout.checkpoint();
@@ -60,7 +79,7 @@ export function registerTools(server: McpServer, scout: OssScout): void {
     },
     async ({ issueUrl }) => {
       try {
-        const candidate = await scout.vetIssue(issueUrl);
+        const candidate = await withTimeout(scout.vetIssue(issueUrl));
         return {
           content: [{ type: "text", text: JSON.stringify(candidate, null, 2) }],
         };

@@ -1,6 +1,6 @@
 {
   "name": "oss-scout",
-  "version": "0.1.0",
+  "version": "0.2.1",
   "description": "Find open source issues personalized to your contribution history. Three-strategy search, deep vetting, and viability scoring.",
   "author": {
     "name": "John Costa",

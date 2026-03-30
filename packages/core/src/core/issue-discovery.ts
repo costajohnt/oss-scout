@@ -571,6 +571,12 @@ export class IssueDiscovery {
       );
     }
 
+    if (searchBudget <= 0) {
+      this.rateLimitWarning =
+        "GitHub search API quota exhausted. Try again after the rate limit resets.";
+      return { candidates: [], strategiesUsed: [] };
+    }
+
     // Derive search context
     const mergedPRRepos = this.stateReader.getReposWithMergedPRs();
     const starredRepos = this.getStarredRepos();

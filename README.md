@@ -31,10 +31,11 @@ Most issue finders search GitHub for `good first issue` labels and hand you a li
 ### Install
 
 ```bash
-npm install -g @oss-scout/core
+npx @oss-scout/core setup    # configure (no install needed)
+npx @oss-scout/core search   # find issues
 ```
 
-Or run via npx without installing: `npx @oss-scout/core <command>`
+Or install globally: `npm install -g @oss-scout/core`
 
 ### First run
 
@@ -51,7 +52,7 @@ Preferred languages (or "any" for all) [any]: typescript, rust
 Issue labels to search for [good first issue, help wanted]:
 Difficulty scope (beginner, intermediate, advanced) [all]: beginner, intermediate
 Minimum repo stars [50]: 100
-Preferred organizations (comma-separated, optional): expressjs, vercel
+Preferred organizations (comma-separated, optional): myorg, anotherorg
 Project categories (nonprofit, devtools, infrastructure, web-frameworks, data-ml, education) [none]: devtools
 Repos to exclude (owner/repo, comma-separated, optional):
 
@@ -74,19 +75,19 @@ $ oss-scout search
 
 Found 8 issue candidates:
 
-  ✅ expressjs/express#6012 [92/100]
+  ✅ owner/repo#123 [92/100]
      Add timeout option to res.download()
-     https://github.com/expressjs/express/issues/6012
+     https://github.com/owner/repo/issues/123
      Repo: 9/10, 2 merged PRs
 
-  ✅ chalk/chalk#642 [85/100]
+  ✅ org/project#456 [85/100]
      Support NO_COLOR in browser builds
-     https://github.com/chalk/chalk/issues/642
+     https://github.com/org/project/issues/456
      Repo: 8/10, 1 merged PRs
 
-  ⚠️ sindresorhus/execa#831 [78/100]
+  ⚠️ user/library#789 [78/100]
      Add encoding option to execaNode
-     https://github.com/sindresorhus/execa/issues/831
+     https://github.com/user/library/issues/789
 ```
 
 Results are automatically saved. View them later with `oss-scout results`.
@@ -113,6 +114,18 @@ oss-scout search --strategy all               # all strategies (default)
 
 Heavy strategies (broad, maintained) are automatically skipped when your GitHub API quota is low.
 
+## Why Not Just Search GitHub?
+
+| Feature | Label search | oss-scout |
+|---------|-------------|-----------|
+| Personalized to your history | No | Yes — prioritizes repos you've contributed to |
+| Checks if issue is claimed | No | Yes — scans comments for claim phrases |
+| Checks for existing PRs | No | Yes — uses timeline API |
+| Project health check | No | Yes — commit recency, stars, CONTRIBUTING.md |
+| Viability scoring | No | Yes — 0-100 with transparent factors |
+| Rate limit aware | No | Yes — adaptive budget, never wastes quota |
+| Spam detection | No | Yes — filters label farming, templated titles |
+
 ## Vetting
 
 Every issue candidate goes through 6 parallel checks:
@@ -129,9 +142,9 @@ Every issue candidate goes through 6 parallel checks:
 **Vet a specific issue:**
 
 ```
-$ oss-scout vet https://github.com/expressjs/express/issues/6012
+$ oss-scout vet https://github.com/owner/repo/issues/123
 
-✅ expressjs/express#6012: APPROVE
+✅ owner/repo#123: APPROVE
    Add timeout option to res.download()
 
 Reasons to approve:
@@ -148,9 +161,9 @@ Project health: Active
 ```
 $ oss-scout vet-list --prune
 
-  ✅ expressjs/express#6012 — still_available [92/100]
-  🔒 sindresorhus/execa#831 — claimed [78/100]
-  🔀 chalk/chalk#642 — has_pr [85/100]
+  ✅ owner/repo#123 — still_available [92/100]
+  🔒 user/library#789 — claimed [78/100]
+  🔀 org/project#456 — has_pr [85/100]
 
 Summary: 5 available, 1 claimed, 1 has PR, 1 closed
 Pruned 3 unavailable issues from saved results.
@@ -195,7 +208,7 @@ oss-scout config --json                             # JSON output
 oss-scout config set languages "typescript,rust"    # set languages
 oss-scout config set minStars 100                   # minimum repo stars
 oss-scout config set includeDocIssues false          # exclude doc-only issues
-oss-scout config set preferredOrgs "expressjs,vercel"
+oss-scout config set preferredOrgs "myorg,anotherorg"
 oss-scout config set excludeRepos "+spam/repo"       # append to exclude list
 oss-scout config set excludeRepos "-spam/repo"       # remove from exclude list
 oss-scout config reset                               # reset to defaults

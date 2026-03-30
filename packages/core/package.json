@@ -1,7 +1,7 @@
 {
   "name": "@oss-scout/core",
   "version": "0.2.1",
-  "description": "Find open source issues personalized to your contribution history",
+  "description": "Personalized GitHub issue finder with multi-strategy search, deep vetting, and viability scoring — CLI, library, MCP server, and Claude Code plugin",
   "type": "module",
   "bin": {
     "oss-scout": "./dist/cli.bundle.cjs"
@@ -37,7 +37,11 @@
     "issue-discovery",
     "cli",
     "vetting",
-    "contributions"
+    "contributions",
+    "claude",
+    "mcp-server",
+    "contribution-finder",
+    "personalized"
   ],
   "author": "John Costa",
   "license": "MIT",

@@ -37,6 +37,12 @@
     "@vitest/coverage-v8": "^4.1.0",
     "vitest": "^4.1.0"
   },
+  "keywords": [
+    "mcp",
+    "mcp-server",
+    "claude",
+    "issue-discovery"
+  ],
   "engines": {
     "node": ">=20"
   },
