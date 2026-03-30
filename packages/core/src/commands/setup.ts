@@ -131,13 +131,6 @@ export async function runSetup(
     const minStarsInput = await ask(rl, "Minimum repo stars [50]: ");
     const minStars = minStarsInput ? parseInt(minStarsInput, 10) : 50;
 
-    // Preferred organizations
-    const orgsInput = await ask(
-      rl,
-      "Preferred organizations (comma-separated, optional): ",
-    );
-    const preferredOrgs = parseCSV(orgsInput);
-
     // Project categories
     const categoryOptions = ALL_CATEGORIES.join(", ");
     const categoriesInput = await ask(
@@ -159,7 +152,6 @@ export async function runSetup(
       labels,
       scope: scope.length > 0 ? scope : undefined,
       excludeRepos,
-      preferredOrgs,
       projectCategories,
       minStars: isNaN(minStars) ? 50 : minStars,
     });

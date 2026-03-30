@@ -140,75 +140,6 @@ async function runPhase0(
   };
 }
 
-/** Phase 0.5: Search preferred organizations. */
-async function runPhase05(
-  octokit: Octokit,
-  vetter: IssueVetter,
-  orgsToSearch: string[],
-  baseQualifiers: string,
-  labels: string[],
-  maxResults: number,
-  phase0RepoSet: Set<string>,
-  filterIssues: (items: GitHubSearchItem[]) => GitHubSearchItem[],
-): Promise<PhaseResult> {
-  info(
-    MODULE,
-    `Phase 0.5: Searching issues in ${orgsToSearch.length} preferred org(s)...`,
-  );
-
-  const orgRepoFilter = orgsToSearch.map((org) => `org:${org}`).join(" OR ");
-  const orgOps = orgsToSearch.length - 1;
-
-  try {
-    const allItems = await searchWithChunkedLabels(
-      octokit,
-      labels,
-      orgOps,
-      (labelQ) =>
-        `${baseQualifiers} ${labelQ} (${orgRepoFilter})`
-          .replace(/  +/g, " ")
-          .trim(),
-      maxResults * 3,
-    );
-
-    if (allItems.length === 0) {
-      return { candidates: [], error: null, rateLimitHit: false };
-    }
-
-    const filtered = filterIssues(allItems).filter((item) => {
-      const repoFullName = extractRepoFromUrl(item.repository_url);
-      if (!repoFullName) return false;
-      return !phase0RepoSet.has(repoFullName);
-    });
-
-    const {
-      candidates,
-      allFailed: allVetFailed,
-      rateLimitHit,
-    } = await vetter.vetIssuesParallel(
-      filtered.slice(0, maxResults * 2).map((i) => i.html_url),
-      maxResults,
-      "preferred_org",
-    );
-
-    info(MODULE, `Found ${candidates.length} candidates from preferred orgs`);
-
-    return {
-      candidates,
-      error: allVetFailed ? "All preferred org issue vetting failed" : null,
-      rateLimitHit,
-    };
-  } catch (error) {
-    const errMsg = errorMessage(error);
-    warn(MODULE, `Error searching preferred orgs: ${errMsg}`);
-    return {
-      candidates: [],
-      error: errMsg,
-      rateLimitHit: isRateLimitError(error),
-    };
-  }
-}
-
 /** Phase 1: Search starred repos. */
 async function runPhase1(
   octokit: Octokit,
@@ -436,7 +367,6 @@ async function runPhase3(
  *
  * Search phases (in priority order):
  * 0. Repos where user has merged PRs (highest merge probability)
- * 0.5. Preferred organizations
  * 1. Starred repos
  * 2. General label-filtered search
  * 3. Actively maintained repos
@@ -476,8 +406,8 @@ export class IssueDiscovery {
 
   /**
    * Search for issues matching our criteria.
-   * Searches in priority order: merged-PR repos first (no label filter), then preferred
-   * organizations, then starred repos, then general search, then actively maintained repos.
+   * Searches in priority order: merged-PR repos first (no label filter), then starred
+   * repos, then general search, then actively maintained repos.
    * Filters out issues from low-scoring and excluded repos.
    *
    * @param options - Search configuration
@@ -636,41 +566,6 @@ export class IssueDiscovery {
       strategiesUsed.push("merged");
     }
 
-    // Phase 0.5: Preferred organizations
-    const preferredOrgs = config.preferredOrgs ?? [];
-    if (
-      allCandidates.length < maxResults &&
-      preferredOrgs.length > 0 &&
-      searchBudget >= CRITICAL_BUDGET_THRESHOLD &&
-      enabledStrategies.has("orgs")
-    ) {
-      if (phase0Repos.length > 0) await sleep(INTER_PHASE_DELAY_MS);
-      const phase0Orgs = new Set(
-        phase0Repos.map((r) => r.split("/")[0]?.toLowerCase()),
-      );
-      const orgsToSearch = preferredOrgs
-        .filter((org) => !phase0Orgs.has(org.toLowerCase()))
-        .slice(0, 5);
-
-      if (orgsToSearch.length > 0) {
-        const remaining = maxResults - allCandidates.length;
-        const result = await runPhase05(
-          this.octokit,
-          this.vetter,
-          orgsToSearch,
-          baseQualifiers,
-          labels,
-          remaining,
-          phase0RepoSet,
-          filterIssues,
-        );
-        allCandidates.push(...result.candidates);
-        phaseErrors["0.5"] = result.error;
-        if (result.rateLimitHit) rateLimitHitDuringSearch = true;
-      }
-      strategiesUsed.push("orgs");
-    }
-
     // Phase 1: Starred repos
     if (
       allCandidates.length < maxResults &&
@@ -768,9 +663,6 @@ export class IssueDiscovery {
         phaseErrors["0"]
           ? `Phase 0 (merged-PR repos): ${phaseErrors["0"]}`
           : null,
-        phaseErrors["0.5"]
-          ? `Phase 0.5 (preferred orgs): ${phaseErrors["0.5"]}`
-          : null,
         phaseErrors["1"]
           ? `Phase 1 (starred repos): ${phaseErrors["1"]}`
           : null,
@@ -806,9 +698,8 @@ export class IssueDiscovery {
     allCandidates.sort((a, b) => {
       const priorityOrder: Record<SearchPriority, number> = {
         merged_pr: 0,
-        preferred_org: 1,
-        starred: 2,
-        normal: 3,
+        starred: 1,
+        normal: 2,
       };
       const priorityDiff =
         priorityOrder[a.searchPriority] - priorityOrder[b.searchPriority];

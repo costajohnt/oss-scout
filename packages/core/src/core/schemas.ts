@@ -32,7 +32,6 @@ export const IssueScopeSchema = z.enum([
 
 export const SearchStrategySchema = z.enum([
   "merged",
-  "orgs",
   "starred",
   "broad",
   "maintained",
@@ -42,7 +41,6 @@ export const SearchStrategySchema = z.enum([
 /** All concrete strategies (excludes 'all' meta-strategy). */
 export const CONCRETE_STRATEGIES = [
   "merged",
-  "orgs",
   "starred",
   "broad",
   "maintained",
@@ -155,7 +153,6 @@ export const ScoutPreferencesSchema = z.object({
   excludeRepos: z.array(z.string()).default([]),
   excludeOrgs: z.array(z.string()).default([]),
   aiPolicyBlocklist: z.array(z.string()).default(["matplotlib/matplotlib"]),
-  preferredOrgs: z.array(z.string()).default([]),
   projectCategories: z.array(ProjectCategorySchema).default([]),
   minStars: z.number().default(50),
   maxIssueAgeDays: z.number().default(90),

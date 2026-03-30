@@ -47,7 +47,7 @@ GITHUB_TOKEN=$(gh auth token) node "${CLAUDE_PLUGIN_ROOT}/packages/core/dist/cli
 | Command | Purpose |
 |---------|---------|
 | `search [n] --json` | Search for new issues (n = number of results, default 10) |
-| `search [n] --strategy <s> --json` | Search with specific strategy (merged, orgs, starred, broad, maintained, all) |
+| `search [n] --strategy <s> --json` | Search with specific strategy (merged, starred, broad, maintained, all) |
 | `vet <issue-url> --json` | Deep-vet a specific issue for suitability |
 | `results --json` | Show saved search results |
 | `results clear --json` | Clear saved results |

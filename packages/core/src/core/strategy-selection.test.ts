@@ -132,8 +132,7 @@ function makeFakeCandidate(repo: string, priority: string) {
 // ── Import after mocks ─────────────────────────────────────────────
 
 const { IssueDiscovery } = await import("./issue-discovery.js");
-const { searchInRepos, searchWithChunkedLabels } =
-  await import("./search-phases.js");
+const { searchInRepos } = await import("./search-phases.js");
 
 const basePreferences = {
   githubUsername: "test",
@@ -141,7 +140,6 @@ const basePreferences = {
   labels: ["good first issue"],
   excludeRepos: [],
   aiPolicyBlocklist: [],
-  preferredOrgs: [],
   projectCategories: [],
   minStars: 50,
   maxIssueAgeDays: 90,
@@ -152,7 +150,6 @@ const basePreferences = {
 const baseStateReader = {
   getReposWithMergedPRs: () => [] as string[],
   getStarredRepos: () => [] as string[],
-  getPreferredOrgs: () => [] as string[],
   getProjectCategories: () => [] as string[],
   getRepoScore: () => null,
 };
@@ -196,26 +193,6 @@ describe("Strategy Selection", () => {
     expect(searchInRepos).toHaveBeenCalledTimes(1);
   });
 
-  it("only runs orgs strategy when specified", async () => {
-    const prefs = { ...basePreferences, preferredOrgs: ["myorg"] };
-    const discovery = new IssueDiscovery("token", prefs, baseStateReader);
-    (searchWithChunkedLabels as ReturnType<typeof vi.fn>).mockResolvedValue([
-      {
-        html_url: "https://github.com/myorg/repo/issues/1",
-        repository_url: "https://api.github.com/repos/myorg/repo",
-        updated_at: new Date().toISOString(),
-      },
-    ]);
-    mockVetIssuesParallel.mockResolvedValue({
-      candidates: [makeFakeCandidate("myorg/repo", "preferred_org")],
-      allFailed: false,
-      rateLimitHit: false,
-    });
-    const result = await discovery.searchIssues({ strategies: ["orgs"] });
-    expect(result.strategiesUsed).toEqual(["orgs"]);
-    expect(searchInRepos).not.toHaveBeenCalled();
-  });
-
   it("only runs starred strategy when specified", async () => {
     const stateReader = {
       ...baseStateReader,
@@ -233,13 +210,12 @@ describe("Strategy Selection", () => {
   });
 
   it('runs all strategies when "all" is specified', async () => {
-    const prefs = { ...basePreferences, preferredOrgs: ["myorg"] };
     const stateReader = {
       ...baseStateReader,
       getReposWithMergedPRs: () => ["owner/repo"],
       getStarredRepos: () => ["owner/starred"],
     };
-    const discovery = new IssueDiscovery("token", prefs, stateReader);
+    const discovery = new IssueDiscovery("token", basePreferences, stateReader);
     const result = await discovery.searchIssues({
       strategies: ["all"],
       maxResults: 100,
@@ -333,6 +309,6 @@ describe("SearchStrategySchema", () => {
 
   it('CONCRETE_STRATEGIES excludes "all"', () => {
     expect(CONCRETE_STRATEGIES).not.toContain("all");
-    expect(CONCRETE_STRATEGIES).toHaveLength(5);
+    expect(CONCRETE_STRATEGIES).toHaveLength(4);
   });
 });

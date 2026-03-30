@@ -292,10 +292,6 @@ export class OssScout implements ScoutStateReader {
     return this.state.starredRepos;
   }
 
-  getPreferredOrgs(): string[] {
-    return this.state.preferences.preferredOrgs;
-  }
-
   getProjectCategories(): ProjectCategory[] {
     return this.state.preferences.projectCategories;
   }

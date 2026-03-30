@@ -22,7 +22,6 @@ describe("runSetup", () => {
       "", // labels
       "", // scope
       "", // minStars
-      "", // preferredOrgs
       "", // projectCategories
       "", // excludeRepos
     ]);
@@ -37,7 +36,6 @@ describe("runSetup", () => {
     expect(prefs.labels).toEqual(["good first issue", "help wanted"]);
     expect(prefs.scope).toEqual(["beginner", "intermediate", "advanced"]);
     expect(prefs.minStars).toBe(50);
-    expect(prefs.preferredOrgs).toEqual([]);
     expect(prefs.projectCategories).toEqual([]);
     expect(prefs.excludeRepos).toEqual([]);
   });
@@ -49,7 +47,6 @@ describe("runSetup", () => {
       "bug, enhancement", // labels
       "beginner", // scope
       "100", // minStars
-      "facebook, google", // preferredOrgs
       "devtools, data-ml", // projectCategories
       "owner/repo1, owner/repo2", // excludeRepos
     ]);
@@ -64,7 +61,6 @@ describe("runSetup", () => {
     expect(prefs.labels).toEqual(["bug", "enhancement"]);
     expect(prefs.scope).toEqual(["beginner"]);
     expect(prefs.minStars).toBe(100);
-    expect(prefs.preferredOrgs).toEqual(["facebook", "google"]);
     expect(prefs.projectCategories).toEqual(["devtools", "data-ml"]);
     expect(prefs.excludeRepos).toEqual(["owner/repo1", "owner/repo2"]);
   });
@@ -72,7 +68,6 @@ describe("runSetup", () => {
   it("handles no detected username", async () => {
     const rl = mockReadline([
       "manualuser", // username (no detection)
-      "",
       "",
       "",
       "",
@@ -98,7 +93,6 @@ describe("runSetup", () => {
       "not-a-number", // minStars — should fall back to 50
       "",
       "",
-      "",
     ]);
 
     const prefs = await runSetup({
@@ -118,7 +112,6 @@ describe("runSetup", () => {
       "",
       "",
       "",
-      "",
     ]);
 
     const prefs = await runSetup({
@@ -131,7 +124,6 @@ describe("runSetup", () => {
 
   it("filters invalid category values", async () => {
     const rl = mockReadline([
-      "",
       "",
       "",
       "",

@@ -52,7 +52,6 @@ Preferred languages (or "any" for all) [any]: typescript, rust
 Issue labels to search for [good first issue, help wanted]:
 Difficulty scope (beginner, intermediate, advanced) [all]: beginner, intermediate
 Minimum repo stars [50]: 100
-Preferred organizations (comma-separated, optional): myorg, anotherorg
 Project categories (nonprofit, devtools, infrastructure, web-frameworks, data-ml, education) [none]: devtools
 Repos to exclude (owner/repo, comma-separated, optional):
 
@@ -94,12 +93,11 @@ Results are automatically saved. View them later with `oss-scout results`.
 
 ## How Search Works
 
-oss-scout runs five search strategies in priority order:
+oss-scout runs four search strategies in priority order:
 
 | Strategy | Flag | What it searches | Why it matters |
 |----------|------|-----------------|----------------|
 | `merged` | Phase 0 | Repos where you have merged PRs | Highest merge probability |
-| `orgs` | Phase 0.5 | Your preferred organizations | Explicit interest |
 | `starred` | Phase 1 | Your GitHub starred repos | Implicit interest |
 | `broad` | Phase 2 | General label/language filtered | Discovery |
 | `maintained` | Phase 3 | Actively maintained repos by topic | Exploration |
@@ -208,7 +206,6 @@ oss-scout config --json                             # JSON output
 oss-scout config set languages "typescript,rust"    # set languages
 oss-scout config set minStars 100                   # minimum repo stars
 oss-scout config set includeDocIssues false          # exclude doc-only issues
-oss-scout config set preferredOrgs "myorg,anotherorg"
 oss-scout config set excludeRepos "+spam/repo"       # append to exclude list
 oss-scout config set excludeRepos "-spam/repo"       # remove from exclude list
 oss-scout config reset                               # reset to defaults
@@ -227,7 +224,6 @@ oss-scout config reset                               # reset to defaults
 | `minRepoScoreThreshold` | number | 4 | Skip repos scoring below this (1-10) |
 | `excludeRepos` | string[] | [] | Repos to never search |
 | `aiPolicyBlocklist` | string[] | matplotlib/matplotlib | Repos with anti-AI policies |
-| `preferredOrgs` | string[] | [] | Priority organizations for Phase 0.5 |
 | `projectCategories` | enum[] | [] | Topic filter: devtools, web-frameworks, etc. |
 | `persistence` | enum | local | State storage: local or gist |
 
@@ -338,7 +334,7 @@ Setup:
 
 Search:
   search [count]                Search for issues (default: 10)
-    --strategy <s>              Strategies: merged,orgs,starred,broad,maintained,all
+    --strategy <s>              Strategies: merged,starred,broad,maintained,all
   vet <issue-url>               Vet a specific issue
   vet-list                      Re-vet all saved results
     --prune                     Remove unavailable issues

@@ -17,7 +17,7 @@ oss-scout is a standalone tool for finding open source issues personalized to yo
 - **No singletons in public API.** `OssScout` accepts config via constructor injection. Implements `ScoutStateReader` to bridge state with the search engine.
 - **Two persistence modes:** `'gist'` (standalone, state in private GitHub gist) and `'provided'` (library, caller provides state — used by OSS Autopilot).
 - **Extracted from OSS Autopilot.** Search modules refactored to remove `StateManager` singleton. OSS Autopilot imports `@oss-scout/core` as a dependency.
-- **5-phase search** with configurable strategy selection (merged, orgs, starred, broad, maintained).
+- **4-phase search** with configurable strategy selection (merged, starred, broad, maintained).
 - **Error strategy:** Auth/rate-limit errors propagate. Cache/filesystem errors degrade gracefully with warn logging. Documented in errors.ts.
 
 ### File Structure
@@ -38,7 +38,7 @@ packages/core/src/
 ├── core/                 # Domain logic
 │   ├── schemas.ts        # Zod schemas for ScoutState, ScoutPreferences
 │   ├── types.ts          # Ephemeral types, config interfaces
-│   ├── issue-discovery.ts # 5 extracted phase functions + orchestrator
+│   ├── issue-discovery.ts # 4 extracted phase functions + orchestrator
 │   ├── issue-vetting.ts  # Parallel vetting pipeline + ScoutStateReader
 │   ├── issue-eligibility.ts # PR existence, claim detection, requirements
 │   ├── issue-scoring.ts  # Viability scoring (pure functions, 0-100)

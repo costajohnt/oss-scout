@@ -99,7 +99,6 @@ describe("ScoutPreferencesSchema", () => {
     expect(prefs.languages).toEqual(["any"]);
     expect(prefs.labels).toEqual(["good first issue", "help wanted"]);
     expect(prefs.excludeRepos).toEqual([]);
-    expect(prefs.preferredOrgs).toEqual([]);
     expect(prefs.projectCategories).toEqual([]);
   });
 

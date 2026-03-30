@@ -23,7 +23,6 @@ const FIELD_CONFIGS: Record<string, FieldConfig> = {
   excludeRepos: { type: "array" },
   excludeOrgs: { type: "array" },
   aiPolicyBlocklist: { type: "array" },
-  preferredOrgs: { type: "array" },
   minStars: { type: "number" },
   maxIssueAgeDays: { type: "number" },
   minRepoScoreThreshold: { type: "number" },
@@ -108,7 +107,6 @@ export function runConfigShow(): void {
   console.log(`  maxIssueAgeDays:      ${prefs.maxIssueAgeDays}`);
   console.log(`  minRepoScoreThreshold: ${prefs.minRepoScoreThreshold}`);
   console.log(`  includeDocIssues:     ${prefs.includeDocIssues}`);
-  console.log(`  preferredOrgs:        ${formatArray(prefs.preferredOrgs)}`);
   console.log(
     `  projectCategories:    ${formatArray(prefs.projectCategories)}`,
   );
