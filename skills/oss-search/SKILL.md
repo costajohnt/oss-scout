@@ -62,7 +62,7 @@ oss-scout search --strategy merged,starred
 oss-scout config set defaultStrategy "merged,starred"
 ```
 
-The `all` strategy runs phases in order: merged (0) -> starred (1) -> broad (2) -> maintained (3). Results are deduplicated and sorted by priority, then recommendation, then score. Rate-limit-aware: heavy phases (broad, maintained) are skipped when API budget is low.
+The `all` strategy runs phases in order: broad (2) -> merged (0) -> starred (1) -> maintained (3). Broad search runs first to get the full Search API budget. Results are deduplicated and sorted by priority (merged_pr > starred > normal), then recommendation, then score. Rate-limit-aware: heavy phases (broad, maintained) are skipped when API budget is low.
 
 ## Viability Scoring (0-100)
 
