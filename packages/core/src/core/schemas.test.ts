@@ -147,6 +147,34 @@ describe("ScoutPreferencesSchema", () => {
       ScoutPreferencesSchema.parse({ interPhaseDelayMs: -1 }),
     ).toThrow();
   });
+
+  it("applies broadPhaseDelayMs default of 90000", () => {
+    const prefs = ScoutPreferencesSchema.parse({});
+    expect(prefs.broadPhaseDelayMs).toBe(90000);
+  });
+
+  it("applies skipBroadWhenSufficientResults default of 15", () => {
+    const prefs = ScoutPreferencesSchema.parse({});
+    expect(prefs.skipBroadWhenSufficientResults).toBe(15);
+  });
+
+  it("accepts custom broadPhaseDelayMs", () => {
+    const prefs = ScoutPreferencesSchema.parse({ broadPhaseDelayMs: 60000 });
+    expect(prefs.broadPhaseDelayMs).toBe(60000);
+  });
+
+  it("rejects broadPhaseDelayMs exceeding 300000", () => {
+    expect(() =>
+      ScoutPreferencesSchema.parse({ broadPhaseDelayMs: 400000 }),
+    ).toThrow();
+  });
+
+  it("accepts skipBroadWhenSufficientResults of 0", () => {
+    const prefs = ScoutPreferencesSchema.parse({
+      skipBroadWhenSufficientResults: 0,
+    });
+    expect(prefs.skipBroadWhenSufficientResults).toBe(0);
+  });
 });
 
 describe("RepoScoreSchema", () => {
