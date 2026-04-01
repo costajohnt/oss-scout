@@ -752,7 +752,9 @@ describe("IssueDiscovery", () => {
         { skipBroadWhenSufficientResults: 15 },
       );
 
-      const { strategiesUsed } = await discovery.searchIssues({ maxResults: 20 });
+      const { strategiesUsed } = await discovery.searchIssues({
+        maxResults: 20,
+      });
 
       // broad should still be listed in strategiesUsed (strategy was enabled)
       // but searchWithChunkedLabels should NOT have been called (Phase 2 body skipped)

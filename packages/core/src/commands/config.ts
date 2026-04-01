@@ -125,8 +125,12 @@ export function runConfigShow(): void {
     `  defaultStrategy:      ${prefs.defaultStrategy ? formatArray(prefs.defaultStrategy) : "(all)"}`,
   );
   console.log(`  persistence:          ${prefs.persistence}`);
-  console.log(`  broadPhaseDelayMs:    ${prefs.broadPhaseDelayMs}ms (${(prefs.broadPhaseDelayMs / 1000).toFixed(0)}s)`);
-  console.log(`  skipBroadWhenSufficientResults: ${prefs.skipBroadWhenSufficientResults}`);
+  console.log(
+    `  broadPhaseDelayMs:    ${prefs.broadPhaseDelayMs}ms (${(prefs.broadPhaseDelayMs / 1000).toFixed(0)}s)`,
+  );
+  console.log(
+    `  skipBroadWhenSufficientResults: ${prefs.skipBroadWhenSufficientResults}`,
+  );
   console.log();
 }
 
