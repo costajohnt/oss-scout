@@ -226,6 +226,7 @@ export function registerTools(server: McpServer, scout: OssScout): void {
     "minStars",
     "maxIssueAgeDays",
     "minRepoScoreThreshold",
+    "interPhaseDelayMs",
   ]);
   const BOOLEAN_KEYS = new Set(["includeDocIssues"]);
 
