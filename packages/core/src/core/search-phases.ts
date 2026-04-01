@@ -167,6 +167,101 @@ export async function cachedSearchIssues(
 // ── Search infrastructure ──
 
 /**
+ * Fetch open issues from known repos using REST API (no Search API quota).
+ * Used by Phase 0 (merged-PR repos) and Phase 1 (starred repos).
+ *
+ * Instead of the Search API (`octokit.search.issuesAndPullRequests`), this
+ * calls `GET /repos/{owner}/{repo}/issues` which counts against the much
+ * larger Core API rate limit and avoids consuming the scarce Search quota.
+ */
+export async function fetchIssuesFromKnownRepos(
+  octokit: Octokit,
+  vetter: IssueVetter,
+  repos: string[],
+  labels: string[],
+  maxResults: number,
+  priority: SearchPriority,
+  filterFn: (items: GitHubSearchItem[]) => GitHubSearchItem[],
+): Promise<{
+  candidates: IssueCandidate[];
+  allReposFailed: boolean;
+  rateLimitHit: boolean;
+}> {
+  const candidates: IssueCandidate[] = [];
+  let failedRepos = 0;
+  let rateLimitFailures = 0;
+
+  for (let i = 0; i < repos.length; i++) {
+    if (candidates.length >= maxResults) break;
+
+    // Delay between repos to avoid REST secondary rate limits
+    if (i > 0) await sleep(INTER_QUERY_DELAY_MS);
+
+    const repoFullName = repos[i];
+    const [owner, repo] = repoFullName.split("/");
+
+    try {
+      const response = await octokit.issues.listForRepo({
+        owner,
+        repo,
+        state: "open",
+        sort: "created",
+        direction: "desc",
+        per_page: 5,
+        ...(labels.length > 0 ? { labels: labels.join(",") } : {}),
+      });
+
+      const mapped: GitHubSearchItem[] = response.data.map((issue) => ({
+        html_url: issue.html_url,
+        repository_url: `https://api.github.com/repos/${repoFullName}`,
+        updated_at: issue.updated_at ?? "",
+        title: issue.title,
+        labels: issue.labels as Array<{ name?: string } | string>,
+      }));
+
+      if (mapped.length > 0) {
+        const filtered = filterFn(mapped);
+        if (filtered.length > 0) {
+          const remainingNeeded = maxResults - candidates.length;
+          const { candidates: vetted, rateLimitHit: vetRateLimitHit } =
+            await vetter.vetIssuesParallel(
+              filtered
+                .slice(0, remainingNeeded * 2)
+                .map((item) => item.html_url),
+              remainingNeeded,
+              priority,
+            );
+          candidates.push(...vetted);
+          if (vetRateLimitHit) rateLimitFailures++;
+        }
+      }
+    } catch (error) {
+      failedRepos++;
+      if (isRateLimitError(error)) {
+        rateLimitFailures++;
+      }
+      warn(
+        MODULE,
+        `Error fetching issues from ${repoFullName}:`,
+        errorMessage(error),
+      );
+    }
+  }
+
+  const allReposFailed = failedRepos === repos.length && repos.length > 0;
+  const rateLimitHit = rateLimitFailures > 0;
+  if (allReposFailed) {
+    warn(
+      MODULE,
+      `All ${repos.length} repo(s) failed for ${priority} phase. ` +
+        `This may indicate a systemic issue (rate limit, auth, network).`,
+    );
+  }
+
+  return { candidates, allReposFailed, rateLimitHit };
+}
+
+/**
  * Search across chunked labels with deduplication.
  *
  * Splits labels into chunks that fit within GitHub's boolean operator budget,
