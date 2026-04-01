@@ -492,7 +492,7 @@ export class IssueDiscovery {
       } else if (searchBudget < LOW_BUDGET_THRESHOLD) {
         info(
           MODULE,
-          `Search budget low (${searchBudget} remaining) — skipping heavy phases (2, 3)`,
+          `Search budget low (${searchBudget} remaining) — skipping broad + maintained phases`,
         );
       }
     } catch (error) {
