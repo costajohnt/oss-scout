@@ -155,7 +155,10 @@ export async function cachedSearchIssues(
   if (data.items.length > 0) {
     cache.set(cacheKey, "", data);
   } else {
-    debug(MODULE, `Skipping cache for empty search result (possible rate limit artifact)`);
+    debug(
+      MODULE,
+      `Skipping cache for empty search result (possible rate limit artifact)`,
+    );
   }
 
   return data;

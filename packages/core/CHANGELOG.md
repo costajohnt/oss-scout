@@ -2,18 +2,16 @@
 
 ## [0.3.0](https://github.com/costajohnt/oss-scout/compare/core-v0.2.1...core-v0.3.0) (2026-03-30)
 
-
 ### Features
 
-* add skip list with 90-day auto-cull, search filtering, and CLI/MCP support ([#50](https://github.com/costajohnt/oss-scout/issues/50)) ([a60c0ef](https://github.com/costajohnt/oss-scout/commit/a60c0ef3cf9f9b8774e8a54f22173371cfa926c1))
-* change default language filter to 'any' (all languages) ([59a803f](https://github.com/costajohnt/oss-scout/commit/59a803fdafc66b8e70d4f08568c98cdc8b8c286e))
-
+- add skip list with 90-day auto-cull, search filtering, and CLI/MCP support ([#50](https://github.com/costajohnt/oss-scout/issues/50)) ([a60c0ef](https://github.com/costajohnt/oss-scout/commit/a60c0ef3cf9f9b8774e8a54f22173371cfa926c1))
+- change default language filter to 'any' (all languages) ([59a803f](https://github.com/costajohnt/oss-scout/commit/59a803fdafc66b8e70d4f08568c98cdc8b8c286e))
 
 ### Bug Fixes
 
-* address final audit findings — fake URLs, versions, SEO, edge cases ([6bb7be3](https://github.com/costajohnt/oss-scout/commit/6bb7be362952f4137d3cc50dee08858342fd3d92))
-* final review cleanup — MCP name, timeout leak, dead code, error types ([9abcc6b](https://github.com/costajohnt/oss-scout/commit/9abcc6b20cb57bea823728896d49d324f6a1d4c8))
-* skip list gist sync, MCP feedback, date validation ([1314aae](https://github.com/costajohnt/oss-scout/commit/1314aae1328093740be588a91164004ab30400e1))
+- address final audit findings — fake URLs, versions, SEO, edge cases ([6bb7be3](https://github.com/costajohnt/oss-scout/commit/6bb7be362952f4137d3cc50dee08858342fd3d92))
+- final review cleanup — MCP name, timeout leak, dead code, error types ([9abcc6b](https://github.com/costajohnt/oss-scout/commit/9abcc6b20cb57bea823728896d49d324f6a1d4c8))
+- skip list gist sync, MCP feedback, date validation ([1314aae](https://github.com/costajohnt/oss-scout/commit/1314aae1328093740be588a91164004ab30400e1))
 
 ## [0.2.1](https://github.com/costajohnt/oss-scout/compare/core-v0.2.0...core-v0.2.1) (2026-03-29)
 
