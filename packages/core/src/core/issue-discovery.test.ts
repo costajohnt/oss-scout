@@ -102,6 +102,10 @@ const mockCachedSearchIssues = vi.fn().mockResolvedValue({
   items: [],
 });
 
+const mockFetchIssuesFromMaintainedRepos = vi
+  .fn()
+  .mockResolvedValue([] as GitHubSearchItem[]);
+
 vi.mock("./search-phases.js", () => ({
   buildEffectiveLabels: vi.fn((_scopes: string[], labels: string[]) =>
     labels.length > 0 ? labels : ["good first issue"],
@@ -114,6 +118,8 @@ vi.mock("./search-phases.js", () => ({
     mockSearchWithChunkedLabels(...args),
   filterVetAndScore: (...args: unknown[]) => mockFilterVetAndScore(...args),
   cachedSearchIssues: (...args: unknown[]) => mockCachedSearchIssues(...args),
+  fetchIssuesFromMaintainedRepos: (...args: unknown[]) =>
+    mockFetchIssuesFromMaintainedRepos(...args),
 }));
 
 import { IssueDiscovery } from "./issue-discovery.js";
@@ -250,6 +256,7 @@ describe("IssueDiscovery", () => {
       total_count: 0,
       items: [],
     });
+    mockFetchIssuesFromMaintainedRepos.mockResolvedValue([]);
 
     vi.mocked(checkRateLimit).mockResolvedValue({
       remaining: 30,
@@ -326,7 +333,41 @@ describe("IssueDiscovery", () => {
       expect(mockFilterVetAndScore).toHaveBeenCalled();
     });
 
-    it("Phase 3: calls cachedSearchIssues then filterVetAndScore", async () => {
+    it("Phase 3: tries REST API with starred repos first", async () => {
+      const restItems: GitHubSearchItem[] = [
+        {
+          html_url: "https://github.com/starred/repo/issues/1",
+          repository_url: "https://api.github.com/repos/starred/repo",
+          updated_at: "2026-01-01T00:00:00Z",
+        },
+      ];
+      mockFetchIssuesFromMaintainedRepos.mockResolvedValue(restItems);
+      const c = makeCandidate("starred/repo", "normal");
+      // Phase 2 calls filterVetAndScore first (return empty so Phase 3 runs with eligible repos)
+      mockFilterVetAndScore
+        .mockResolvedValueOnce({
+          candidates: [],
+          allVetFailed: false,
+          rateLimitHit: false,
+        })
+        .mockResolvedValue({
+          candidates: [c],
+          allVetFailed: false,
+          rateLimitHit: false,
+        });
+
+      const discovery = makeDiscovery({
+        getStarredRepos: vi.fn(() => ["starred/repo"]),
+      });
+      await discovery.searchIssues({ maxResults: 5 });
+
+      expect(mockFetchIssuesFromMaintainedRepos).toHaveBeenCalled();
+    });
+
+    it("Phase 3: falls back to Search API when REST yields no candidates", async () => {
+      // REST returns empty
+      mockFetchIssuesFromMaintainedRepos.mockResolvedValue([]);
+
       mockCachedSearchIssues.mockResolvedValue({
         total_count: 5,
         items: [
@@ -338,15 +379,58 @@ describe("IssueDiscovery", () => {
         ],
       });
       const c = makeCandidate("maintained/repo", "normal");
-      mockFilterVetAndScore.mockResolvedValue({
-        candidates: [c],
-        allVetFailed: false,
-        rateLimitHit: false,
+      // Phase 2 calls filterVetAndScore first (return empty so Phase 3 runs)
+      mockFilterVetAndScore
+        .mockResolvedValueOnce({
+          candidates: [],
+          allVetFailed: false,
+          rateLimitHit: false,
+        })
+        .mockResolvedValue({
+          candidates: [c],
+          allVetFailed: false,
+          rateLimitHit: false,
+        });
+
+      const discovery = makeDiscovery({
+        getStarredRepos: vi.fn(() => ["starred/repo"]),
       });
+      await discovery.searchIssues({ maxResults: 5 });
+
+      // Should fall back to Search API
+      expect(mockCachedSearchIssues).toHaveBeenCalled();
+    });
+
+    it("Phase 3: falls back to Search API when no starred repos available", async () => {
+      mockCachedSearchIssues.mockResolvedValue({
+        total_count: 5,
+        items: [
+          {
+            html_url: "https://github.com/maintained/repo/issues/1",
+            repository_url: "https://api.github.com/repos/maintained/repo",
+            updated_at: "2026-01-01T00:00:00Z",
+          },
+        ],
+      });
+      const c = makeCandidate("maintained/repo", "normal");
+      // Phase 2 calls filterVetAndScore first (return empty so Phase 3 runs)
+      mockFilterVetAndScore
+        .mockResolvedValueOnce({
+          candidates: [],
+          allVetFailed: false,
+          rateLimitHit: false,
+        })
+        .mockResolvedValue({
+          candidates: [c],
+          allVetFailed: false,
+          rateLimitHit: false,
+        });
 
       const discovery = makeDiscovery();
       await discovery.searchIssues({ maxResults: 5 });
 
+      // No starred repos, so REST is skipped, falls back to Search API
+      expect(mockFetchIssuesFromMaintainedRepos).not.toHaveBeenCalled();
       expect(mockCachedSearchIssues).toHaveBeenCalled();
     });
   });

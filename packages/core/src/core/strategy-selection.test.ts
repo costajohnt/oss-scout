@@ -30,6 +30,7 @@ vi.mock("./search-phases.js", () => ({
   buildEffectiveLabels: vi.fn((_scopes: unknown, labels: string[]) => labels),
   interleaveArrays: vi.fn((arrays: unknown[][]) => arrays.flat()),
   cachedSearchIssues: vi.fn().mockResolvedValue({ total_count: 0, items: [] }),
+  fetchIssuesFromMaintainedRepos: vi.fn().mockResolvedValue([]),
   filterVetAndScore: vi.fn().mockResolvedValue({
     candidates: [],
     allVetFailed: false,

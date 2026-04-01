@@ -46,6 +46,7 @@ import {
   buildEffectiveLabels,
   interleaveArrays,
   cachedSearchIssues,
+  fetchIssuesFromMaintainedRepos,
   filterVetAndScore,
   fetchIssuesFromKnownRepos,
   searchWithChunkedLabels,
@@ -282,7 +283,7 @@ async function runPhase2(
   };
 }
 
-/** Phase 3: Actively maintained repos. */
+/** Phase 3: Actively maintained repos (REST-first, Search API fallback). */
 async function runPhase3(
   octokit: Octokit,
   vetter: IssueVetter,
@@ -292,10 +293,62 @@ async function runPhase3(
   maxResults: number,
   phase0RepoSet: Set<string>,
   starredRepoSet: Set<string>,
+  starredRepos: string[],
   existingCandidates: IssueCandidate[],
   filterIssues: (items: GitHubSearchItem[]) => GitHubSearchItem[],
 ): Promise<PhaseResult> {
   info(MODULE, "Phase 3: Searching actively maintained repos...");
+
+  const seenRepos = new Set(existingCandidates.map((c) => c.issue.repo));
+
+  // Step 1: Try REST API with starred repos first (no Search API quota used)
+  const eligibleStarred = starredRepos.filter(
+    (r) => !phase0RepoSet.has(r) && !seenRepos.has(r),
+  );
+
+  if (eligibleStarred.length > 0) {
+    info(
+      MODULE,
+      `Phase 3: Checking ${eligibleStarred.length} starred repos via REST API...`,
+    );
+    const restItems = await fetchIssuesFromMaintainedRepos(
+      octokit,
+      eligibleStarred.slice(0, 15),
+      minStars,
+      maxResults,
+    );
+
+    if (restItems.length > 0) {
+      const {
+        candidates,
+        allVetFailed,
+        rateLimitHit: vetRateLimitHit,
+      } = await filterVetAndScore(
+        vetter,
+        restItems,
+        filterIssues,
+        [phase0RepoSet, seenRepos],
+        maxResults,
+        minStars,
+        "Phase 3 (REST)",
+      );
+
+      if (candidates.length > 0) {
+        info(
+          MODULE,
+          `Found ${candidates.length} candidates from maintained-repo REST search`,
+        );
+        return {
+          candidates,
+          error: allVetFailed ? "all vetting failed" : null,
+          rateLimitHit: vetRateLimitHit,
+        };
+      }
+    }
+  }
+
+  // Step 2: Fall back to Search API if REST didn't yield results
+  info(MODULE, "Phase 3: Falling back to Search API...");
 
   const thirtyDaysAgo = new Date();
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
@@ -321,7 +374,6 @@ async function runPhase3(
       `Found ${data.total_count} issues in maintained-repo search, processing top ${data.items.length}...`,
     );
 
-    const seenRepos = new Set(existingCandidates.map((c) => c.issue.repo));
     const {
       candidates,
       allVetFailed,
@@ -656,6 +708,7 @@ export class IssueDiscovery {
         remaining,
         phase0RepoSet,
         starredRepoSet,
+        starredRepos,
         allCandidates,
         filterIssues,
       );

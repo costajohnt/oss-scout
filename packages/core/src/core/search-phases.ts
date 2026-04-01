@@ -164,6 +164,74 @@ export async function cachedSearchIssues(
   return data;
 }
 
+// ── REST-based search functions ──
+
+/**
+ * Fetch issues from maintained repos using REST API (no Search API quota).
+ *
+ * Checks each repo for recent push activity and star threshold,
+ * then fetches open issues via `GET /repos/{owner}/{repo}/issues`.
+ * Falls back to the caller to use Search API if this doesn't yield enough.
+ */
+export async function fetchIssuesFromMaintainedRepos(
+  octokit: Octokit,
+  repos: string[],
+  minStars: number,
+  maxResults: number,
+): Promise<GitHubSearchItem[]> {
+  const items: GitHubSearchItem[] = [];
+
+  for (const repoFullName of repos) {
+    if (items.length >= maxResults * 3) break;
+
+    const [owner, repo] = repoFullName.split("/");
+    if (!owner || !repo) continue;
+
+    try {
+      const { data: repoData } = await octokit.repos.get({ owner, repo });
+
+      const pushedAt = new Date(repoData.pushed_at);
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+      if (pushedAt < thirtyDaysAgo) continue;
+      if ((repoData.stargazers_count ?? 0) < minStars) continue;
+      if (repoData.archived) continue;
+
+      const { data: issues } = await octokit.issues.listForRepo({
+        owner,
+        repo,
+        state: "open",
+        sort: "created",
+        direction: "desc",
+        per_page: 5,
+      });
+
+      const realIssues = issues.filter(
+        (i: { pull_request?: unknown }) => !i.pull_request,
+      );
+
+      for (const issue of realIssues) {
+        items.push({
+          html_url: issue.html_url,
+          repository_url: `https://api.github.com/repos/${repoFullName}`,
+          updated_at: issue.updated_at ?? "",
+          title: issue.title,
+          labels: issue.labels as Array<{ name?: string } | string>,
+        });
+      }
+
+      await sleep(INTER_QUERY_DELAY_MS);
+    } catch (error) {
+      debug(
+        MODULE,
+        `Error fetching issues from ${repoFullName}: ${errorMessage(error)}`,
+      );
+    }
+  }
+
+  return items;
+}
+
 // ── Search infrastructure ──
 
 /**
