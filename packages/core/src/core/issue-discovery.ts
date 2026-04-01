@@ -53,9 +53,6 @@ import {
 
 const MODULE = "issue-discovery";
 
-/** Delay between major search phases to let GitHub's rate limit window cool down. */
-const INTER_PHASE_DELAY_MS = 2000;
-
 /** If remaining search quota is below this, skip heavy phases (2, 3). */
 const LOW_BUDGET_THRESHOLD = 20;
 
@@ -454,6 +451,7 @@ export class IssueDiscovery {
       (scopes ? buildEffectiveLabels(scopes, config.labels) : config.labels);
     const maxResults = options.maxResults || 10;
     const minStars = config.minStars ?? 50;
+    const interPhaseDelay = config.interPhaseDelayMs ?? 30000;
 
     // Strategy selection
     const ALL_STRATEGIES: readonly SearchStrategy[] = CONCRETE_STRATEGIES;
@@ -585,7 +583,13 @@ export class IssueDiscovery {
 
     // Phase 0: Merged-PR repos
     if (phase0Repos.length > 0 && enabledStrategies.has("merged")) {
-      await sleep(INTER_PHASE_DELAY_MS);
+      if (interPhaseDelay > 0) {
+        info(
+          MODULE,
+          `Waiting ${(interPhaseDelay / 1000).toFixed(0)}s between phases for rate limit management...`,
+        );
+        await sleep(interPhaseDelay);
+      }
       const remaining = maxResults - allCandidates.length;
       if (remaining > 0) {
         const result = await runPhase0(
@@ -610,7 +614,13 @@ export class IssueDiscovery {
       searchBudget >= CRITICAL_BUDGET_THRESHOLD &&
       enabledStrategies.has("starred")
     ) {
-      await sleep(INTER_PHASE_DELAY_MS);
+      if (interPhaseDelay > 0) {
+        info(
+          MODULE,
+          `Waiting ${(interPhaseDelay / 1000).toFixed(0)}s between phases for rate limit management...`,
+        );
+        await sleep(interPhaseDelay);
+      }
       const reposToSearch = starredRepos.filter((r) => !phase0RepoSet.has(r));
       if (reposToSearch.length > 0) {
         const remaining = maxResults - allCandidates.length;
@@ -638,7 +648,13 @@ export class IssueDiscovery {
       searchBudget >= LOW_BUDGET_THRESHOLD &&
       enabledStrategies.has("maintained")
     ) {
-      await sleep(INTER_PHASE_DELAY_MS);
+      if (interPhaseDelay > 0) {
+        info(
+          MODULE,
+          `Waiting ${(interPhaseDelay / 1000).toFixed(0)}s between phases for rate limit management...`,
+        );
+        await sleep(interPhaseDelay);
+      }
       const remaining = maxResults - allCandidates.length;
       const result = await runPhase3(
         this.octokit,

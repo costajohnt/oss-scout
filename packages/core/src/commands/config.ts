@@ -26,6 +26,7 @@ const FIELD_CONFIGS: Record<string, FieldConfig> = {
   minStars: { type: "number" },
   maxIssueAgeDays: { type: "number" },
   minRepoScoreThreshold: { type: "number" },
+  interPhaseDelayMs: { type: "number" },
   includeDocIssues: { type: "boolean" },
   scope: { type: "enum-array", validValues: IssueScopeSchema.options },
   projectCategories: {
@@ -106,6 +107,9 @@ export function runConfigShow(): void {
   console.log(`  minStars:             ${prefs.minStars}`);
   console.log(`  maxIssueAgeDays:      ${prefs.maxIssueAgeDays}`);
   console.log(`  minRepoScoreThreshold: ${prefs.minRepoScoreThreshold}`);
+  console.log(
+    `  interPhaseDelayMs:    ${prefs.interPhaseDelayMs}ms (${(prefs.interPhaseDelayMs / 1000).toFixed(0)}s)`,
+  );
   console.log(`  includeDocIssues:     ${prefs.includeDocIssues}`);
   console.log(
     `  projectCategories:    ${formatArray(prefs.projectCategories)}`,

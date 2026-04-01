@@ -111,6 +111,7 @@ vi.mock("./search-phases.js", () => ({
 import { IssueDiscovery } from "./issue-discovery.js";
 import { checkRateLimit } from "./github.js";
 import { applyPerRepoCap } from "./issue-filtering.js";
+import { sleep } from "./utils.js";
 import type { ScoutStateReader } from "./issue-vetting.js";
 import type { ScoutPreferences } from "./schemas.js";
 
@@ -435,6 +436,51 @@ describe("IssueDiscovery", () => {
 
       expect(strategiesUsed).not.toContain("broad");
       expect(strategiesUsed).not.toContain("maintained");
+    });
+  });
+
+  describe("searchIssues — inter-phase delay", () => {
+    it("uses interPhaseDelayMs preference for sleep between phases", async () => {
+      const c = makeCandidate("org/starred-repo", "starred");
+      mockSearchInRepos.mockResolvedValue({
+        candidates: [c],
+        allBatchesFailed: false,
+        rateLimitHit: false,
+      });
+
+      const discovery = makeDiscovery(
+        {
+          getReposWithMergedPRs: vi.fn(() => ["org/merged-repo"]),
+          getStarredRepos: vi.fn(() => ["org/starred-repo"]),
+        },
+        { interPhaseDelayMs: 15000 },
+      );
+
+      await discovery.searchIssues({ maxResults: 5 });
+
+      // Phase 1 sleeps with the configured delay
+      expect(sleep).toHaveBeenCalledWith(15000);
+    });
+
+    it("skips sleep when interPhaseDelayMs is 0", async () => {
+      const c = makeCandidate("org/starred-repo", "starred");
+      mockSearchInRepos.mockResolvedValue({
+        candidates: [c],
+        allBatchesFailed: false,
+        rateLimitHit: false,
+      });
+
+      const discovery = makeDiscovery(
+        {
+          getReposWithMergedPRs: vi.fn(() => ["org/merged-repo"]),
+          getStarredRepos: vi.fn(() => ["org/starred-repo"]),
+        },
+        { interPhaseDelayMs: 0 },
+      );
+
+      await discovery.searchIssues({ maxResults: 5 });
+
+      expect(sleep).not.toHaveBeenCalled();
     });
   });
 
