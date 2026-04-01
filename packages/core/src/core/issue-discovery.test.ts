@@ -79,7 +79,7 @@ vi.mock("./errors.js", () => ({
 
 const mockSearchInRepos = vi.fn().mockResolvedValue({
   candidates: [],
-  allBatchesFailed: false,
+  allReposFailed: false,
   rateLimitHit: false,
 });
 
@@ -236,9 +236,9 @@ describe("IssueDiscovery", () => {
     vi.clearAllMocks();
 
     // Reset mocks to defaults
-    mockSearchInRepos.mockResolvedValue({
+    mockFetchIssuesFromKnownRepos.mockResolvedValue({
       candidates: [],
-      allBatchesFailed: false,
+      allReposFailed: false,
       rateLimitHit: false,
     });
     mockFetchIssuesFromKnownRepos.mockResolvedValue({
@@ -571,7 +571,7 @@ describe("IssueDiscovery", () => {
           getReposWithMergedPRs: vi.fn(() => ["org/merged-repo"]),
           getStarredRepos: vi.fn(() => ["org/starred-repo"]),
         },
-        { interPhaseDelayMs: 0 },
+        { interPhaseDelayMs: 0, broadPhaseDelayMs: 0 },
       );
 
       await discovery.searchIssues({ maxResults: 5 });
@@ -740,9 +740,9 @@ describe("IssueDiscovery", () => {
       const candidates = Array.from({ length: 15 }, (_, i) =>
         makeCandidate(`org/repo-${i}`, "merged_pr"),
       );
-      mockSearchInRepos.mockResolvedValue({
+      mockFetchIssuesFromKnownRepos.mockResolvedValue({
         candidates,
-        allBatchesFailed: false,
+        allReposFailed: false,
         rateLimitHit: false,
       });
       vi.mocked(applyPerRepoCap).mockImplementation((c) => c);
@@ -768,9 +768,9 @@ describe("IssueDiscovery", () => {
         makeCandidate("org/merged-1", "merged_pr"),
         makeCandidate("org/merged-2", "merged_pr"),
       ];
-      mockSearchInRepos.mockResolvedValue({
+      mockFetchIssuesFromKnownRepos.mockResolvedValue({
         candidates: phase0Candidates,
-        allBatchesFailed: false,
+        allReposFailed: false,
         rateLimitHit: false,
       });
       vi.mocked(applyPerRepoCap).mockImplementation((c) => c);
@@ -788,9 +788,9 @@ describe("IssueDiscovery", () => {
 
     it("skips delay when previous phases found 0 results", async () => {
       // No Phase 0/1 candidates, so Phase 2 should run without the broad delay
-      mockSearchInRepos.mockResolvedValue({
+      mockFetchIssuesFromKnownRepos.mockResolvedValue({
         candidates: [],
-        allBatchesFailed: false,
+        allReposFailed: false,
         rateLimitHit: false,
       });
 
@@ -821,9 +821,9 @@ describe("IssueDiscovery", () => {
       const candidates = Array.from({ length: 20 }, (_, i) =>
         makeCandidate(`org/repo-${i}`, "merged_pr"),
       );
-      mockSearchInRepos.mockResolvedValue({
+      mockFetchIssuesFromKnownRepos.mockResolvedValue({
         candidates,
-        allBatchesFailed: false,
+        allReposFailed: false,
         rateLimitHit: false,
       });
       vi.mocked(applyPerRepoCap).mockImplementation((c) => c);
