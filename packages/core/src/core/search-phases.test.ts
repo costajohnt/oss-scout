@@ -684,9 +684,7 @@ describe("fetchIssuesFromMaintainedRepos", () => {
     );
 
     expect(result).toHaveLength(1);
-    expect(result[0].html_url).toBe(
-      "https://github.com/owner/repo/issues/1",
-    );
+    expect(result[0].html_url).toBe("https://github.com/owner/repo/issues/1");
     expect(result[0].repository_url).toBe(
       "https://api.github.com/repos/owner/repo",
     );
@@ -775,7 +773,9 @@ describe("fetchIssuesFromMaintainedRepos", () => {
           updated_at: "2026-01-01T00:00:00Z",
           title: "A pull request",
           labels: [],
-          pull_request: { url: "https://api.github.com/repos/owner/repo/pulls/2" },
+          pull_request: {
+            url: "https://api.github.com/repos/owner/repo/pulls/2",
+          },
         },
       ],
     });
@@ -843,6 +843,8 @@ describe("fetchIssuesFromMaintainedRepos", () => {
 
     // Should stop after collecting >= 3 items (cap is maxResults * 3)
     expect(result.length).toBeLessThanOrEqual(4); // first repo yields 4, then stops
-    expect((octokit.repos.get as ReturnType<typeof vi.fn>).mock.calls.length).toBe(1);
+    expect(
+      (octokit.repos.get as ReturnType<typeof vi.fn>).mock.calls.length,
+    ).toBe(1);
   });
 });
