@@ -211,7 +211,12 @@ export async function fetchIssuesFromKnownRepos(
         ...(labels.length > 0 ? { labels: labels.join(",") } : {}),
       });
 
-      const mapped: GitHubSearchItem[] = response.data.map((issue) => ({
+      // Filter out pull requests (REST issues endpoint returns both) and assigned issues
+      const issuesOnly = response.data.filter(
+        (item) => !("pull_request" in item) && !item.assignee,
+      );
+
+      const mapped: GitHubSearchItem[] = issuesOnly.map((issue) => ({
         html_url: issue.html_url,
         repository_url: `https://api.github.com/repos/${repoFullName}`,
         updated_at: issue.updated_at ?? "",
