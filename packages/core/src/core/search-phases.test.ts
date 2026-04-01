@@ -54,6 +54,7 @@ import {
   buildEffectiveLabels,
   interleaveArrays,
   cachedSearchIssues,
+  fetchIssuesFromMaintainedRepos,
   searchWithChunkedLabels,
   filterVetAndScore,
   searchInRepos,
@@ -615,5 +616,235 @@ describe("searchWithChunkedLabels", () => {
     expect(result).toHaveLength(2); // deduplicated: sharedItem appears once
     expect(result[0].html_url).toBe("https://github.com/a/b/issues/1");
     expect(result[1].html_url).toBe("https://github.com/c/d/issues/2");
+  });
+});
+
+describe("fetchIssuesFromMaintainedRepos", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  function makeMockOctokitForRest(opts: {
+    repoData?: {
+      pushed_at: string;
+      stargazers_count: number;
+      archived: boolean;
+    };
+    issues?: Array<{
+      html_url: string;
+      updated_at: string;
+      title: string;
+      labels: Array<{ name?: string } | string>;
+      pull_request?: unknown;
+    }>;
+    repoError?: Error;
+  }): Octokit {
+    return {
+      repos: {
+        get: opts.repoError
+          ? vi.fn().mockRejectedValue(opts.repoError)
+          : vi.fn().mockResolvedValue({
+              data: opts.repoData ?? {
+                pushed_at: new Date().toISOString(),
+                stargazers_count: 200,
+                archived: false,
+              },
+            }),
+      },
+      issues: {
+        listForRepo: vi.fn().mockResolvedValue({
+          data: opts.issues ?? [],
+        }),
+      },
+    } as unknown as Octokit;
+  }
+
+  it("fetches issues from actively maintained repos", async () => {
+    const octokit = makeMockOctokitForRest({
+      repoData: {
+        pushed_at: new Date().toISOString(),
+        stargazers_count: 200,
+        archived: false,
+      },
+      issues: [
+        {
+          html_url: "https://github.com/owner/repo/issues/1",
+          updated_at: "2026-01-01T00:00:00Z",
+          title: "Fix bug",
+          labels: [{ name: "bug" }],
+        },
+      ],
+    });
+
+    const result = await fetchIssuesFromMaintainedRepos(
+      octokit,
+      ["owner/repo"],
+      50,
+      10,
+    );
+
+    expect(result).toHaveLength(1);
+    expect(result[0].html_url).toBe("https://github.com/owner/repo/issues/1");
+    expect(result[0].repository_url).toBe(
+      "https://api.github.com/repos/owner/repo",
+    );
+    expect(result[0].title).toBe("Fix bug");
+  });
+
+  it("skips repos that were pushed more than 30 days ago", async () => {
+    const sixtyDaysAgo = new Date();
+    sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);
+
+    const octokit = makeMockOctokitForRest({
+      repoData: {
+        pushed_at: sixtyDaysAgo.toISOString(),
+        stargazers_count: 200,
+        archived: false,
+      },
+      issues: [
+        {
+          html_url: "https://github.com/owner/repo/issues/1",
+          updated_at: "2026-01-01T00:00:00Z",
+          title: "Bug",
+          labels: [],
+        },
+      ],
+    });
+
+    const result = await fetchIssuesFromMaintainedRepos(
+      octokit,
+      ["owner/repo"],
+      50,
+      10,
+    );
+
+    expect(result).toHaveLength(0);
+  });
+
+  it("skips repos below minimum star threshold", async () => {
+    const octokit = makeMockOctokitForRest({
+      repoData: {
+        pushed_at: new Date().toISOString(),
+        stargazers_count: 10,
+        archived: false,
+      },
+    });
+
+    const result = await fetchIssuesFromMaintainedRepos(
+      octokit,
+      ["owner/repo"],
+      50, // minStars = 50, repo has 10
+      10,
+    );
+
+    expect(result).toHaveLength(0);
+  });
+
+  it("skips archived repos", async () => {
+    const octokit = makeMockOctokitForRest({
+      repoData: {
+        pushed_at: new Date().toISOString(),
+        stargazers_count: 200,
+        archived: true,
+      },
+    });
+
+    const result = await fetchIssuesFromMaintainedRepos(
+      octokit,
+      ["owner/repo"],
+      50,
+      10,
+    );
+
+    expect(result).toHaveLength(0);
+  });
+
+  it("filters out pull requests from the issues endpoint", async () => {
+    const octokit = makeMockOctokitForRest({
+      issues: [
+        {
+          html_url: "https://github.com/owner/repo/issues/1",
+          updated_at: "2026-01-01T00:00:00Z",
+          title: "Real issue",
+          labels: [],
+        },
+        {
+          html_url: "https://github.com/owner/repo/pull/2",
+          updated_at: "2026-01-01T00:00:00Z",
+          title: "A pull request",
+          labels: [],
+          pull_request: {
+            url: "https://api.github.com/repos/owner/repo/pulls/2",
+          },
+        },
+      ],
+    });
+
+    const result = await fetchIssuesFromMaintainedRepos(
+      octokit,
+      ["owner/repo"],
+      50,
+      10,
+    );
+
+    expect(result).toHaveLength(1);
+    expect(result[0].title).toBe("Real issue");
+  });
+
+  it("handles API errors gracefully and continues", async () => {
+    const octokit = makeMockOctokitForRest({
+      repoError: new Error("Not Found"),
+    });
+
+    const result = await fetchIssuesFromMaintainedRepos(
+      octokit,
+      ["bad/repo"],
+      50,
+      10,
+    );
+
+    expect(result).toHaveLength(0);
+  });
+
+  it("stops fetching when maxResults * 3 items are collected", async () => {
+    // Create an octokit that returns 4 issues per repo
+    const makeIssues = (repoName: string) =>
+      Array.from({ length: 4 }, (_, i) => ({
+        html_url: `https://github.com/${repoName}/issues/${i + 1}`,
+        updated_at: "2026-01-01T00:00:00Z",
+        title: `Issue ${i + 1}`,
+        labels: [],
+      }));
+
+    const octokit = {
+      repos: {
+        get: vi.fn().mockResolvedValue({
+          data: {
+            pushed_at: new Date().toISOString(),
+            stargazers_count: 200,
+            archived: false,
+          },
+        }),
+      },
+      issues: {
+        listForRepo: vi.fn().mockResolvedValue({
+          data: makeIssues("owner/repo"),
+        }),
+      },
+    } as unknown as Octokit;
+
+    // maxResults=1, so cap is 1*3=3 items
+    const result = await fetchIssuesFromMaintainedRepos(
+      octokit,
+      ["owner/repo1", "owner/repo2", "owner/repo3"],
+      50,
+      1,
+    );
+
+    // Should stop after collecting >= 3 items (cap is maxResults * 3)
+    expect(result.length).toBeLessThanOrEqual(4); // first repo yields 4, then stops
+    expect(
+      (octokit.repos.get as ReturnType<typeof vi.fn>).mock.calls.length,
+    ).toBe(1);
   });
 });
