@@ -329,7 +329,7 @@ async function runPhase3(
         vetter,
         restItems,
         filterIssues,
-        [phase0RepoSet, starredRepoSet, seenRepos],
+        [phase0RepoSet, seenRepos],
         maxResults,
         minStars,
         "Phase 3 (REST)",
