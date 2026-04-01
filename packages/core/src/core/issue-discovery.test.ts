@@ -77,12 +77,6 @@ vi.mock("./errors.js", () => ({
   isRateLimitError: vi.fn(() => false),
 }));
 
-const mockSearchInRepos = vi.fn().mockResolvedValue({
-  candidates: [],
-  allReposFailed: false,
-  rateLimitHit: false,
-});
-
 const mockFetchIssuesFromKnownRepos = vi.fn().mockResolvedValue({
   candidates: [],
   allReposFailed: false,
@@ -111,7 +105,6 @@ vi.mock("./search-phases.js", () => ({
     labels.length > 0 ? labels : ["good first issue"],
   ),
   interleaveArrays: vi.fn((arrays: unknown[][]) => arrays.flat()),
-  searchInRepos: (...args: unknown[]) => mockSearchInRepos(...args),
   fetchIssuesFromKnownRepos: (...args: unknown[]) =>
     mockFetchIssuesFromKnownRepos(...args),
   searchWithChunkedLabels: (...args: unknown[]) =>
@@ -236,11 +229,6 @@ describe("IssueDiscovery", () => {
     vi.clearAllMocks();
 
     // Reset mocks to defaults
-    mockFetchIssuesFromKnownRepos.mockResolvedValue({
-      candidates: [],
-      allReposFailed: false,
-      rateLimitHit: false,
-    });
     mockFetchIssuesFromKnownRepos.mockResolvedValue({
       candidates: [],
       allReposFailed: false,
@@ -630,13 +618,6 @@ describe("IssueDiscovery", () => {
       const starred = makeCandidate("org/starred", "starred", "approve", 90);
       const normal = makeCandidate("org/normal", "normal", "approve", 95);
 
-      // Phase 2 (broad) runs first — returns normal
-      mockSearchWithChunkedLabels.mockResolvedValue([]);
-      mockFilterVetAndScore.mockResolvedValueOnce({
-        candidates: [normal],
-        allVetFailed: false,
-        rateLimitHit: false,
-      });
       // Phase 0 returns merged
       mockFetchIssuesFromKnownRepos.mockResolvedValueOnce({
         candidates: [merged],
@@ -647,6 +628,13 @@ describe("IssueDiscovery", () => {
       mockFetchIssuesFromKnownRepos.mockResolvedValueOnce({
         candidates: [starred],
         allReposFailed: false,
+        rateLimitHit: false,
+      });
+      // Phase 2 (broad) returns normal
+      mockSearchWithChunkedLabels.mockResolvedValue([]);
+      mockFilterVetAndScore.mockResolvedValueOnce({
+        candidates: [normal],
+        allVetFailed: false,
         rateLimitHit: false,
       });
 
