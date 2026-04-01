@@ -319,30 +319,39 @@ async function runPhase3(
     );
 
     if (restItems.length > 0) {
-      const {
-        candidates,
-        allVetFailed,
-        rateLimitHit: vetRateLimitHit,
-      } = await filterVetAndScore(
-        vetter,
-        restItems,
-        filterIssues,
-        [phase0RepoSet, seenRepos],
-        maxResults,
-        minStars,
-        "Phase 3 (REST)",
-      );
-
-      if (candidates.length > 0) {
-        info(
-          MODULE,
-          `Found ${candidates.length} candidates from maintained-repo REST search`,
-        );
-        return {
+      try {
+        const {
           candidates,
-          error: allVetFailed ? "all vetting failed" : null,
+          allVetFailed,
           rateLimitHit: vetRateLimitHit,
-        };
+        } = await filterVetAndScore(
+          vetter,
+          restItems,
+          filterIssues,
+          [phase0RepoSet, seenRepos],
+          maxResults,
+          minStars,
+          "Phase 3 (REST)",
+        );
+
+        if (candidates.length > 0) {
+          info(
+            MODULE,
+            `Found ${candidates.length} candidates from maintained-repo REST search`,
+          );
+          return {
+            candidates,
+            error: allVetFailed ? "all vetting failed" : null,
+            rateLimitHit: vetRateLimitHit,
+          };
+        }
+      } catch (error) {
+        if (getHttpStatusCode(error) === 401) throw error;
+        warn(
+          MODULE,
+          `Phase 3 REST vetting failed, falling back to Search API:`,
+          errorMessage(error),
+        );
       }
     }
   }
