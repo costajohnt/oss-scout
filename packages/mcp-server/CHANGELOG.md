@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.4.0](https://github.com/costajohnt/oss-scout/compare/mcp-server-v0.3.0...mcp-server-v0.4.0) (2026-04-01)
+
+
+### Features
+
+* add configurable inter-phase delay for rate limit management ([#59](https://github.com/costajohnt/oss-scout/issues/59)) ([7860bf9](https://github.com/costajohnt/oss-scout/commit/7860bf9115367a156cb16042503ebfca68f6f083))
+
+
+### Bug Fixes
+
+* MCP config parity, correct SKILL.md phase order, remove dead mocks ([#64](https://github.com/costajohnt/oss-scout/issues/64)) ([71fafb4](https://github.com/costajohnt/oss-scout/commit/71fafb4c96a6e7b8974495bb9e95e7dd1d695ea8))
+
 ## [0.3.0](https://github.com/costajohnt/oss-scout/compare/mcp-server-v0.2.1...mcp-server-v0.3.0) (2026-03-30)
 
 ### Features
