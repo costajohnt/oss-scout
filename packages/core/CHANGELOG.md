@@ -2,21 +2,19 @@
 
 ## [0.4.0](https://github.com/costajohnt/oss-scout/compare/core-v0.3.0...core-v0.4.0) (2026-04-01)
 
-
 ### Features
 
-* add configurable inter-phase delay for rate limit management ([#59](https://github.com/costajohnt/oss-scout/issues/59)) ([7860bf9](https://github.com/costajohnt/oss-scout/commit/7860bf9115367a156cb16042503ebfca68f6f083))
-
+- add configurable inter-phase delay for rate limit management ([#59](https://github.com/costajohnt/oss-scout/issues/59)) ([7860bf9](https://github.com/costajohnt/oss-scout/commit/7860bf9115367a156cb16042503ebfca68f6f083))
 
 ### Bug Fixes
 
-* add rate limit delay and skip logic before broad search phase ([#60](https://github.com/costajohnt/oss-scout/issues/60)) ([8bc6f7b](https://github.com/costajohnt/oss-scout/commit/8bc6f7b3a7a0c76123a425b4916bcf9357393a08))
-* don't cache empty search results to prevent rate-limit poisoning ([965a635](https://github.com/costajohnt/oss-scout/commit/965a635c893261a5c95096904736e48b20f9b4e6)), closes [#56](https://github.com/costajohnt/oss-scout/issues/56)
-* harden error handling in REST search functions ([#63](https://github.com/costajohnt/oss-scout/issues/63)) ([407078f](https://github.com/costajohnt/oss-scout/commit/407078fc7dfc9520332d8e6285ca35aa383e8367))
-* MCP config parity, correct SKILL.md phase order, remove dead mocks ([#64](https://github.com/costajohnt/oss-scout/issues/64)) ([71fafb4](https://github.com/costajohnt/oss-scout/commit/71fafb4c96a6e7b8974495bb9e95e7dd1d695ea8))
-* reorder search phases to run broad strategy first ([#58](https://github.com/costajohnt/oss-scout/issues/58)) ([9ed7963](https://github.com/costajohnt/oss-scout/commit/9ed7963419d4a7dc56cd8e6938900b1dd17e0ea5))
-* use REST API for Phase 3 maintained-repo search ([#61](https://github.com/costajohnt/oss-scout/issues/61)) ([143df21](https://github.com/costajohnt/oss-scout/commit/143df2196f01d42442708ff10aed49ff72cba425))
-* use REST Issues API for Phase 0 and Phase 1 searches ([#62](https://github.com/costajohnt/oss-scout/issues/62)) ([1e66b4e](https://github.com/costajohnt/oss-scout/commit/1e66b4ed4120fbd42d657deae3c59a7d16a118f2))
+- add rate limit delay and skip logic before broad search phase ([#60](https://github.com/costajohnt/oss-scout/issues/60)) ([8bc6f7b](https://github.com/costajohnt/oss-scout/commit/8bc6f7b3a7a0c76123a425b4916bcf9357393a08))
+- don't cache empty search results to prevent rate-limit poisoning ([965a635](https://github.com/costajohnt/oss-scout/commit/965a635c893261a5c95096904736e48b20f9b4e6)), closes [#56](https://github.com/costajohnt/oss-scout/issues/56)
+- harden error handling in REST search functions ([#63](https://github.com/costajohnt/oss-scout/issues/63)) ([407078f](https://github.com/costajohnt/oss-scout/commit/407078fc7dfc9520332d8e6285ca35aa383e8367))
+- MCP config parity, correct SKILL.md phase order, remove dead mocks ([#64](https://github.com/costajohnt/oss-scout/issues/64)) ([71fafb4](https://github.com/costajohnt/oss-scout/commit/71fafb4c96a6e7b8974495bb9e95e7dd1d695ea8))
+- reorder search phases to run broad strategy first ([#58](https://github.com/costajohnt/oss-scout/issues/58)) ([9ed7963](https://github.com/costajohnt/oss-scout/commit/9ed7963419d4a7dc56cd8e6938900b1dd17e0ea5))
+- use REST API for Phase 3 maintained-repo search ([#61](https://github.com/costajohnt/oss-scout/issues/61)) ([143df21](https://github.com/costajohnt/oss-scout/commit/143df2196f01d42442708ff10aed49ff72cba425))
+- use REST Issues API for Phase 0 and Phase 1 searches ([#62](https://github.com/costajohnt/oss-scout/issues/62)) ([1e66b4e](https://github.com/costajohnt/oss-scout/commit/1e66b4ed4120fbd42d657deae3c59a7d16a118f2))
 
 ## [0.3.0](https://github.com/costajohnt/oss-scout/compare/core-v0.2.1...core-v0.3.0) (2026-03-30)
 
