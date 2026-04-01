@@ -454,9 +454,9 @@ describe("IssueDiscovery", () => {
   describe("searchIssues — inter-phase delay", () => {
     it("uses interPhaseDelayMs preference for sleep between phases", async () => {
       const c = makeCandidate("org/starred-repo", "starred");
-      mockSearchInRepos.mockResolvedValue({
+      mockFetchIssuesFromKnownRepos.mockResolvedValue({
         candidates: [c],
-        allBatchesFailed: false,
+        allReposFailed: false,
         rateLimitHit: false,
       });
 
@@ -476,9 +476,9 @@ describe("IssueDiscovery", () => {
 
     it("skips sleep when interPhaseDelayMs is 0", async () => {
       const c = makeCandidate("org/starred-repo", "starred");
-      mockSearchInRepos.mockResolvedValue({
+      mockFetchIssuesFromKnownRepos.mockResolvedValue({
         candidates: [c],
-        allBatchesFailed: false,
+        allReposFailed: false,
         rateLimitHit: false,
       });
 
