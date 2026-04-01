@@ -300,6 +300,34 @@ describe("config command", () => {
       });
     });
 
+    describe("broad phase settings", () => {
+      it("should set broadPhaseDelayMs", () => {
+        writeState(makeState());
+
+        const result = runConfigSet("broadPhaseDelayMs", "60000");
+
+        expect(result.broadPhaseDelayMs).toBe(60000);
+        expect(readState().preferences.broadPhaseDelayMs).toBe(60000);
+      });
+
+      it("should set skipBroadWhenSufficientResults", () => {
+        writeState(makeState());
+
+        const result = runConfigSet("skipBroadWhenSufficientResults", "20");
+
+        expect(result.skipBroadWhenSufficientResults).toBe(20);
+        expect(readState().preferences.skipBroadWhenSufficientResults).toBe(20);
+      });
+
+      it("should set skipBroadWhenSufficientResults to 0 to disable skipping", () => {
+        writeState(makeState());
+
+        const result = runConfigSet("skipBroadWhenSufficientResults", "0");
+
+        expect(result.skipBroadWhenSufficientResults).toBe(0);
+      });
+    });
+
     describe("validation", () => {
       it("should reject unknown keys", () => {
         writeState(makeState());

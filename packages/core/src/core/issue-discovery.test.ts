@@ -733,4 +733,109 @@ describe("IssueDiscovery", () => {
       expect(discovery.rateLimitWarning).toBeTruthy();
     });
   });
+
+  describe("searchIssues — broad phase delay/skip logic", () => {
+    it("skips Phase 2 when allCandidates >= skipBroadWhenSufficientResults", async () => {
+      // Phase 0 returns enough candidates to exceed the skip threshold
+      const candidates = Array.from({ length: 15 }, (_, i) =>
+        makeCandidate(`org/repo-${i}`, "merged_pr"),
+      );
+      mockSearchInRepos.mockResolvedValue({
+        candidates,
+        allBatchesFailed: false,
+        rateLimitHit: false,
+      });
+      vi.mocked(applyPerRepoCap).mockImplementation((c) => c);
+
+      const discovery = makeDiscovery(
+        { getReposWithMergedPRs: vi.fn(() => ["org/repo-0"]) },
+        { skipBroadWhenSufficientResults: 15 },
+      );
+
+      const { strategiesUsed } = await discovery.searchIssues({ maxResults: 20 });
+
+      // broad should still be listed in strategiesUsed (strategy was enabled)
+      // but searchWithChunkedLabels should NOT have been called (Phase 2 body skipped)
+      expect(strategiesUsed).toContain("broad");
+      expect(mockSearchWithChunkedLabels).not.toHaveBeenCalled();
+    });
+
+    it("applies broadPhaseDelayMs before Phase 2 when previous phases found some results", async () => {
+      // Phase 0 returns 2 candidates (below skip threshold)
+      const phase0Candidates = [
+        makeCandidate("org/merged-1", "merged_pr"),
+        makeCandidate("org/merged-2", "merged_pr"),
+      ];
+      mockSearchInRepos.mockResolvedValue({
+        candidates: phase0Candidates,
+        allBatchesFailed: false,
+        rateLimitHit: false,
+      });
+      vi.mocked(applyPerRepoCap).mockImplementation((c) => c);
+
+      const discovery = makeDiscovery(
+        { getReposWithMergedPRs: vi.fn(() => ["org/merged-1"]) },
+        { broadPhaseDelayMs: 60000, skipBroadWhenSufficientResults: 15 },
+      );
+
+      await discovery.searchIssues({ maxResults: 10 });
+
+      // sleep should have been called with 60000 for the broad phase delay
+      expect(sleep).toHaveBeenCalledWith(60000);
+    });
+
+    it("skips delay when previous phases found 0 results", async () => {
+      // No Phase 0/1 candidates, so Phase 2 should run without the broad delay
+      mockSearchInRepos.mockResolvedValue({
+        candidates: [],
+        allBatchesFailed: false,
+        rateLimitHit: false,
+      });
+
+      // Phase 2 returns candidates so we don't throw
+      const broadCandidate = makeCandidate("broad/repo", "normal");
+      mockFilterVetAndScore.mockResolvedValue({
+        candidates: [broadCandidate],
+        allVetFailed: false,
+        rateLimitHit: false,
+      });
+      vi.mocked(applyPerRepoCap).mockImplementation((c) => c);
+
+      const discovery = makeDiscovery(
+        {},
+        { broadPhaseDelayMs: 90000, skipBroadWhenSufficientResults: 15 },
+      );
+
+      await discovery.searchIssues({ maxResults: 10 });
+
+      // sleep should NOT have been called with 90000 (the broad delay)
+      // It may have been called with the inter-phase delay (2000), but not the broad delay
+      const sleepCalls = vi.mocked(sleep).mock.calls.map((c) => c[0]);
+      expect(sleepCalls).not.toContain(90000);
+    });
+
+    it("skipBroadWhenSufficientResults=0 means never skip Phase 2", async () => {
+      // Phase 0 returns many candidates
+      const candidates = Array.from({ length: 20 }, (_, i) =>
+        makeCandidate(`org/repo-${i}`, "merged_pr"),
+      );
+      mockSearchInRepos.mockResolvedValue({
+        candidates,
+        allBatchesFailed: false,
+        rateLimitHit: false,
+      });
+      vi.mocked(applyPerRepoCap).mockImplementation((c) => c);
+
+      const discovery = makeDiscovery(
+        { getReposWithMergedPRs: vi.fn(() => ["org/repo-0"]) },
+        { skipBroadWhenSufficientResults: 0 },
+      );
+
+      // maxResults must be higher than candidates count so Phase 2 condition passes
+      await discovery.searchIssues({ maxResults: 25 });
+
+      // Phase 2 should have run (searchWithChunkedLabels called)
+      expect(mockSearchWithChunkedLabels).toHaveBeenCalled();
+    });
+  });
 });

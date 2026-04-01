@@ -171,6 +171,8 @@ export const ScoutPreferencesSchema = z.object({
   interPhaseDelayMs: z.number().min(0).max(120000).default(30000),
   persistence: PersistenceModeSchema.default("local"),
   defaultStrategy: z.array(SearchStrategySchema).optional(),
+  broadPhaseDelayMs: z.number().min(0).max(300000).default(90000),
+  skipBroadWhenSufficientResults: z.number().int().min(0).max(100).default(15),
 });
 
 // ── Root state schema ───────────────────────────────────────────────

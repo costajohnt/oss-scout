@@ -651,37 +651,64 @@ export class IssueDiscovery {
       strategiesUsed.push("starred");
     }
 
-    // Phase 2: General search
+    // Phase 2: General search (with rate limit mitigation)
+    const broadDelay = config.broadPhaseDelayMs ?? 90000;
+    const skipThreshold = config.skipBroadWhenSufficientResults ?? 15;
+
     if (
       allCandidates.length < maxResults &&
       searchBudget >= LOW_BUDGET_THRESHOLD &&
       enabledStrategies.has("broad")
     ) {
-      if (interPhaseDelay > 0) {
+      // Skip broad search if we already have enough candidates
+      if (skipThreshold > 0 && allCandidates.length >= skipThreshold) {
         info(
           MODULE,
-          `Waiting ${(interPhaseDelay / 1000).toFixed(0)}s between phases for rate limit management...`,
+          `Skipping broad search: already found ${allCandidates.length} candidates (threshold: ${skipThreshold})`,
         );
-        await sleep(interPhaseDelay);
+      } else {
+        // Always apply baseline inter-phase delay
+        if (interPhaseDelay > 0) {
+          info(
+            MODULE,
+            `Waiting ${(interPhaseDelay / 1000).toFixed(0)}s between phases for rate limit management...`,
+          );
+          await sleep(interPhaseDelay);
+        }
+
+        // Apply additional broad-phase cooldown, but skip if previous phases found nothing
+        if (allCandidates.length > 0 && broadDelay > 0) {
+          info(
+            MODULE,
+            `Waiting ${(broadDelay / 1000).toFixed(0)}s for rate limit cooldown before broad search...`,
+          );
+          await sleep(broadDelay);
+        } else if (allCandidates.length === 0) {
+          info(
+            MODULE,
+            `Skipping broad phase delay: no results from previous phases, proceeding immediately`,
+          );
+        }
+
+        const remaining = maxResults - allCandidates.length;
+        const result = await runPhase2(
+          this.octokit,
+          this.vetter,
+          scopes,
+          labels,
+          config.labels,
+          baseQualifiers,
+          remaining,
+          minStars,
+          phase0RepoSet,
+          starredRepoSet,
+          allCandidates,
+          filterIssues,
+        );
+        allCandidates.push(...result.candidates);
+        phaseErrors["2"] = result.error;
+        if (result.rateLimitHit) rateLimitHitDuringSearch = true;
       }
-      const remaining = maxResults - allCandidates.length;
-      const result = await runPhase2(
-        this.octokit,
-        this.vetter,
-        scopes,
-        labels,
-        config.labels,
-        baseQualifiers,
-        remaining,
-        minStars,
-        phase0RepoSet,
-        starredRepoSet,
-        allCandidates,
-        filterIssues,
-      );
-      allCandidates.push(...result.candidates);
-      phaseErrors["2"] = result.error;
-      if (result.rateLimitHit) rateLimitHitDuringSearch = true;
       strategiesUsed.push("broad");
     }
 
