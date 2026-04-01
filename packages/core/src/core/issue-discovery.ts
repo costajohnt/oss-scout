@@ -53,9 +53,6 @@ import {
 
 const MODULE = "issue-discovery";
 
-/** Delay between major search phases to let GitHub's rate limit window cool down. */
-const INTER_PHASE_DELAY_MS = 2000;
-
 /** If remaining search quota is below this, skip heavy phases (2, 3). */
 const LOW_BUDGET_THRESHOLD = 20;
 
@@ -367,14 +364,11 @@ async function runPhase3(
 /**
  * Multi-phase issue discovery engine that searches GitHub for contributable issues.
  *
- * Search phases (execution order):
- * 2. General label-filtered search (broad) — runs first for full Search API budget
+ * Search phases (in priority order):
  * 0. Repos where user has merged PRs (highest merge probability)
  * 1. Starred repos
+ * 2. General label-filtered search
  * 3. Actively maintained repos
- *
- * Results are sorted by priority (merged_pr > starred > normal) regardless of
- * execution order, so Phase 0/1 results still rank highest.
  *
  * Each candidate is vetted for claimability and scored 0-100 for viability.
  */
@@ -411,9 +405,8 @@ export class IssueDiscovery {
 
   /**
    * Search for issues matching our criteria.
-   * Runs broad search first (for full Search API budget), then merged-PR repos,
-   * starred repos, and maintained repos. Results are sorted by priority
-   * (merged_pr > starred > normal) regardless of execution order.
+   * Searches in priority order: merged-PR repos first (no label filter), then starred
+   * repos, then general search, then actively maintained repos.
    * Filters out issues from low-scoring and excluded repos.
    *
    * @param options - Search configuration
@@ -454,6 +447,7 @@ export class IssueDiscovery {
       (scopes ? buildEffectiveLabels(scopes, config.labels) : config.labels);
     const maxResults = options.maxResults || 10;
     const minStars = config.minStars ?? 50;
+    const interPhaseDelay = config.interPhaseDelayMs ?? 30000;
 
     // Strategy selection
     const ALL_STRATEGIES: readonly SearchStrategy[] = CONCRETE_STRATEGIES;
@@ -492,7 +486,7 @@ export class IssueDiscovery {
       } else if (searchBudget < LOW_BUDGET_THRESHOLD) {
         info(
           MODULE,
-          `Search budget low (${searchBudget} remaining) — skipping broad + maintained phases`,
+          `Search budget low (${searchBudget} remaining) — skipping heavy phases (2, 3)`,
         );
       }
     } catch (error) {
@@ -552,40 +546,11 @@ export class IssueDiscovery {
       includeDocIssues: config.includeDocIssues ?? true,
     });
 
-    // Derive phase0 repo set (needed by Phase 2 as exclusion set)
+    // Phase 0: Merged-PR repos
     const phase0Repos = mergedPRRepos.slice(0, 10);
     const phase0RepoSet = new Set(phase0Repos);
 
-    // Phase 2: Broad search (runs first for full Search API budget)
-    if (
-      allCandidates.length < maxResults &&
-      searchBudget >= LOW_BUDGET_THRESHOLD &&
-      enabledStrategies.has("broad")
-    ) {
-      const remaining = maxResults - allCandidates.length;
-      const result = await runPhase2(
-        this.octokit,
-        this.vetter,
-        scopes,
-        labels,
-        config.labels,
-        baseQualifiers,
-        remaining,
-        minStars,
-        phase0RepoSet,
-        starredRepoSet,
-        allCandidates,
-        filterIssues,
-      );
-      allCandidates.push(...result.candidates);
-      phaseErrors["2"] = result.error;
-      if (result.rateLimitHit) rateLimitHitDuringSearch = true;
-      strategiesUsed.push("broad");
-    }
-
-    // Phase 0: Merged-PR repos
     if (phase0Repos.length > 0 && enabledStrategies.has("merged")) {
-      await sleep(INTER_PHASE_DELAY_MS);
       const remaining = maxResults - allCandidates.length;
       if (remaining > 0) {
         const result = await runPhase0(
@@ -610,7 +575,13 @@ export class IssueDiscovery {
       searchBudget >= CRITICAL_BUDGET_THRESHOLD &&
       enabledStrategies.has("starred")
     ) {
-      await sleep(INTER_PHASE_DELAY_MS);
+      if (interPhaseDelay > 0) {
+        info(
+          MODULE,
+          `Waiting ${(interPhaseDelay / 1000).toFixed(0)}s between phases for rate limit management...`,
+        );
+        await sleep(interPhaseDelay);
+      }
       const reposToSearch = starredRepos.filter((r) => !phase0RepoSet.has(r));
       if (reposToSearch.length > 0) {
         const remaining = maxResults - allCandidates.length;
@@ -632,13 +603,53 @@ export class IssueDiscovery {
       strategiesUsed.push("starred");
     }
 
+    // Phase 2: General search
+    if (
+      allCandidates.length < maxResults &&
+      searchBudget >= LOW_BUDGET_THRESHOLD &&
+      enabledStrategies.has("broad")
+    ) {
+      if (interPhaseDelay > 0) {
+        info(
+          MODULE,
+          `Waiting ${(interPhaseDelay / 1000).toFixed(0)}s between phases for rate limit management...`,
+        );
+        await sleep(interPhaseDelay);
+      }
+      const remaining = maxResults - allCandidates.length;
+      const result = await runPhase2(
+        this.octokit,
+        this.vetter,
+        scopes,
+        labels,
+        config.labels,
+        baseQualifiers,
+        remaining,
+        minStars,
+        phase0RepoSet,
+        starredRepoSet,
+        allCandidates,
+        filterIssues,
+      );
+      allCandidates.push(...result.candidates);
+      phaseErrors["2"] = result.error;
+      if (result.rateLimitHit) rateLimitHitDuringSearch = true;
+      strategiesUsed.push("broad");
+    }
+
     // Phase 3: Actively maintained repos
     if (
       allCandidates.length < maxResults &&
       searchBudget >= LOW_BUDGET_THRESHOLD &&
       enabledStrategies.has("maintained")
     ) {
-      await sleep(INTER_PHASE_DELAY_MS);
+      if (interPhaseDelay > 0) {
+        info(
+          MODULE,
+          `Waiting ${(interPhaseDelay / 1000).toFixed(0)}s between phases for rate limit management...`,
+        );
+        await sleep(interPhaseDelay);
+      }
       const remaining = maxResults - allCandidates.length;
       const result = await runPhase3(
         this.octokit,

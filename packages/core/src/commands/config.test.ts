@@ -123,6 +123,21 @@ describe("config command", () => {
 
         expect(() => runConfigSet("minStars", "abc")).toThrow("Invalid number");
       });
+
+      it("should set interPhaseDelayMs", () => {
+        writeState(makeState());
+
+        const result = runConfigSet("interPhaseDelayMs", "15000");
+
+        expect(result.interPhaseDelayMs).toBe(15000);
+        expect(readState().preferences.interPhaseDelayMs).toBe(15000);
+      });
+
+      it("should reject interPhaseDelayMs above max", () => {
+        writeState(makeState());
+
+        expect(() => runConfigSet("interPhaseDelayMs", "200000")).toThrow();
+      });
     });
 
     describe("boolean fields", () => {

@@ -168,6 +168,7 @@ export const ScoutPreferencesSchema = z.object({
   maxIssueAgeDays: z.number().default(90),
   includeDocIssues: z.boolean().default(true),
   minRepoScoreThreshold: z.number().default(4),
+  interPhaseDelayMs: z.number().min(0).max(120000).default(30000),
   persistence: PersistenceModeSchema.default("local"),
   defaultStrategy: z.array(SearchStrategySchema).optional(),
 });
