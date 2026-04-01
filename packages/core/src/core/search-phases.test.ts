@@ -33,20 +33,13 @@ vi.mock("./search-budget.js", () => ({
   })),
 }));
 
-// Mock http-cache: cachedTimeBased just calls the fetcher (no real caching)
+// Mock http-cache: getHttpCache returns a stable mock with no-op caching by default.
+const mockCache = {
+  getIfFresh: vi.fn(() => null),
+  set: vi.fn(),
+};
 vi.mock("./http-cache.js", () => ({
-  getHttpCache: vi.fn(() => ({
-    getIfFresh: vi.fn(() => null),
-    set: vi.fn(),
-  })),
-  cachedTimeBased: vi.fn(
-    async (
-      _cache: unknown,
-      _key: string,
-      _maxAge: number,
-      fetcher: () => Promise<unknown>,
-    ) => fetcher(),
-  ),
+  getHttpCache: vi.fn(() => mockCache),
 }));
 
 vi.mock("./issue-filtering.js", () => ({
@@ -65,7 +58,6 @@ import {
   filterVetAndScore,
   searchInRepos,
 } from "./search-phases.js";
-import { cachedTimeBased } from "./http-cache.js";
 import { isRateLimitError } from "./errors.js";
 import type { Octokit } from "@octokit/rest";
 import type { IssueVetter } from "./issue-vetting.js";
@@ -236,27 +228,25 @@ describe("cachedSearchIssues", () => {
     );
   });
 
-  it("returns cached results on second call with same query (via cachedTimeBased)", async () => {
+  it("returns cached results on second call with same query", async () => {
     const items = [
       makeItem("https://github.com/owner/repo/issues/1", "owner/repo"),
     ];
     const octokit = makeMockOctokit(items);
-
-    // Make cachedTimeBased return a cached value on second call
-    const mockCachedTimeBased = vi.mocked(cachedTimeBased);
     const cachedResult = { total_count: 1, items };
-    mockCachedTimeBased
-      .mockImplementationOnce(async (_cache, _key, _maxAge, fetcher) =>
-        fetcher(),
-      )
-      .mockImplementationOnce(async () => cachedResult);
 
+    // First call: cache miss, hits API, result gets cached (non-empty)
+    mockCache.getIfFresh.mockReturnValueOnce(null);
     await cachedSearchIssues(octokit, {
       q: "test",
       sort: "created",
       order: "desc",
       per_page: 10,
     });
+    expect(mockCache.set).toHaveBeenCalledTimes(1);
+
+    // Second call: cache hit, returns cached result
+    mockCache.getIfFresh.mockReturnValueOnce(cachedResult);
     const result2 = await cachedSearchIssues(octokit, {
       q: "test",
       sort: "created",
@@ -264,9 +254,23 @@ describe("cachedSearchIssues", () => {
       per_page: 10,
     });
 
-    expect(result2).toBe(cachedResult);
+    expect(result2).toEqual(cachedResult);
     // octokit was only called once (second call returned cache)
     expect(octokit.search.issuesAndPullRequests).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not cache empty results to prevent rate-limit poisoning", async () => {
+    const octokit = makeMockOctokit([]);
+
+    await cachedSearchIssues(octokit, {
+      q: "test",
+      sort: "created",
+      order: "desc",
+      per_page: 10,
+    });
+
+    // Empty results should NOT be cached
+    expect(mockCache.set).not.toHaveBeenCalled();
   });
 
   it("calls API again for a different query", async () => {
@@ -285,7 +289,7 @@ describe("cachedSearchIssues", () => {
       per_page: 10,
     });
 
-    // cachedTimeBased is called with different keys, so fetcher runs both times
+    // Different queries produce different cache keys, so API is called both times
     expect(octokit.search.issuesAndPullRequests).toHaveBeenCalledTimes(2);
   });
 });
@@ -317,8 +321,8 @@ describe("searchInRepos", () => {
 
     expect(result.candidates).toHaveLength(1);
     expect(result.allBatchesFailed).toBe(false);
-    // Only 1 batch of 3 repos — cachedTimeBased called once per label chunk
-    expect(vi.mocked(cachedTimeBased)).toHaveBeenCalled();
+    // Only 1 batch of 3 repos — API called once per label chunk
+    expect(octokit.search.issuesAndPullRequests).toHaveBeenCalled();
   });
 
   it("searches 6 repos in two batches", async () => {
@@ -337,10 +341,11 @@ describe("searchInRepos", () => {
       (items) => items,
     );
 
-    // 6 repos / BATCH_SIZE(3) = 2 batches, each calls cachedTimeBased at least once
-    expect(vi.mocked(cachedTimeBased).mock.calls.length).toBeGreaterThanOrEqual(
-      2,
-    );
+    // 6 repos / BATCH_SIZE(3) = 2 batches, each calls the API at least once
+    expect(
+      (octokit.search.issuesAndPullRequests as ReturnType<typeof vi.fn>).mock
+        .calls.length,
+    ).toBeGreaterThanOrEqual(2);
   });
 
   it("returns allBatchesFailed: true when all batches fail", async () => {
@@ -351,10 +356,6 @@ describe("searchInRepos", () => {
           .mockRejectedValue(new Error("API error")),
       },
     } as unknown as Octokit;
-    // Make cachedTimeBased propagate the error from the fetcher
-    vi.mocked(cachedTimeBased).mockImplementation(
-      async (_cache, _key, _maxAge, fetcher) => fetcher(),
-    );
 
     const vetter = makeMockVetter([]);
 
@@ -374,17 +375,17 @@ describe("searchInRepos", () => {
   });
 
   it("returns partial results when some batches succeed", async () => {
-    let callCount = 0;
-    vi.mocked(cachedTimeBased).mockImplementation(
-      async (_cache, _key, _maxAge, fetcher) => {
-        callCount++;
-        if (callCount === 1) return fetcher(); // first batch succeeds
-        throw new Error("API error"); // second batch fails
-      },
-    );
-
     const items = [makeItem("https://github.com/a/b/issues/1", "a/b")];
-    const octokit = makeMockOctokit(items);
+    let callCount = 0;
+    const octokit = {
+      search: {
+        issuesAndPullRequests: vi.fn().mockImplementation(() => {
+          callCount++;
+          if (callCount === 1) return { data: { total_count: 1, items } };
+          throw new Error("API error"); // second batch fails
+        }),
+      },
+    } as unknown as Octokit;
     const vetter = makeMockVetter([makeCandidate("url", 100)]);
 
     const result = await searchInRepos(
@@ -404,9 +405,6 @@ describe("searchInRepos", () => {
 
   it("sets rateLimitHit: true when rate limit error occurs", async () => {
     vi.mocked(isRateLimitError).mockReturnValue(true);
-    vi.mocked(cachedTimeBased).mockImplementation(
-      async (_cache, _key, _maxAge, fetcher) => fetcher(),
-    );
 
     const octokit = {
       search: {
@@ -547,10 +545,7 @@ describe("filterVetAndScore", () => {
 describe("searchWithChunkedLabels", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    // Default: pass through to fetcher
-    vi.mocked(cachedTimeBased).mockImplementation(
-      async (_cache, _key, _maxAge, fetcher) => fetcher(),
-    );
+    mockCache.getIfFresh.mockReturnValue(null);
   });
 
   it("issues a single query when labels fit within operator limit", async () => {
@@ -566,7 +561,7 @@ describe("searchWithChunkedLabels", () => {
     );
 
     expect(result).toHaveLength(1);
-    expect(vi.mocked(cachedTimeBased)).toHaveBeenCalledTimes(1);
+    expect(octokit.search.issuesAndPullRequests).toHaveBeenCalledTimes(1);
   });
 
   it("chunks labels into multiple queries when exceeding operator limit", async () => {
@@ -584,7 +579,10 @@ describe("searchWithChunkedLabels", () => {
       10,
     );
 
-    expect(vi.mocked(cachedTimeBased).mock.calls.length).toBe(2);
+    expect(
+      (octokit.search.issuesAndPullRequests as ReturnType<typeof vi.fn>).mock
+        .calls.length,
+    ).toBe(2);
   });
 
   it("deduplicates results across chunks", async () => {
@@ -592,16 +590,18 @@ describe("searchWithChunkedLabels", () => {
     const uniqueItem = makeItem("https://github.com/c/d/issues/2", "c/d");
 
     let callCount = 0;
-    vi.mocked(cachedTimeBased).mockImplementation(
-      async (_cache, _key, _maxAge, _fetcher) => {
-        callCount++;
-        // Both chunks return the shared item; second chunk also returns unique item
-        if (callCount === 1) return { total_count: 1, items: [sharedItem] };
-        return { total_count: 2, items: [sharedItem, uniqueItem] };
+    const octokit = {
+      search: {
+        issuesAndPullRequests: vi.fn().mockImplementation(() => {
+          callCount++;
+          if (callCount === 1)
+            return { data: { total_count: 1, items: [sharedItem] } };
+          return {
+            data: { total_count: 2, items: [sharedItem, uniqueItem] },
+          };
+        }),
       },
-    );
-
-    const octokit = makeMockOctokit([]); // unused since we mock cachedTimeBased
+    } as unknown as Octokit;
 
     // Force 2 chunks: reservedOps=4, so maxPerChunk = 5-4+1 = 2. 3 labels → 2 chunks.
     const result = await searchWithChunkedLabels(

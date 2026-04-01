@@ -14,7 +14,7 @@ import {
 } from "./types.js";
 import { errorMessage, isRateLimitError } from "./errors.js";
 import { debug, warn } from "./logger.js";
-import { getHttpCache, cachedTimeBased } from "./http-cache.js";
+import { getHttpCache } from "./http-cache.js";
 import {
   type GitHubSearchItem,
   detectLabelFarmingRepos,
@@ -131,22 +131,34 @@ export async function cachedSearchIssues(
   },
 ): Promise<{ total_count: number; items: GitHubSearchItem[] }> {
   const cacheKey = `search:${params.q}:${params.sort}:${params.order}:${params.per_page}`;
-  return cachedTimeBased(
-    getHttpCache(),
-    cacheKey,
-    SEARCH_CACHE_TTL_MS,
-    async () => {
-      const tracker = getSearchBudgetTracker();
-      await tracker.waitForBudget();
-      try {
-        const { data } = await octokit.search.issuesAndPullRequests(params);
-        return data;
-      } finally {
-        // Always record the call — failed requests still consume GitHub rate limit points
-        tracker.recordCall();
-      }
-    },
-  );
+  const cache = getHttpCache();
+
+  // Check cache first
+  const cached = cache.getIfFresh(cacheKey, SEARCH_CACHE_TTL_MS);
+  if (cached) {
+    debug(MODULE, `Search cache hit for query`);
+    return cached as { total_count: number; items: GitHubSearchItem[] };
+  }
+
+  // Fetch from API
+  const tracker = getSearchBudgetTracker();
+  await tracker.waitForBudget();
+  let data: { total_count: number; items: GitHubSearchItem[] };
+  try {
+    const response = await octokit.search.issuesAndPullRequests(params);
+    data = response.data;
+  } finally {
+    tracker.recordCall();
+  }
+
+  // Only cache non-empty results to prevent poisoning from rate-limited responses
+  if (data.items.length > 0) {
+    cache.set(cacheKey, "", data);
+  } else {
+    debug(MODULE, `Skipping cache for empty search result (possible rate limit artifact)`);
+  }
+
+  return data;
 }
 
 // ── Search infrastructure ──
