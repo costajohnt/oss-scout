@@ -616,8 +616,11 @@ describe("fetchIssuesFromKnownRepos", () => {
     expect(result.rateLimitHit).toBe(false);
     // Should call listForRepo for each repo
     expect(
-      (octokit as unknown as { issues: { listForRepo: ReturnType<typeof vi.fn> } }).issues
-        .listForRepo,
+      (
+        octokit as unknown as {
+          issues: { listForRepo: ReturnType<typeof vi.fn> };
+        }
+      ).issues.listForRepo,
     ).toHaveBeenCalledTimes(2);
     // Vetter called once per repo
     expect(vetter.vetIssuesParallel).toHaveBeenCalledTimes(2);
@@ -657,9 +660,7 @@ describe("fetchIssuesFromKnownRepos", () => {
         issuesAndPullRequests: vi.fn(),
       },
     } as unknown as Octokit;
-    const candidates = [
-      makeCandidate("https://github.com/a/b/issues/1", 100),
-    ];
+    const candidates = [makeCandidate("https://github.com/a/b/issues/1", 100)];
     const vetter = makeMockVetter(candidates);
 
     const result = await fetchIssuesFromKnownRepos(
@@ -688,9 +689,7 @@ describe("fetchIssuesFromKnownRepos", () => {
         issuesAndPullRequests: vi.fn(),
       },
     } as unknown as Octokit;
-    const candidates = [
-      makeCandidate("https://github.com/a/b/issues/1", 100),
-    ];
+    const candidates = [makeCandidate("https://github.com/a/b/issues/1", 100)];
     const vetter = makeMockVetter(candidates);
 
     const result = await fetchIssuesFromKnownRepos(
@@ -706,8 +705,11 @@ describe("fetchIssuesFromKnownRepos", () => {
     expect(result.candidates).toHaveLength(1);
     // Should only call listForRepo once since maxResults was reached after first repo
     expect(
-      (octokit as unknown as { issues: { listForRepo: ReturnType<typeof vi.fn> } }).issues
-        .listForRepo,
+      (
+        octokit as unknown as {
+          issues: { listForRepo: ReturnType<typeof vi.fn> };
+        }
+      ).issues.listForRepo,
     ).toHaveBeenCalledTimes(1);
   });
 
@@ -797,8 +799,11 @@ describe("fetchIssuesFromKnownRepos", () => {
     );
 
     expect(
-      (octokit as unknown as { issues: { listForRepo: ReturnType<typeof vi.fn> } }).issues
-        .listForRepo,
+      (
+        octokit as unknown as {
+          issues: { listForRepo: ReturnType<typeof vi.fn> };
+        }
+      ).issues.listForRepo,
     ).toHaveBeenCalledWith(
       expect.objectContaining({
         owner: "owner",
@@ -824,7 +829,9 @@ describe("fetchIssuesFromKnownRepos", () => {
     );
 
     const call = (
-      octokit as unknown as { issues: { listForRepo: ReturnType<typeof vi.fn> } }
+      octokit as unknown as {
+        issues: { listForRepo: ReturnType<typeof vi.fn> };
+      }
     ).issues.listForRepo.mock.calls[0][0];
     expect(call).not.toHaveProperty("labels");
   });

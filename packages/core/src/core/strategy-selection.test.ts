@@ -137,9 +137,8 @@ function makeFakeCandidate(repo: string, priority: string) {
 // ── Import after mocks ─────────────────────────────────────────────
 
 const { IssueDiscovery } = await import("./issue-discovery.js");
-const { searchInRepos, fetchIssuesFromKnownRepos } = await import(
-  "./search-phases.js"
-);
+const { searchInRepos, fetchIssuesFromKnownRepos } =
+  await import("./search-phases.js");
 
 const basePreferences = {
   githubUsername: "test",
