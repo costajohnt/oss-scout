@@ -488,6 +488,13 @@ describe("IssueDiscovery", () => {
       const starred = makeCandidate("org/starred", "starred", "approve", 90);
       const normal = makeCandidate("org/normal", "normal", "approve", 95);
 
+      // Phase 2 (broad) runs first — returns normal
+      mockSearchWithChunkedLabels.mockResolvedValue([]);
+      mockFilterVetAndScore.mockResolvedValueOnce({
+        candidates: [normal],
+        allVetFailed: false,
+        rateLimitHit: false,
+      });
       // Phase 0 returns merged
       mockSearchInRepos.mockResolvedValueOnce({
         candidates: [merged],
@@ -498,13 +505,6 @@ describe("IssueDiscovery", () => {
       mockSearchInRepos.mockResolvedValueOnce({
         candidates: [starred],
         allBatchesFailed: false,
-        rateLimitHit: false,
-      });
-      // Phase 2 returns normal
-      mockSearchWithChunkedLabels.mockResolvedValue([]);
-      mockFilterVetAndScore.mockResolvedValueOnce({
-        candidates: [normal],
-        allVetFailed: false,
         rateLimitHit: false,
       });
 
