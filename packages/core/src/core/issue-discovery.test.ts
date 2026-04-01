@@ -83,6 +83,12 @@ const mockSearchInRepos = vi.fn().mockResolvedValue({
   rateLimitHit: false,
 });
 
+const mockFetchIssuesFromKnownRepos = vi.fn().mockResolvedValue({
+  candidates: [],
+  allReposFailed: false,
+  rateLimitHit: false,
+});
+
 const mockSearchWithChunkedLabels = vi.fn().mockResolvedValue([]);
 
 const mockFilterVetAndScore = vi.fn().mockResolvedValue({
@@ -106,6 +112,8 @@ vi.mock("./search-phases.js", () => ({
   ),
   interleaveArrays: vi.fn((arrays: unknown[][]) => arrays.flat()),
   searchInRepos: (...args: unknown[]) => mockSearchInRepos(...args),
+  fetchIssuesFromKnownRepos: (...args: unknown[]) =>
+    mockFetchIssuesFromKnownRepos(...args),
   searchWithChunkedLabels: (...args: unknown[]) =>
     mockSearchWithChunkedLabels(...args),
   filterVetAndScore: (...args: unknown[]) => mockFilterVetAndScore(...args),
@@ -233,6 +241,11 @@ describe("IssueDiscovery", () => {
       allBatchesFailed: false,
       rateLimitHit: false,
     });
+    mockFetchIssuesFromKnownRepos.mockResolvedValue({
+      candidates: [],
+      allReposFailed: false,
+      rateLimitHit: false,
+    });
     mockSearchWithChunkedLabels.mockResolvedValue([]);
     mockFilterVetAndScore.mockResolvedValue({
       candidates: [],
@@ -253,11 +266,11 @@ describe("IssueDiscovery", () => {
   });
 
   describe("searchIssues — phase execution", () => {
-    it("Phase 0: calls searchInRepos with merged-PR repos, priority merged_pr", async () => {
+    it("Phase 0: calls fetchIssuesFromKnownRepos with merged-PR repos, priority merged_pr", async () => {
       const c = makeCandidate("org/merged-repo", "merged_pr");
-      mockSearchInRepos.mockResolvedValue({
+      mockFetchIssuesFromKnownRepos.mockResolvedValue({
         candidates: [c],
-        allBatchesFailed: false,
+        allReposFailed: false,
         rateLimitHit: false,
       });
 
@@ -267,11 +280,10 @@ describe("IssueDiscovery", () => {
 
       const { candidates } = await discovery.searchIssues({ maxResults: 5 });
       expect(candidates.length).toBeGreaterThanOrEqual(1);
-      expect(mockSearchInRepos).toHaveBeenCalledWith(
+      expect(mockFetchIssuesFromKnownRepos).toHaveBeenCalledWith(
         expect.anything(), // octokit
         expect.anything(), // vetter
         ["org/merged-repo"],
-        expect.stringContaining("is:issue"),
         [], // no labels for Phase 0
         expect.any(Number),
         "merged_pr",
@@ -279,11 +291,11 @@ describe("IssueDiscovery", () => {
       );
     });
 
-    it("Phase 1: calls searchInRepos with starred repos, priority starred", async () => {
+    it("Phase 1: calls fetchIssuesFromKnownRepos with starred repos, priority starred", async () => {
       const c = makeCandidate("org/starred-repo", "starred");
-      mockSearchInRepos.mockResolvedValue({
+      mockFetchIssuesFromKnownRepos.mockResolvedValue({
         candidates: [c],
-        allBatchesFailed: false,
+        allReposFailed: false,
         rateLimitHit: false,
       });
 
@@ -292,9 +304,9 @@ describe("IssueDiscovery", () => {
       });
 
       await discovery.searchIssues({ maxResults: 5 });
-      // Phase 1 calls searchInRepos with "starred" priority
-      const phase1Call = mockSearchInRepos.mock.calls.find(
-        (call) => call[6] === "starred",
+      // Phase 1 calls fetchIssuesFromKnownRepos with "starred" priority
+      const phase1Call = mockFetchIssuesFromKnownRepos.mock.calls.find(
+        (call) => call[5] === "starred",
       );
       expect(phase1Call).toBeDefined();
       expect(phase1Call![2]).toEqual(["org/starred-repo"]);
@@ -426,9 +438,9 @@ describe("IssueDiscovery", () => {
   describe("searchIssues — strategy filtering", () => {
     it("strategies=[merged] runs only Phase 0", async () => {
       const c = makeCandidate("org/merged-repo", "merged_pr");
-      mockSearchInRepos.mockResolvedValue({
+      mockFetchIssuesFromKnownRepos.mockResolvedValue({
         candidates: [c],
-        allBatchesFailed: false,
+        allReposFailed: false,
         rateLimitHit: false,
       });
 
@@ -450,9 +462,9 @@ describe("IssueDiscovery", () => {
 
     it("strategies=[starred,broad] runs only Phases 1 and 2", async () => {
       const c = makeCandidate("org/starred-repo", "starred");
-      mockSearchInRepos.mockResolvedValue({
+      mockFetchIssuesFromKnownRepos.mockResolvedValue({
         candidates: [c],
-        allBatchesFailed: false,
+        allReposFailed: false,
         rateLimitHit: false,
       });
 
@@ -481,9 +493,9 @@ describe("IssueDiscovery", () => {
       });
 
       const c = makeCandidate("org/merged", "merged_pr");
-      mockSearchInRepos.mockResolvedValue({
+      mockFetchIssuesFromKnownRepos.mockResolvedValue({
         candidates: [c],
-        allBatchesFailed: false,
+        allReposFailed: false,
         rateLimitHit: false,
       });
 
@@ -526,9 +538,9 @@ describe("IssueDiscovery", () => {
   describe("searchIssues — inter-phase delay", () => {
     it("uses interPhaseDelayMs preference for sleep between phases", async () => {
       const c = makeCandidate("org/starred-repo", "starred");
-      mockSearchInRepos.mockResolvedValue({
+      mockFetchIssuesFromKnownRepos.mockResolvedValue({
         candidates: [c],
-        allBatchesFailed: false,
+        allReposFailed: false,
         rateLimitHit: false,
       });
 
@@ -548,9 +560,9 @@ describe("IssueDiscovery", () => {
 
     it("skips sleep when interPhaseDelayMs is 0", async () => {
       const c = makeCandidate("org/starred-repo", "starred");
-      mockSearchInRepos.mockResolvedValue({
+      mockFetchIssuesFromKnownRepos.mockResolvedValue({
         candidates: [c],
-        allBatchesFailed: false,
+        allReposFailed: false,
         rateLimitHit: false,
       });
 
@@ -577,9 +589,9 @@ describe("IssueDiscovery", () => {
       });
 
       const c = makeCandidate("org/repo", "merged_pr");
-      mockSearchInRepos.mockResolvedValue({
+      mockFetchIssuesFromKnownRepos.mockResolvedValue({
         candidates: [c],
-        allBatchesFailed: false,
+        allReposFailed: false,
         rateLimitHit: false,
       });
 
@@ -599,9 +611,9 @@ describe("IssueDiscovery", () => {
         makeCandidate("org/repo1", "normal"),
         makeCandidate("org/repo2", "normal"),
       ];
-      mockSearchInRepos.mockResolvedValue({
+      mockFetchIssuesFromKnownRepos.mockResolvedValue({
         candidates,
-        allBatchesFailed: false,
+        allReposFailed: false,
         rateLimitHit: false,
       });
 
@@ -626,15 +638,15 @@ describe("IssueDiscovery", () => {
         rateLimitHit: false,
       });
       // Phase 0 returns merged
-      mockSearchInRepos.mockResolvedValueOnce({
+      mockFetchIssuesFromKnownRepos.mockResolvedValueOnce({
         candidates: [merged],
-        allBatchesFailed: false,
+        allReposFailed: false,
         rateLimitHit: false,
       });
       // Phase 1 returns starred
-      mockSearchInRepos.mockResolvedValueOnce({
+      mockFetchIssuesFromKnownRepos.mockResolvedValueOnce({
         candidates: [starred],
-        allBatchesFailed: false,
+        allReposFailed: false,
         rateLimitHit: false,
       });
 
@@ -680,9 +692,9 @@ describe("IssueDiscovery", () => {
     it("filterIssues excludes repos in aiPolicyBlocklist", async () => {
       // Provide a candidate so the search doesn't throw
       const c = makeCandidate("allowed/repo", "merged_pr");
-      mockSearchInRepos.mockResolvedValue({
+      mockFetchIssuesFromKnownRepos.mockResolvedValue({
         candidates: [c],
-        allBatchesFailed: false,
+        allReposFailed: false,
         rateLimitHit: false,
       });
 

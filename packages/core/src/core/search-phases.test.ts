@@ -57,6 +57,7 @@ import {
   fetchIssuesFromMaintainedRepos,
   searchWithChunkedLabels,
   filterVetAndScore,
+  fetchIssuesFromKnownRepos,
   searchInRepos,
 } from "./search-phases.js";
 import { isRateLimitError } from "./errors.js";
@@ -540,6 +541,300 @@ describe("filterVetAndScore", () => {
     expect(result.candidates).toEqual([candidate]);
     expect(result.allVetFailed).toBe(false);
     expect(result.rateLimitHit).toBe(false);
+  });
+});
+
+function makeMockOctokitWithRest(
+  issues: Array<{
+    html_url: string;
+    updated_at: string;
+    title: string;
+    labels: Array<{ name?: string } | string>;
+  }> = [],
+) {
+  return {
+    issues: {
+      listForRepo: vi.fn().mockResolvedValue({ data: issues }),
+    },
+    search: {
+      issuesAndPullRequests: vi
+        .fn()
+        .mockResolvedValue({ data: { total_count: 0, items: [] } }),
+    },
+  } as unknown as Octokit;
+}
+
+function makeRestIssue(
+  repoFullName: string,
+  number: number,
+  opts?: { title?: string; labels?: Array<{ name?: string } | string> },
+) {
+  return {
+    html_url: `https://github.com/${repoFullName}/issues/${number}`,
+    updated_at: "2026-01-01T00:00:00Z",
+    title: opts?.title ?? `Issue ${number}`,
+    labels: opts?.labels ?? [],
+  };
+}
+
+describe("fetchIssuesFromKnownRepos", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("fetches issues from multiple repos", async () => {
+    const issues = [makeRestIssue("a/b", 1), makeRestIssue("a/b", 2)];
+    const octokit = makeMockOctokitWithRest(issues);
+    const candidate1 = makeCandidate("https://github.com/a/b/issues/1", 100);
+    const candidate2 = makeCandidate("https://github.com/c/d/issues/1", 100);
+    const vetter = {
+      vetIssuesParallel: vi
+        .fn()
+        .mockResolvedValueOnce({
+          candidates: [candidate1],
+          allFailed: false,
+          rateLimitHit: false,
+        })
+        .mockResolvedValueOnce({
+          candidates: [candidate2],
+          allFailed: false,
+          rateLimitHit: false,
+        }),
+    } as unknown as IssueVetter;
+
+    const result = await fetchIssuesFromKnownRepos(
+      octokit,
+      vetter,
+      ["a/b", "c/d"],
+      [],
+      10,
+      "merged_pr",
+      (items) => items,
+    );
+
+    expect(result.candidates).toHaveLength(2);
+    expect(result.allReposFailed).toBe(false);
+    expect(result.rateLimitHit).toBe(false);
+    // Should call listForRepo for each repo
+    expect(
+      (
+        octokit as unknown as {
+          issues: { listForRepo: ReturnType<typeof vi.fn> };
+        }
+      ).issues.listForRepo,
+    ).toHaveBeenCalledTimes(2);
+    // Vetter called once per repo
+    expect(vetter.vetIssuesParallel).toHaveBeenCalledTimes(2);
+  });
+
+  it("handles empty results", async () => {
+    const octokit = makeMockOctokitWithRest([]);
+    const vetter = makeMockVetter([]);
+
+    const result = await fetchIssuesFromKnownRepos(
+      octokit,
+      vetter,
+      ["a/b"],
+      [],
+      10,
+      "merged_pr",
+      (items) => items,
+    );
+
+    expect(result.candidates).toHaveLength(0);
+    expect(result.allReposFailed).toBe(false);
+    // Vetter should not be called when there are no issues
+    expect(vetter.vetIssuesParallel).not.toHaveBeenCalled();
+  });
+
+  it("handles per-repo errors gracefully", async () => {
+    const octokit = {
+      issues: {
+        listForRepo: vi
+          .fn()
+          .mockResolvedValueOnce({
+            data: [makeRestIssue("a/b", 1)],
+          })
+          .mockRejectedValueOnce(new Error("404 Not Found")),
+      },
+      search: {
+        issuesAndPullRequests: vi.fn(),
+      },
+    } as unknown as Octokit;
+    const candidates = [makeCandidate("https://github.com/a/b/issues/1", 100)];
+    const vetter = makeMockVetter(candidates);
+
+    const result = await fetchIssuesFromKnownRepos(
+      octokit,
+      vetter,
+      ["a/b", "c/d"],
+      [],
+      10,
+      "merged_pr",
+      (items) => items,
+    );
+
+    // Should still return results from the repo that succeeded
+    expect(result.candidates).toHaveLength(1);
+    expect(result.allReposFailed).toBe(false);
+  });
+
+  it("stops when maxResults reached", async () => {
+    const octokit = {
+      issues: {
+        listForRepo: vi.fn().mockResolvedValue({
+          data: [makeRestIssue("a/b", 1)],
+        }),
+      },
+      search: {
+        issuesAndPullRequests: vi.fn(),
+      },
+    } as unknown as Octokit;
+    const candidates = [makeCandidate("https://github.com/a/b/issues/1", 100)];
+    const vetter = makeMockVetter(candidates);
+
+    const result = await fetchIssuesFromKnownRepos(
+      octokit,
+      vetter,
+      ["a/b", "c/d", "e/f"],
+      [],
+      1, // maxResults = 1
+      "merged_pr",
+      (items) => items,
+    );
+
+    expect(result.candidates).toHaveLength(1);
+    // Should only call listForRepo once since maxResults was reached after first repo
+    expect(
+      (
+        octokit as unknown as {
+          issues: { listForRepo: ReturnType<typeof vi.fn> };
+        }
+      ).issues.listForRepo,
+    ).toHaveBeenCalledTimes(1);
+  });
+
+  it("applies filter function", async () => {
+    const issues = [makeRestIssue("a/b", 1), makeRestIssue("a/b", 2)];
+    const octokit = makeMockOctokitWithRest(issues);
+    const vetter = makeMockVetter([]);
+
+    await fetchIssuesFromKnownRepos(
+      octokit,
+      vetter,
+      ["a/b"],
+      [],
+      10,
+      "merged_pr",
+      // Filter that removes all items
+      () => [],
+    );
+
+    // Vetter should not be called because filter removed all items
+    expect(vetter.vetIssuesParallel).not.toHaveBeenCalled();
+  });
+
+  it("returns allReposFailed: true when all repos fail", async () => {
+    const octokit = {
+      issues: {
+        listForRepo: vi.fn().mockRejectedValue(new Error("API error")),
+      },
+      search: {
+        issuesAndPullRequests: vi.fn(),
+      },
+    } as unknown as Octokit;
+    const vetter = makeMockVetter([]);
+
+    const result = await fetchIssuesFromKnownRepos(
+      octokit,
+      vetter,
+      ["a/b", "c/d"],
+      [],
+      10,
+      "merged_pr",
+      (items) => items,
+    );
+
+    expect(result.allReposFailed).toBe(true);
+    expect(result.candidates).toHaveLength(0);
+  });
+
+  it("tracks rateLimitHit", async () => {
+    vi.mocked(isRateLimitError).mockReturnValue(true);
+
+    const octokit = {
+      issues: {
+        listForRepo: vi.fn().mockRejectedValue(new Error("rate limit")),
+      },
+      search: {
+        issuesAndPullRequests: vi.fn(),
+      },
+    } as unknown as Octokit;
+    const vetter = makeMockVetter([]);
+
+    const result = await fetchIssuesFromKnownRepos(
+      octokit,
+      vetter,
+      ["a/b"],
+      [],
+      10,
+      "merged_pr",
+      (items) => items,
+    );
+
+    expect(result.rateLimitHit).toBe(true);
+  });
+
+  it("passes labels as comma-joined string to listForRepo", async () => {
+    const octokit = makeMockOctokitWithRest([]);
+    const vetter = makeMockVetter([]);
+
+    await fetchIssuesFromKnownRepos(
+      octokit,
+      vetter,
+      ["owner/repo"],
+      ["good first issue", "help wanted"],
+      10,
+      "starred",
+      (items) => items,
+    );
+
+    expect(
+      (
+        octokit as unknown as {
+          issues: { listForRepo: ReturnType<typeof vi.fn> };
+        }
+      ).issues.listForRepo,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        owner: "owner",
+        repo: "repo",
+        state: "open",
+        labels: "good first issue,help wanted",
+      }),
+    );
+  });
+
+  it("omits labels param when labels array is empty", async () => {
+    const octokit = makeMockOctokitWithRest([]);
+    const vetter = makeMockVetter([]);
+
+    await fetchIssuesFromKnownRepos(
+      octokit,
+      vetter,
+      ["owner/repo"],
+      [],
+      10,
+      "merged_pr",
+      (items) => items,
+    );
+
+    const call = (
+      octokit as unknown as {
+        issues: { listForRepo: ReturnType<typeof vi.fn> };
+      }
+    ).issues.listForRepo.mock.calls[0][0];
+    expect(call).not.toHaveProperty("labels");
   });
 });
 

@@ -164,7 +164,7 @@ export async function cachedSearchIssues(
   return data;
 }
 
-// ── Search infrastructure ──
+// ── REST-based search functions ──
 
 /**
  * Fetch issues from maintained repos using REST API (no Search API quota).
@@ -172,11 +172,6 @@ export async function cachedSearchIssues(
  * Checks each repo for recent push activity and star threshold,
  * then fetches open issues via `GET /repos/{owner}/{repo}/issues`.
  * Falls back to the caller to use Search API if this doesn't yield enough.
- *
- * @param octokit     Authenticated Octokit instance
- * @param repos       Starred repos to check (owner/repo format)
- * @param minStars    Minimum star count to include a repo
- * @param maxResults  Target number of issue candidates
  */
 export async function fetchIssuesFromMaintainedRepos(
   octokit: Octokit,
@@ -193,10 +188,8 @@ export async function fetchIssuesFromMaintainedRepos(
     if (!owner || !repo) continue;
 
     try {
-      // Check if repo is actively maintained (pushed recently)
       const { data: repoData } = await octokit.repos.get({ owner, repo });
 
-      // Skip if not actively maintained or below star threshold
       const pushedAt = new Date(repoData.pushed_at);
       const thirtyDaysAgo = new Date();
       thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
@@ -204,7 +197,6 @@ export async function fetchIssuesFromMaintainedRepos(
       if ((repoData.stargazers_count ?? 0) < minStars) continue;
       if (repoData.archived) continue;
 
-      // Fetch open issues via REST (no search quota used)
       const { data: issues } = await octokit.issues.listForRepo({
         owner,
         repo,
@@ -214,7 +206,6 @@ export async function fetchIssuesFromMaintainedRepos(
         per_page: 5,
       });
 
-      // Filter out pull requests (REST issues endpoint includes PRs)
       const realIssues = issues.filter(
         (i: { pull_request?: unknown }) => !i.pull_request,
       );
@@ -239,6 +230,108 @@ export async function fetchIssuesFromMaintainedRepos(
   }
 
   return items;
+}
+
+// ── Search infrastructure ──
+
+/**
+ * Fetch open issues from known repos using REST API (no Search API quota).
+ * Used by Phase 0 (merged-PR repos) and Phase 1 (starred repos).
+ *
+ * Instead of the Search API (`octokit.search.issuesAndPullRequests`), this
+ * calls `GET /repos/{owner}/{repo}/issues` which counts against the much
+ * larger Core API rate limit and avoids consuming the scarce Search quota.
+ */
+export async function fetchIssuesFromKnownRepos(
+  octokit: Octokit,
+  vetter: IssueVetter,
+  repos: string[],
+  labels: string[],
+  maxResults: number,
+  priority: SearchPriority,
+  filterFn: (items: GitHubSearchItem[]) => GitHubSearchItem[],
+): Promise<{
+  candidates: IssueCandidate[];
+  allReposFailed: boolean;
+  rateLimitHit: boolean;
+}> {
+  const candidates: IssueCandidate[] = [];
+  let failedRepos = 0;
+  let rateLimitFailures = 0;
+
+  for (let i = 0; i < repos.length; i++) {
+    if (candidates.length >= maxResults) break;
+
+    // Delay between repos to avoid REST secondary rate limits
+    if (i > 0) await sleep(INTER_QUERY_DELAY_MS);
+
+    const repoFullName = repos[i];
+    const [owner, repo] = repoFullName.split("/");
+
+    try {
+      const response = await octokit.issues.listForRepo({
+        owner,
+        repo,
+        state: "open",
+        sort: "created",
+        direction: "desc",
+        per_page: 5,
+        ...(labels.length > 0 ? { labels: labels.join(",") } : {}),
+      });
+
+      // Filter out pull requests (REST issues endpoint returns both) and assigned issues
+      const issuesOnly = response.data.filter(
+        (item) => !("pull_request" in item) && !item.assignee,
+      );
+
+      const mapped: GitHubSearchItem[] = issuesOnly.map((issue) => ({
+        html_url: issue.html_url,
+        repository_url: `https://api.github.com/repos/${repoFullName}`,
+        updated_at: issue.updated_at ?? "",
+        title: issue.title,
+        labels: issue.labels as Array<{ name?: string } | string>,
+      }));
+
+      if (mapped.length > 0) {
+        const filtered = filterFn(mapped);
+        if (filtered.length > 0) {
+          const remainingNeeded = maxResults - candidates.length;
+          const { candidates: vetted, rateLimitHit: vetRateLimitHit } =
+            await vetter.vetIssuesParallel(
+              filtered
+                .slice(0, remainingNeeded * 2)
+                .map((item) => item.html_url),
+              remainingNeeded,
+              priority,
+            );
+          candidates.push(...vetted);
+          if (vetRateLimitHit) rateLimitFailures++;
+        }
+      }
+    } catch (error) {
+      failedRepos++;
+      if (isRateLimitError(error)) {
+        rateLimitFailures++;
+      }
+      warn(
+        MODULE,
+        `Error fetching issues from ${repoFullName}:`,
+        errorMessage(error),
+      );
+    }
+  }
+
+  const allReposFailed = failedRepos === repos.length && repos.length > 0;
+  const rateLimitHit = rateLimitFailures > 0;
+  if (allReposFailed) {
+    warn(
+      MODULE,
+      `All ${repos.length} repo(s) failed for ${priority} phase. ` +
+        `This may indicate a systemic issue (rate limit, auth, network).`,
+    );
+  }
+
+  return { candidates, allReposFailed, rateLimitHit };
 }
 
 /**

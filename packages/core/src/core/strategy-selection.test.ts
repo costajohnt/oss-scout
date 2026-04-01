@@ -41,6 +41,11 @@ vi.mock("./search-phases.js", () => ({
     allBatchesFailed: false,
     rateLimitHit: false,
   }),
+  fetchIssuesFromKnownRepos: vi.fn().mockResolvedValue({
+    candidates: [],
+    allReposFailed: false,
+    rateLimitHit: false,
+  }),
   searchWithChunkedLabels: vi.fn().mockResolvedValue([]),
 }));
 
@@ -133,7 +138,8 @@ function makeFakeCandidate(repo: string, priority: string) {
 // ── Import after mocks ─────────────────────────────────────────────
 
 const { IssueDiscovery } = await import("./issue-discovery.js");
-const { searchInRepos } = await import("./search-phases.js");
+const { searchInRepos, fetchIssuesFromKnownRepos } =
+  await import("./search-phases.js");
 
 const basePreferences = {
   githubUsername: "test",
@@ -158,8 +164,13 @@ const baseStateReader = {
 describe("Strategy Selection", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    (searchInRepos as ReturnType<typeof vi.fn>).mockResolvedValue({
+    (fetchIssuesFromKnownRepos as ReturnType<typeof vi.fn>).mockResolvedValue({
       candidates: [makeFakeCandidate("owner/merged-repo", "merged_pr")],
+      allReposFailed: false,
+      rateLimitHit: false,
+    });
+    (searchInRepos as ReturnType<typeof vi.fn>).mockResolvedValue({
+      candidates: [],
       allBatchesFailed: false,
       rateLimitHit: false,
     });
@@ -191,7 +202,7 @@ describe("Strategy Selection", () => {
     const discovery = new IssueDiscovery("token", basePreferences, stateReader);
     const result = await discovery.searchIssues({ strategies: ["merged"] });
     expect(result.strategiesUsed).toEqual(["merged"]);
-    expect(searchInRepos).toHaveBeenCalledTimes(1);
+    expect(fetchIssuesFromKnownRepos).toHaveBeenCalledTimes(1);
   });
 
   it("only runs starred strategy when specified", async () => {
@@ -199,15 +210,15 @@ describe("Strategy Selection", () => {
       ...baseStateReader,
       getStarredRepos: () => ["owner/starred"],
     };
-    (searchInRepos as ReturnType<typeof vi.fn>).mockResolvedValue({
+    (fetchIssuesFromKnownRepos as ReturnType<typeof vi.fn>).mockResolvedValue({
       candidates: [makeFakeCandidate("owner/starred", "starred")],
-      allBatchesFailed: false,
+      allReposFailed: false,
       rateLimitHit: false,
     });
     const discovery = new IssueDiscovery("token", basePreferences, stateReader);
     const result = await discovery.searchIssues({ strategies: ["starred"] });
     expect(result.strategiesUsed).toEqual(["starred"]);
-    expect(searchInRepos).toHaveBeenCalledTimes(1);
+    expect(fetchIssuesFromKnownRepos).toHaveBeenCalledTimes(1);
   });
 
   it('runs all strategies when "all" is specified', async () => {
@@ -247,7 +258,7 @@ describe("Strategy Selection", () => {
     const discovery = new IssueDiscovery("token", prefs, stateReader);
     const result = await discovery.searchIssues({});
     expect(result.strategiesUsed).toEqual(["merged"]);
-    expect(searchInRepos).toHaveBeenCalledTimes(1);
+    expect(fetchIssuesFromKnownRepos).toHaveBeenCalledTimes(1);
   });
 
   it("can combine multiple strategies", async () => {
@@ -256,15 +267,15 @@ describe("Strategy Selection", () => {
       getReposWithMergedPRs: () => ["owner/repo"],
       getStarredRepos: () => ["owner/starred"],
     };
-    (searchInRepos as ReturnType<typeof vi.fn>)
+    (fetchIssuesFromKnownRepos as ReturnType<typeof vi.fn>)
       .mockResolvedValueOnce({
         candidates: [makeFakeCandidate("owner/repo", "merged_pr")],
-        allBatchesFailed: false,
+        allReposFailed: false,
         rateLimitHit: false,
       })
       .mockResolvedValueOnce({
         candidates: [makeFakeCandidate("owner/starred", "starred")],
-        allBatchesFailed: false,
+        allReposFailed: false,
         rateLimitHit: false,
       });
     const discovery = new IssueDiscovery("token", basePreferences, stateReader);
@@ -287,7 +298,7 @@ describe("Strategy Selection", () => {
     await expect(
       discovery.searchIssues({ strategies: ["merged"] }),
     ).rejects.toThrow(/No issue candidates found/);
-    expect(searchInRepos).not.toHaveBeenCalled();
+    expect(fetchIssuesFromKnownRepos).not.toHaveBeenCalled();
   });
 });
 

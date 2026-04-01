@@ -48,7 +48,7 @@ import {
   cachedSearchIssues,
   fetchIssuesFromMaintainedRepos,
   filterVetAndScore,
-  searchInRepos,
+  fetchIssuesFromKnownRepos,
   searchWithChunkedLabels,
 } from "./search-phases.js";
 
@@ -111,7 +111,6 @@ async function runPhase0(
   octokit: Octokit,
   vetter: IssueVetter,
   repos: string[],
-  baseQualifiers: string,
   maxResults: number,
   filterIssues: (items: GitHubSearchItem[]) => GitHubSearchItem[],
 ): Promise<PhaseResult> {
@@ -120,22 +119,22 @@ async function runPhase0(
     `Phase 0: Searching issues in ${repos.length} merged-PR repos (no label filter)...`,
   );
 
-  const { candidates, allBatchesFailed, rateLimitHit } = await searchInRepos(
-    octokit,
-    vetter,
-    repos,
-    baseQualifiers,
-    [],
-    maxResults,
-    "merged_pr",
-    filterIssues,
-  );
+  const { candidates, allReposFailed, rateLimitHit } =
+    await fetchIssuesFromKnownRepos(
+      octokit,
+      vetter,
+      repos,
+      [],
+      maxResults,
+      "merged_pr",
+      filterIssues,
+    );
 
   info(MODULE, `Found ${candidates.length} candidates from merged-PR repos`);
 
   return {
     candidates,
-    error: allBatchesFailed ? "All merged-PR repo batches failed" : null,
+    error: allReposFailed ? "All merged-PR repo fetches failed" : null,
     rateLimitHit,
   };
 }
@@ -145,32 +144,31 @@ async function runPhase1(
   octokit: Octokit,
   vetter: IssueVetter,
   repos: string[],
-  baseQualifiers: string,
   labels: string[],
   maxResults: number,
   filterIssues: (items: GitHubSearchItem[]) => GitHubSearchItem[],
 ): Promise<PhaseResult> {
   info(MODULE, `Phase 1: Searching issues in ${repos.length} starred repos...`);
 
-  // Cap labels to reduce Search API calls: starred repos already signal user
-  // interest, so fewer labels suffice.
+  // Cap labels: starred repos already signal user interest, so fewer labels suffice.
   const phase1Labels = labels.slice(0, 3);
-  const { candidates, allBatchesFailed, rateLimitHit } = await searchInRepos(
-    octokit,
-    vetter,
-    repos.slice(0, 10),
-    baseQualifiers,
-    phase1Labels,
-    maxResults,
-    "starred",
-    filterIssues,
-  );
+  const reposToSearch = repos.slice(0, 10);
+  const { candidates, allReposFailed, rateLimitHit } =
+    await fetchIssuesFromKnownRepos(
+      octokit,
+      vetter,
+      reposToSearch,
+      phase1Labels,
+      maxResults,
+      "starred",
+      filterIssues,
+    );
 
   info(MODULE, `Found ${candidates.length} candidates from starred repos`);
 
   return {
     candidates,
-    error: allBatchesFailed ? "All starred repo batches failed" : null,
+    error: allReposFailed ? "All starred repo fetches failed" : null,
     rateLimitHit,
   };
 }
@@ -609,7 +607,6 @@ export class IssueDiscovery {
           this.octokit,
           this.vetter,
           phase0Repos,
-          baseQualifiers,
           remaining,
           filterIssues,
         );
@@ -642,7 +639,6 @@ export class IssueDiscovery {
             this.octokit,
             this.vetter,
             reposToSearch,
-            baseQualifiers,
             labels,
             remaining,
             filterIssues,
