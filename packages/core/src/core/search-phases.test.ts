@@ -24,6 +24,7 @@ vi.mock("./errors.js", () => ({
     e instanceof Error ? e.message : String(e),
   ),
   isRateLimitError: vi.fn(() => false),
+  getHttpStatusCode: vi.fn(() => undefined),
 }));
 
 vi.mock("./search-budget.js", () => ({

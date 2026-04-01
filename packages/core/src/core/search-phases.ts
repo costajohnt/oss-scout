@@ -12,7 +12,7 @@ import {
   type IssueScope,
   SCOPE_LABELS,
 } from "./types.js";
-import { errorMessage, isRateLimitError } from "./errors.js";
+import { errorMessage, getHttpStatusCode, isRateLimitError } from "./errors.js";
 import { debug, warn } from "./logger.js";
 import { getHttpCache } from "./http-cache.js";
 import {
@@ -190,6 +190,7 @@ export async function fetchIssuesFromMaintainedRepos(
     try {
       const { data: repoData } = await octokit.repos.get({ owner, repo });
 
+      if (!repoData.pushed_at) continue;
       const pushedAt = new Date(repoData.pushed_at);
       const thirtyDaysAgo = new Date();
       thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
@@ -206,8 +207,10 @@ export async function fetchIssuesFromMaintainedRepos(
         per_page: 5,
       });
 
+      // Filter out pull requests and assigned issues (REST endpoint returns both)
       const realIssues = issues.filter(
-        (i: { pull_request?: unknown }) => !i.pull_request,
+        (i: { pull_request?: unknown; assignee?: unknown }) =>
+          !i.pull_request && !i.assignee,
       );
 
       for (const issue of realIssues) {
@@ -222,9 +225,19 @@ export async function fetchIssuesFromMaintainedRepos(
 
       await sleep(INTER_QUERY_DELAY_MS);
     } catch (error) {
-      debug(
+      if (getHttpStatusCode(error) === 401) throw error;
+      if (isRateLimitError(error)) {
+        warn(
+          MODULE,
+          `Rate limit hit fetching issues from ${repoFullName}:`,
+          errorMessage(error),
+        );
+        break;
+      }
+      warn(
         MODULE,
-        `Error fetching issues from ${repoFullName}: ${errorMessage(error)}`,
+        `Error fetching issues from ${repoFullName}:`,
+        errorMessage(error),
       );
     }
   }
@@ -309,6 +322,7 @@ export async function fetchIssuesFromKnownRepos(
         }
       }
     } catch (error) {
+      if (getHttpStatusCode(error) === 401) throw error;
       failedRepos++;
       if (isRateLimitError(error)) {
         rateLimitFailures++;
