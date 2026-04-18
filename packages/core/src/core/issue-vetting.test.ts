@@ -102,6 +102,7 @@ function makeStubStateReader(
 ): ScoutStateReader {
   return {
     getReposWithMergedPRs: vi.fn(() => []),
+    getReposWithOpenPRs: vi.fn(() => []),
     getStarredRepos: vi.fn(() => []),
     getProjectCategories: vi.fn(() => []),
     getRepoScore: vi.fn(() => null),

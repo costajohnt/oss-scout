@@ -187,3 +187,11 @@ export interface ClosedPRRecord {
   closedAt: string;
   repo: string;
 }
+
+/** Record of an open PR for state contribution. */
+export interface OpenPRRecord {
+  url: string;
+  title: string;
+  openedAt: string;
+  repo: string;
+}

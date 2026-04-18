@@ -302,7 +302,7 @@ export class GistStateStore {
 /**
  * Merge two ScoutState objects with conflict resolution:
  * - repoScores: per-repo, keep the one with more total PR activity
- * - mergedPRs/closedPRs: union by URL
+ * - mergedPRs/closedPRs/openPRs: union by URL
  * - preferences: remote wins
  * - starredRepos: keep the list with the fresher timestamp
  * - savedResults: union by issueUrl, keep newer lastSeenAt
@@ -319,6 +319,7 @@ export function mergeStates(local: ScoutState, remote: ScoutState): ScoutState {
     ),
     mergedPRs: unionByUrl(local.mergedPRs, remote.mergedPRs),
     closedPRs: unionByUrl(local.closedPRs, remote.closedPRs),
+    openPRs: unionByUrl(local.openPRs ?? [], remote.openPRs ?? []),
     savedResults: mergeSavedResults(
       local.savedResults ?? [],
       remote.savedResults ?? [],

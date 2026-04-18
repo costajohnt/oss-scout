@@ -127,6 +127,45 @@ describe("OssScout", () => {
     });
   });
 
+  describe("recordOpenPR", () => {
+    it("adds PR to state and surfaces repo via getReposWithOpenPRs", () => {
+      const scout = makeScout();
+      scout.recordOpenPR({
+        url: "https://github.com/owner/repo/pull/1",
+        title: "Draft PR",
+        openedAt: "2026-01-01T00:00:00Z",
+        repo: "owner/repo",
+      });
+      expect(scout.getState().openPRs).toHaveLength(1);
+      expect(scout.getReposWithOpenPRs()).toEqual(["owner/repo"]);
+      expect(scout.isDirty()).toBe(true);
+    });
+
+    it("deduplicates by URL", () => {
+      const scout = makeScout();
+      const pr = {
+        url: "https://github.com/owner/repo/pull/1",
+        title: "Draft",
+        openedAt: "2026-01-01T00:00:00Z",
+        repo: "owner/repo",
+      };
+      scout.recordOpenPR(pr);
+      scout.recordOpenPR(pr);
+      expect(scout.getState().openPRs).toHaveLength(1);
+    });
+
+    it("does not update repo score (open PRs are not a merge signal)", () => {
+      const scout = makeScout();
+      scout.recordOpenPR({
+        url: "https://github.com/owner/repo/pull/1",
+        title: "Draft",
+        openedAt: "2026-01-01T00:00:00Z",
+        repo: "owner/repo",
+      });
+      expect(scout.getRepoScoreRecord("owner/repo")).toBeUndefined();
+    });
+  });
+
   describe("recordClosedPR", () => {
     it("adds PR to state and updates score", () => {
       const scout = makeScout();

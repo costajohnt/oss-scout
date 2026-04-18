@@ -188,6 +188,7 @@ function makeStateReader(
 ): ScoutStateReader {
   return {
     getReposWithMergedPRs: vi.fn(() => []),
+    getReposWithOpenPRs: vi.fn(() => []),
     getStarredRepos: vi.fn(() => []),
     getProjectCategories: vi.fn(() => []),
     getRepoScore: vi.fn(() => null),
@@ -277,6 +278,106 @@ describe("IssueDiscovery", () => {
         "merged_pr",
         expect.any(Function),
       );
+    });
+
+    it("Phase 0: unions merged-PR and open-PR repos, deduped, merged first", async () => {
+      const c = makeCandidate("org/merged-a", "merged_pr");
+      mockFetchIssuesFromKnownRepos.mockResolvedValue({
+        candidates: [c],
+        allReposFailed: false,
+        rateLimitHit: false,
+      });
+
+      const discovery = makeDiscovery({
+        getReposWithMergedPRs: vi.fn(() => ["org/merged-a", "org/shared"]),
+        getReposWithOpenPRs: vi.fn(() => ["org/shared", "org/open-only"]),
+      });
+
+      await discovery.searchIssues({ maxResults: 5 });
+
+      const phase0Call = mockFetchIssuesFromKnownRepos.mock.calls.find(
+        (call) => call[5] === "merged_pr",
+      );
+      expect(phase0Call).toBeDefined();
+      expect(phase0Call![2]).toEqual([
+        "org/merged-a",
+        "org/shared",
+        "org/open-only",
+      ]);
+    });
+
+    it("Phase 0: searches open-PR repos even when no merged PRs exist", async () => {
+      const c = makeCandidate("org/open-only", "merged_pr");
+      mockFetchIssuesFromKnownRepos.mockResolvedValue({
+        candidates: [c],
+        allReposFailed: false,
+        rateLimitHit: false,
+      });
+
+      const discovery = makeDiscovery({
+        getReposWithMergedPRs: vi.fn(() => []),
+        getReposWithOpenPRs: vi.fn(() => ["org/open-only"]),
+      });
+
+      await discovery.searchIssues({ maxResults: 5 });
+
+      const phase0Call = mockFetchIssuesFromKnownRepos.mock.calls.find(
+        (call) => call[5] === "merged_pr",
+      );
+      expect(phase0Call).toBeDefined();
+      expect(phase0Call![2]).toEqual(["org/open-only"]);
+    });
+
+    it("Phase 0: caps total repos at 10 across merged + open", async () => {
+      const c = makeCandidate("org/merged-0", "merged_pr");
+      mockFetchIssuesFromKnownRepos.mockResolvedValue({
+        candidates: [c],
+        allReposFailed: false,
+        rateLimitHit: false,
+      });
+
+      const merged = Array.from({ length: 8 }, (_, i) => `org/merged-${i}`);
+      const open = Array.from({ length: 8 }, (_, i) => `org/open-${i}`);
+
+      const discovery = makeDiscovery({
+        getReposWithMergedPRs: vi.fn(() => merged),
+        getReposWithOpenPRs: vi.fn(() => open),
+      });
+
+      await discovery.searchIssues({ maxResults: 5 });
+
+      const phase0Call = mockFetchIssuesFromKnownRepos.mock.calls.find(
+        (call) => call[5] === "merged_pr",
+      );
+      expect(phase0Call).toBeDefined();
+      expect(phase0Call![2]).toHaveLength(10);
+      // Merged repos come first
+      expect(phase0Call![2].slice(0, 8)).toEqual(merged);
+    });
+
+    it("Phase 1: excludes starred repos that are already searched as open-PR repos in Phase 0", async () => {
+      const c = makeCandidate("org/shared", "merged_pr");
+      mockFetchIssuesFromKnownRepos.mockResolvedValue({
+        candidates: [c],
+        allReposFailed: false,
+        rateLimitHit: false,
+      });
+
+      const discovery = makeDiscovery({
+        getReposWithMergedPRs: vi.fn(() => []),
+        getReposWithOpenPRs: vi.fn(() => ["org/shared"]),
+        getStarredRepos: vi.fn(() => ["org/shared", "org/other"]),
+      });
+
+      await discovery.searchIssues({ maxResults: 5 });
+
+      const phase1Call = mockFetchIssuesFromKnownRepos.mock.calls.find(
+        (call) => call[5] === "starred",
+      );
+      expect(phase1Call).toBeDefined();
+      // "org/shared" was already searched in Phase 0 (as open-PR repo), so
+      // Phase 1 only gets the non-overlapping starred repo.
+      expect(phase1Call![2]).toEqual(["org/other"]);
     });
 
     it("Phase 1: calls fetchIssuesFromKnownRepos with starred repos, priority starred", async () => {

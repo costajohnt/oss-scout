@@ -156,6 +156,7 @@ const basePreferences = {
 
 const baseStateReader = {
   getReposWithMergedPRs: () => [] as string[],
+  getReposWithOpenPRs: () => [] as string[],
   getStarredRepos: () => [] as string[],
   getProjectCategories: () => [] as string[],
   getRepoScore: () => null,

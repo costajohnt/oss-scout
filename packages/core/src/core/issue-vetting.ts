@@ -50,6 +50,8 @@ const VETTING_CACHE_TTL_MS = 15 * 60 * 1000;
 export interface ScoutStateReader {
   /** Repos where the user has at least one merged PR. */
   getReposWithMergedPRs(): string[];
+  /** Repos where the user has at least one open PR. */
+  getReposWithOpenPRs(): string[];
   /** User's starred repos (from GitHub). */
   getStarredRepos(): string[];
   /** Preferred project categories from user preferences. */

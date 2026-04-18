@@ -79,6 +79,12 @@ export const StoredClosedPRSchema = z.object({
   closedAt: z.string(),
 });
 
+export const StoredOpenPRSchema = z.object({
+  url: z.string(),
+  title: z.string(),
+  openedAt: z.string(),
+});
+
 // ── Contribution schemas ────────────────────────────────────────────
 
 export const ContributionGuidelinesSchema = z.object({
@@ -191,6 +197,7 @@ export const ScoutStateSchema = z.object({
 
   mergedPRs: z.array(StoredMergedPRSchema).default([]),
   closedPRs: z.array(StoredClosedPRSchema).default([]),
+  openPRs: z.array(StoredOpenPRSchema).default([]),
 
   savedResults: z.array(SavedCandidateSchema).default([]),
   skippedIssues: z.array(SkippedIssueSchema).default([]),
@@ -210,6 +217,7 @@ export type RepoSignals = z.infer<typeof RepoSignalsSchema>;
 export type RepoScore = z.infer<typeof RepoScoreSchema>;
 export type StoredMergedPR = z.infer<typeof StoredMergedPRSchema>;
 export type StoredClosedPR = z.infer<typeof StoredClosedPRSchema>;
+export type StoredOpenPR = z.infer<typeof StoredOpenPRSchema>;
 export type ContributionGuidelines = z.infer<
   typeof ContributionGuidelinesSchema
 >;
