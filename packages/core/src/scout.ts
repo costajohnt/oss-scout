@@ -22,6 +22,7 @@ import type {
   IssueCandidate,
   MergedPRRecord,
   ClosedPRRecord,
+  OpenPRRecord,
   RepoScoreUpdate,
   ProjectCategory,
   VetListOptions,
@@ -297,6 +298,19 @@ export class OssScout implements ScoutStateReader {
       .map(([repo]) => repo);
   }
 
+  getReposWithOpenPRs(): string[] {
+    const repoCounts = new Map<string, number>();
+    for (const pr of this.state.openPRs ?? []) {
+      const repo = extractRepoFromUrl(pr.url);
+      if (repo) {
+        repoCounts.set(repo, (repoCounts.get(repo) ?? 0) + 1);
+      }
+    }
+    return [...repoCounts.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([repo]) => repo);
+  }
+
   getStarredRepos(): string[] {
     return this.state.starredRepos;
   }
@@ -351,6 +365,21 @@ export class OssScout implements ScoutStateReader {
       { url: pr.url, title: pr.title, closedAt: pr.closedAt },
     ];
     this.updateRepoScoreFromPRs(pr.repo);
+    this.dirty = true;
+  }
+
+  /**
+   * Record that a PR is currently open in this repo.
+   * Open PRs signal active engagement even when nothing is merged yet.
+   */
+  recordOpenPR(pr: OpenPRRecord): void {
+    const existing = this.state.openPRs ?? [];
+    if (existing.some((p) => p.url === pr.url)) return;
+
+    this.state.openPRs = [
+      ...existing,
+      { url: pr.url, title: pr.title, openedAt: pr.openedAt },
+    ];
     this.dirty = true;
   }
 

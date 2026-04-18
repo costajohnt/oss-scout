@@ -61,6 +61,7 @@ function makePRItem(n: number, repo: string) {
     html_url: `https://github.com/${repo}/pull/${n}`,
     title: `PR #${n}`,
     closed_at: "2026-01-15T00:00:00Z",
+    created_at: "2026-01-01T00:00:00Z",
   };
 }
 
@@ -83,6 +84,7 @@ describe("bootstrapScout", () => {
     expect(result.starredRepoCount).toBe(0);
     expect(result.mergedPRCount).toBe(0);
     expect(result.closedPRCount).toBe(0);
+    expect(result.openPRCount).toBe(0);
   });
 
   it("fetches starred repos and PRs", async () => {
@@ -103,6 +105,9 @@ describe("bootstrapScout", () => {
       })
       .mockResolvedValueOnce({
         data: { items: [makePRItem(3, "org/repo-c")] },
+      })
+      .mockResolvedValueOnce({
+        data: { items: [makePRItem(4, "org/repo-d")] },
       });
 
     const token = uniqueToken();
@@ -113,11 +118,14 @@ describe("bootstrapScout", () => {
     expect(result.starredRepoCount).toBe(2);
     expect(result.mergedPRCount).toBe(2);
     expect(result.closedPRCount).toBe(1);
+    expect(result.openPRCount).toBe(1);
     expect(result.reposScoredCount).toBeGreaterThanOrEqual(2);
     const state = scout.getState();
     expect(state.starredRepos).toEqual(["org/repo-a", "org/repo-b"]);
     expect(state.mergedPRs).toHaveLength(2);
     expect(state.closedPRs).toHaveLength(1);
+    expect(state.openPRs).toHaveLength(1);
+    expect(state.openPRs[0].url).toBe("https://github.com/org/repo-d/pull/4");
   });
 
   it("handles empty results", async () => {
@@ -130,6 +138,7 @@ describe("bootstrapScout", () => {
     mockOctokitInstance.search.issuesAndPullRequests = vi
       .fn()
       .mockResolvedValueOnce({ data: { items: [] } })
+      .mockResolvedValueOnce({ data: { items: [] } })
       .mockResolvedValueOnce({ data: { items: [] } });
 
     const token = uniqueToken();
@@ -138,6 +147,7 @@ describe("bootstrapScout", () => {
     expect(result.starredRepoCount).toBe(0);
     expect(result.mergedPRCount).toBe(0);
     expect(result.closedPRCount).toBe(0);
+    expect(result.openPRCount).toBe(0);
     expect(result.reposScoredCount).toBe(0);
   });
 
@@ -175,6 +185,7 @@ describe("bootstrapScout", () => {
           items: [makePRItem(1, "org/repo-a"), makePRItem(2, "org/repo-a")],
         },
       })
+      .mockResolvedValueOnce({ data: { items: [] } })
       .mockResolvedValueOnce({ data: { items: [] } });
 
     const token = uniqueToken();
@@ -200,6 +211,7 @@ describe("bootstrapScout", () => {
       .mockResolvedValueOnce({
         data: { items: [makePRItem(101, "org/repo-a")] },
       })
+      .mockResolvedValueOnce({ data: { items: [] } })
       .mockResolvedValueOnce({ data: { items: [] } });
 
     const token = uniqueToken();
@@ -208,6 +220,38 @@ describe("bootstrapScout", () => {
     expect(result.mergedPRCount).toBe(101);
     expect(
       mockOctokitInstance.search.issuesAndPullRequests,
-    ).toHaveBeenCalledTimes(3);
+    ).toHaveBeenCalledTimes(4);
+  });
+
+  it("queries open PRs with correct search qualifiers", async () => {
+    mockRateLimit(30);
+    mockOctokitInstance.paginate.iterator = vi.fn().mockReturnValue(
+      (async function* () {
+        yield { data: [] };
+      })(),
+    );
+    mockOctokitInstance.search.issuesAndPullRequests = vi
+      .fn()
+      .mockResolvedValueOnce({ data: { items: [] } })
+      .mockResolvedValueOnce({ data: { items: [] } })
+      .mockResolvedValueOnce({
+        data: {
+          items: [
+            makePRItem(1, "org/open-repo"),
+            makePRItem(2, "org/open-repo"),
+          ],
+        },
+      });
+
+    const token = uniqueToken();
+    const scout = new OssScout(token, makeState());
+    const result = await bootstrapScout(scout, token);
+    expect(result.openPRCount).toBe(2);
+    const state = scout.getState();
+    expect(state.openPRs).toHaveLength(2);
+    expect(scout.getReposWithOpenPRs()).toEqual(["org/open-repo"]);
+
+    const calls = mockOctokitInstance.search.issuesAndPullRequests.mock.calls;
+    expect(calls[2][0].q).toBe("is:pr is:open author:testuser");
   });
 });

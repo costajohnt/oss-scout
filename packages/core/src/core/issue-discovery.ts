@@ -569,6 +569,7 @@ export class IssueDiscovery {
 
     // Derive search context
     const mergedPRRepos = this.stateReader.getReposWithMergedPRs();
+    const openPRRepos = this.stateReader.getReposWithOpenPRs();
     const starredRepos = this.getStarredRepos();
     const starredRepoSet = new Set(starredRepos);
     const lowScoringRepos = new Set(
@@ -605,8 +606,17 @@ export class IssueDiscovery {
       includeDocIssues: config.includeDocIssues ?? true,
     });
 
-    // Phase 0: Merged-PR repos
-    const phase0Repos = mergedPRRepos.slice(0, 10);
+    // Phase 0: Repos the user has engaged with — merged PRs first (strongest
+    // signal), then open PRs (active engagement even without a merge yet).
+    // Deduped and capped so REST cost stays bounded.
+    const seenPhase0 = new Set<string>();
+    const phase0Repos: string[] = [];
+    for (const repo of [...mergedPRRepos, ...openPRRepos]) {
+      if (seenPhase0.has(repo)) continue;
+      seenPhase0.add(repo);
+      phase0Repos.push(repo);
+      if (phase0Repos.length >= 10) break;
+    }
     const phase0RepoSet = new Set(phase0Repos);
 
     if (phase0Repos.length > 0 && enabledStrategies.has("merged")) {

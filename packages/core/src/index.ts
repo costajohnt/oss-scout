@@ -26,6 +26,7 @@ export type {
   IssueCandidate,
   MergedPRRecord,
   ClosedPRRecord,
+  OpenPRRecord,
   RepoScoreUpdate,
   ProjectHealth,
   SearchPriority,
@@ -48,6 +49,7 @@ export type {
   ProjectCategory,
   StoredMergedPR,
   StoredClosedPR,
+  StoredOpenPR,
   SearchStrategy,
   SkippedIssue,
 } from "./core/schemas.js";

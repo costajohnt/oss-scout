@@ -15,6 +15,7 @@ export interface BootstrapResult {
   starredRepoCount: number;
   mergedPRCount: number;
   closedPRCount: number;
+  openPRCount: number;
   reposScoredCount: number;
   skippedDueToRateLimit: boolean;
   errors: string[];
@@ -47,6 +48,7 @@ export async function bootstrapScout(
       starredRepoCount: 0,
       mergedPRCount: 0,
       closedPRCount: 0,
+      openPRCount: 0,
       reposScoredCount: 0,
       skippedDueToRateLimit: true,
       errors: [],
@@ -143,6 +145,37 @@ export async function bootstrapScout(
     errors.push("closed PR fetch failed");
   }
 
+  // 4. Fetch currently-open PRs via Search API
+  let openPRCount = 0;
+  try {
+    for (let page = 1; page <= SEARCH_MAX_PAGES; page++) {
+      const { data } = await octokit.search.issuesAndPullRequests({
+        q: `is:pr is:open author:${username}`,
+        per_page: PER_PAGE,
+        page,
+      });
+
+      for (const item of data.items) {
+        const repo = extractRepoFromUrl(item.html_url);
+        if (!repo) continue;
+
+        scout.recordOpenPR({
+          url: item.html_url,
+          title: item.title,
+          openedAt: item.created_at ?? new Date().toISOString(),
+          repo,
+        });
+        openPRCount++;
+      }
+
+      if (data.items.length < PER_PAGE) break;
+    }
+    debug(MODULE, `Imported ${openPRCount} open PRs`);
+  } catch (err) {
+    warn(MODULE, `Failed to fetch open PRs: ${errorMessage(err)}`);
+    errors.push("open PR fetch failed");
+  }
+
   const state = scout.getState();
   const reposScoredCount = Object.keys(state.repoScores).length;
 
@@ -150,6 +183,7 @@ export async function bootstrapScout(
     starredRepoCount: starredRepos.length,
     mergedPRCount,
     closedPRCount,
+    openPRCount,
     reposScoredCount,
     skippedDueToRateLimit: false,
     errors,
