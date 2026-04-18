@@ -223,6 +223,79 @@ describe("bootstrapScout", () => {
     ).toHaveBeenCalledTimes(4);
   });
 
+  it("reports open-PR fetch failures non-fatally and preserves prior counts", async () => {
+    mockRateLimit(30);
+    mockOctokitInstance.paginate.iterator = vi.fn().mockReturnValue(
+      (async function* () {
+        yield {
+          data: [{ full_name: "org/repo-a" }],
+        };
+      })(),
+    );
+    mockOctokitInstance.search.issuesAndPullRequests = vi
+      .fn()
+      .mockResolvedValueOnce({
+        data: { items: [makePRItem(1, "org/repo-a")] },
+      })
+      .mockResolvedValueOnce({ data: { items: [] } })
+      .mockRejectedValueOnce(new Error("transient network error"));
+
+    const token = uniqueToken();
+    const scout = new OssScout(token, makeState());
+    const result = await bootstrapScout(scout, token);
+
+    expect(result.openPRCount).toBe(0);
+    expect(result.mergedPRCount).toBe(1);
+    expect(result.starredRepoCount).toBe(1);
+    expect(result.errors).toContain("open PR fetch failed");
+  });
+
+  it("propagates auth errors from open-PR fetch (does not silently degrade)", async () => {
+    mockRateLimit(30);
+    mockOctokitInstance.paginate.iterator = vi.fn().mockReturnValue(
+      (async function* () {
+        yield { data: [] };
+      })(),
+    );
+    const authError = Object.assign(new Error("Bad credentials"), {
+      status: 401,
+    });
+    mockOctokitInstance.search.issuesAndPullRequests = vi
+      .fn()
+      .mockResolvedValueOnce({ data: { items: [] } })
+      .mockResolvedValueOnce({ data: { items: [] } })
+      .mockRejectedValueOnce(authError);
+
+    const token = uniqueToken();
+    const scout = new OssScout(token, makeState());
+    await expect(bootstrapScout(scout, token)).rejects.toThrow(
+      "Bad credentials",
+    );
+  });
+
+  it("propagates rate-limit errors from open-PR fetch (does not silently degrade)", async () => {
+    mockRateLimit(30);
+    mockOctokitInstance.paginate.iterator = vi.fn().mockReturnValue(
+      (async function* () {
+        yield { data: [] };
+      })(),
+    );
+    const rateLimitError = Object.assign(new Error("API rate limit exceeded"), {
+      status: 429,
+    });
+    mockOctokitInstance.search.issuesAndPullRequests = vi
+      .fn()
+      .mockResolvedValueOnce({ data: { items: [] } })
+      .mockResolvedValueOnce({ data: { items: [] } })
+      .mockRejectedValueOnce(rateLimitError);
+
+    const token = uniqueToken();
+    const scout = new OssScout(token, makeState());
+    await expect(bootstrapScout(scout, token)).rejects.toThrow(
+      "API rate limit exceeded",
+    );
+  });
+
   it("queries open PRs with correct search qualifiers", async () => {
     mockRateLimit(30);
     mockOctokitInstance.paginate.iterator = vi.fn().mockReturnValue(

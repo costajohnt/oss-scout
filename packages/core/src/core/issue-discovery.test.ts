@@ -355,6 +355,31 @@ describe("IssueDiscovery", () => {
       expect(phase0Call![2].slice(0, 8)).toEqual(merged);
     });
 
+    it("Phase 1: excludes starred repos that are already searched as open-PR repos in Phase 0", async () => {
+      const c = makeCandidate("org/shared", "merged_pr");
+      mockFetchIssuesFromKnownRepos.mockResolvedValue({
+        candidates: [c],
+        allReposFailed: false,
+        rateLimitHit: false,
+      });
+
+      const discovery = makeDiscovery({
+        getReposWithMergedPRs: vi.fn(() => []),
+        getReposWithOpenPRs: vi.fn(() => ["org/shared"]),
+        getStarredRepos: vi.fn(() => ["org/shared", "org/other"]),
+      });
+
+      await discovery.searchIssues({ maxResults: 5 });
+
+      const phase1Call = mockFetchIssuesFromKnownRepos.mock.calls.find(
+        (call) => call[5] === "starred",
+      );
+      expect(phase1Call).toBeDefined();
+      // "org/shared" was already searched in Phase 0 (as open-PR repo), so
+      // Phase 1 only gets the non-overlapping starred repo.
+      expect(phase1Call![2]).toEqual(["org/other"]);
+    });
+
     it("Phase 1: calls fetchIssuesFromKnownRepos with starred repos, priority starred", async () => {
       const c = makeCandidate("org/starred-repo", "starred");
       mockFetchIssuesFromKnownRepos.mockResolvedValue({

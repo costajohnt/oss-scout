@@ -423,6 +423,67 @@ describe("mergeStates", () => {
     expect(merged.closedPRs).toHaveLength(2);
   });
 
+  it("unions openPRs by URL", () => {
+    const local = makeState({
+      openPRs: [
+        {
+          url: "https://github.com/a/b/pull/1",
+          title: "PR1",
+          openedAt: "2026-01-01T00:00:00Z",
+        },
+        {
+          url: "https://github.com/a/b/pull/2",
+          title: "PR2",
+          openedAt: "2026-01-02T00:00:00Z",
+        },
+      ],
+    });
+    const remote = makeState({
+      openPRs: [
+        {
+          url: "https://github.com/a/b/pull/2",
+          title: "PR2",
+          openedAt: "2026-01-02T00:00:00Z",
+        },
+        {
+          url: "https://github.com/a/b/pull/3",
+          title: "PR3",
+          openedAt: "2026-01-03T00:00:00Z",
+        },
+      ],
+    });
+
+    const merged = mergeStates(local, remote);
+
+    expect(merged.openPRs).toHaveLength(3);
+    const urls = merged.openPRs.map((p) => p.url);
+    expect(urls).toContain("https://github.com/a/b/pull/1");
+    expect(urls).toContain("https://github.com/a/b/pull/2");
+    expect(urls).toContain("https://github.com/a/b/pull/3");
+  });
+
+  it("tolerates legacy state missing openPRs field", () => {
+    // Simulate a pre-feature state by stripping openPRs after parse.
+    const local = makeState({
+      openPRs: [
+        {
+          url: "https://github.com/a/b/pull/1",
+          title: "PR1",
+          openedAt: "2026-01-01T00:00:00Z",
+        },
+      ],
+    });
+    const remote = makeState();
+    // Cast because the current schema requires openPRs; we're simulating
+    // legacy persisted state that predates the field.
+    delete (remote as { openPRs?: unknown }).openPRs;
+
+    const merged = mergeStates(local, remote);
+
+    expect(merged.openPRs).toHaveLength(1);
+    expect(merged.openPRs[0].url).toBe("https://github.com/a/b/pull/1");
+  });
+
   it("keeps repo score with higher activity", () => {
     const local = makeState({
       repoScores: {
