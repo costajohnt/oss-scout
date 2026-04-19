@@ -2,10 +2,9 @@
 
 ## [0.5.0](https://github.com/costajohnt/oss-scout/compare/mcp-server-v0.4.0...mcp-server-v0.5.0) (2026-04-18)
 
-
 ### Features
 
-* include open-PR repos in Phase 0 search ([#65](https://github.com/costajohnt/oss-scout/issues/65)) ([#66](https://github.com/costajohnt/oss-scout/issues/66)) ([e5af4d2](https://github.com/costajohnt/oss-scout/commit/e5af4d2950bf243e6b77ba02344b4c2c4ad80045))
+- include open-PR repos in Phase 0 search ([#65](https://github.com/costajohnt/oss-scout/issues/65)) ([#66](https://github.com/costajohnt/oss-scout/issues/66)) ([e5af4d2](https://github.com/costajohnt/oss-scout/commit/e5af4d2950bf243e6b77ba02344b4c2c4ad80045))
 
 ## [0.4.0](https://github.com/costajohnt/oss-scout/compare/mcp-server-v0.3.0...mcp-server-v0.4.0) (2026-04-01)
 
