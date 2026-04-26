@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.1](https://github.com/costajohnt/oss-scout/compare/core-v0.7.0...core-v0.7.1) (2026-04-26)
+
+
+### Bug Fixes
+
+* implement getSLMTriageConfig on OssScout so vetter can read prefs ([#83](https://github.com/costajohnt/oss-scout/issues/83)) ([05b8190](https://github.com/costajohnt/oss-scout/commit/05b8190a6a871ba9f3da2350fc690a89a61a1e23))
+
 ## [0.7.0](https://github.com/costajohnt/oss-scout/compare/core-v0.6.0...core-v0.7.0) (2026-04-26)
 
 
