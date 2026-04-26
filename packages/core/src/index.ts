@@ -43,6 +43,7 @@ export type {
   RepoScore,
   RepoSignals,
   IssueVettingResult,
+  LinkedPR,
   ContributionGuidelines,
   TrackedIssue,
   IssueScope,

@@ -148,6 +148,7 @@ export class IssueVetter {
         contributionGuidelinesFound: !!contributionGuidelines,
       },
       contributionGuidelines,
+      linkedPR: existingPRCheck.linkedPR,
       notes: [],
     };
 

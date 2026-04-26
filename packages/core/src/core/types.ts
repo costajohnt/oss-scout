@@ -21,6 +21,7 @@ export type {
   StoredClosedPR,
   ContributionGuidelines,
   IssueVettingResult,
+  LinkedPR,
   TrackedIssue,
   ScoutPreferences,
   SavedCandidate,
