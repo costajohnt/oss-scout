@@ -189,6 +189,21 @@ function isAntiLLMPolicyResult(value: unknown): value is AntiLLMPolicyResult {
 }
 
 /**
+ * Optional caller hints to avoid duplicate fetches.
+ *
+ * `contributingText`:
+ *   - `string` — caller already fetched CONTRIBUTING; scan this text directly.
+ *   - `null`   — caller fetched and CONTRIBUTING is known absent; skip the family.
+ *   - `undefined` (omitted) — fetch as normal.
+ *
+ * Note: the per-repo result cache (1-hour TTL) is consulted before this hint.
+ * On a cache hit the cached result wins regardless of what is passed here.
+ */
+export interface AntiLLMPolicyOptions {
+  contributingText?: string | null;
+}
+
+/**
  * Fetch CONTRIBUTING/CODE_OF_CONDUCT/README in priority order and return the
  * first family whose text matches an anti-LLM keyword. Returns
  * `{matched: false, matchedKeywords: [], sourceFile: null}` when no source
@@ -201,6 +216,7 @@ export async function fetchAndScanAntiLLMPolicy(
   octokit: Octokit,
   owner: string,
   repo: string,
+  options?: AntiLLMPolicyOptions,
 ): Promise<AntiLLMPolicyResult> {
   const cache = getHttpCache();
   const cacheKey = `anti-llm-policy:${owner}/${repo}`;
@@ -209,12 +225,24 @@ export async function fetchAndScanAntiLLMPolicy(
 
   let anyTransientFailure = false;
   for (const family of SOURCE_FILE_FAMILIES) {
-    const { text, hadTransientFailure } = await fetchFamilyText(
-      octokit,
-      owner,
-      repo,
-      family.paths,
-    );
+    let text: string | null;
+    let hadTransientFailure = false;
+
+    if (
+      family.canonical === "CONTRIBUTING.md" &&
+      options?.contributingText !== undefined
+    ) {
+      // Use caller-provided text. null = known absent, string = use directly.
+      text = options.contributingText;
+    } else {
+      ({ text, hadTransientFailure } = await fetchFamilyText(
+        octokit,
+        owner,
+        repo,
+        family.paths,
+      ));
+    }
+
     if (hadTransientFailure) anyTransientFailure = true;
     if (!text) continue;
     const { matched, matchedKeywords } = scanForAntiLLMPolicy(text);
