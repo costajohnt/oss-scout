@@ -48,7 +48,9 @@ vi.mock("./category-mapping.js", () => ({
 }));
 
 vi.mock("./issue-eligibility.js", () => ({
-  checkNoExistingPR: vi.fn().mockResolvedValue({ passed: true }),
+  checkNoExistingPR: vi
+    .fn()
+    .mockResolvedValue({ passed: true, linkedPR: null }),
   checkNotClaimed: vi.fn().mockResolvedValue({ passed: true }),
   checkUserMergedPRsInRepo: vi.fn().mockResolvedValue(0),
   analyzeRequirements: vi.fn(() => true),
@@ -146,7 +148,10 @@ describe("IssueVetter", () => {
     vi.restoreAllMocks();
 
     // Re-establish default mock implementations after restoreAllMocks
-    vi.mocked(checkNoExistingPR).mockResolvedValue({ passed: true });
+    vi.mocked(checkNoExistingPR).mockResolvedValue({
+      passed: true,
+      linkedPR: null,
+    });
     vi.mocked(checkNotClaimed).mockResolvedValue({ passed: true });
     vi.mocked(checkUserMergedPRsInRepo).mockResolvedValue(0);
     vi.mocked(analyzeRequirements).mockReturnValue(true);
@@ -183,7 +188,10 @@ describe("IssueVetter", () => {
     });
 
     it("recommends skip when an existing PR is found", async () => {
-      vi.mocked(checkNoExistingPR).mockResolvedValueOnce({ passed: false });
+      vi.mocked(checkNoExistingPR).mockResolvedValueOnce({
+        passed: false,
+        linkedPR: null,
+      });
       vi.mocked(checkNotClaimed).mockResolvedValueOnce({ passed: false });
       vi.mocked(analyzeRequirements).mockReturnValueOnce(false);
       const vetter = makeVetter();
@@ -193,7 +201,10 @@ describe("IssueVetter", () => {
     });
 
     it("recommends skip when issue is claimed", async () => {
-      vi.mocked(checkNoExistingPR).mockResolvedValueOnce({ passed: false });
+      vi.mocked(checkNoExistingPR).mockResolvedValueOnce({
+        passed: false,
+        linkedPR: null,
+      });
       vi.mocked(checkNotClaimed).mockResolvedValueOnce({ passed: false });
       vi.mocked(analyzeRequirements).mockReturnValueOnce(false);
       const vetter = makeVetter();
@@ -203,7 +214,10 @@ describe("IssueVetter", () => {
     });
 
     it("recommends skip when 2+ skip reasons exist", async () => {
-      vi.mocked(checkNoExistingPR).mockResolvedValueOnce({ passed: false });
+      vi.mocked(checkNoExistingPR).mockResolvedValueOnce({
+        passed: false,
+        linkedPR: null,
+      });
       vi.mocked(checkNotClaimed).mockResolvedValueOnce({ passed: false });
       vi.mocked(analyzeRequirements).mockReturnValueOnce(false);
       const vetter = makeVetter();
@@ -218,6 +232,7 @@ describe("IssueVetter", () => {
         passed: true,
         inconclusive: true,
         reason: "API error",
+        linkedPR: null,
       });
       const vetter = makeVetter();
       const result = await vetter.vetIssue(VALID_ISSUE_URL);
@@ -232,6 +247,34 @@ describe("IssueVetter", () => {
       await expect(vetter.vetIssue("not-a-url")).rejects.toThrow(
         "Invalid issue URL",
       );
+    });
+
+    it("propagates linkedPR metadata from checkNoExistingPR onto vettingResult", async () => {
+      vi.mocked(checkNoExistingPR).mockResolvedValueOnce({
+        passed: false,
+        linkedPR: {
+          number: 99,
+          author: "alice",
+          state: "open",
+          merged: false,
+          url: "https://github.com/owner/repo/pull/99",
+        },
+      });
+      const vetter = makeVetter();
+      const result = await vetter.vetIssue(VALID_ISSUE_URL);
+      expect(result.vettingResult.linkedPR).toEqual({
+        number: 99,
+        author: "alice",
+        state: "open",
+        merged: false,
+        url: "https://github.com/owner/repo/pull/99",
+      });
+    });
+
+    it("sets vettingResult.linkedPR to null when no linked PR exists", async () => {
+      const vetter = makeVetter();
+      const result = await vetter.vetIssue(VALID_ISSUE_URL);
+      expect(result.vettingResult.linkedPR).toBeNull();
     });
 
     it("returns cached result within 15min TTL", async () => {
@@ -361,7 +404,7 @@ describe("IssueVetter", () => {
         maxConcurrent = Math.max(maxConcurrent, currentConcurrent);
         await new Promise((r) => setTimeout(r, 10));
         currentConcurrent--;
-        return { passed: true };
+        return { passed: true, linkedPR: null };
       });
 
       const stateReader = makeStubStateReader();

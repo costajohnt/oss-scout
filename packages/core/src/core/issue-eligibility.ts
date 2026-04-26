@@ -12,7 +12,74 @@ import { errorMessage } from "./errors.js";
 import { warn } from "./logger.js";
 import { getHttpCache } from "./http-cache.js";
 import { getSearchBudgetTracker } from "./search-budget.js";
-import type { CheckResult } from "./types.js";
+import type { CheckResult, LinkedPR } from "./types.js";
+
+/** Result of the existing-PR check, including metadata for the first linked PR (if any). */
+export interface ExistingPRCheckResult extends CheckResult {
+  linkedPR: LinkedPR | null;
+}
+
+/** Shape of a cross-referenced PR event from the GitHub issue timeline API. */
+type CrossRefEvent = {
+  event?: string;
+  source?: {
+    issue?: {
+      number?: number;
+      state?: string;
+      html_url?: string;
+      user?: { login?: string };
+      pull_request?: { merged_at?: string | null };
+    };
+  };
+};
+
+function isLinkedPREvent(e: CrossRefEvent): boolean {
+  return e.event === "cross-referenced" && !!e.source?.issue?.pull_request;
+}
+
+/**
+ * Build a LinkedPR from a cross-referenced timeline event's source.issue.
+ * Returns null if required fields are missing — and warns, because callers
+ * only invoke this after asserting the event is a linked-PR event, so a
+ * null return signals API shape drift, not absent data.
+ */
+function buildLinkedPRFromTimelineEvent(
+  e: CrossRefEvent,
+  context: { owner: string; repo: string; issueNumber: number },
+): LinkedPR | null {
+  const issue = e.source?.issue;
+  const ctx = `${context.owner}/${context.repo}#${context.issueNumber}`;
+  if (!issue || typeof issue.number !== "number") {
+    warn(
+      MODULE,
+      `Cross-referenced timeline event for ${ctx} missing source.issue.number — possible API shape drift`,
+    );
+    return null;
+  }
+  const author = issue.user?.login;
+  if (!author) {
+    warn(
+      MODULE,
+      `Cross-referenced PR #${issue.number} for ${ctx} has no user.login (deleted user?) — skipping linkedPR metadata`,
+    );
+    return null;
+  }
+  const url = issue.html_url;
+  if (!url) {
+    warn(
+      MODULE,
+      `Cross-referenced PR #${issue.number} for ${ctx} missing html_url — skipping linkedPR metadata`,
+    );
+    return null;
+  }
+  return {
+    number: issue.number,
+    author,
+    state: issue.state === "closed" ? "closed" : "open",
+    merged: !!issue.pull_request?.merged_at,
+    url,
+  };
+}
 
 const MODULE = "issue-eligibility";
 
@@ -45,7 +112,7 @@ export async function checkNoExistingPR(
   owner: string,
   repo: string,
   issueNumber: number,
-): Promise<CheckResult> {
+): Promise<ExistingPRCheckResult> {
   try {
     // Use the timeline API (REST, not Search) to detect linked PRs.
     // This avoids consuming GitHub Search API quota (30 req/min limit).
@@ -62,22 +129,30 @@ export async function checkNoExistingPR(
       }),
     );
 
-    const linkedPRs = timeline.filter((event) => {
-      const e = event as {
-        event?: string;
-        source?: { issue?: { pull_request?: unknown } };
-      };
-      return e.event === "cross-referenced" && e.source?.issue?.pull_request;
-    });
+    // Single pass: count linked-PR events and capture metadata for the
+    // first valid one, so consumers can classify (own vs. competing,
+    // open vs. closed-unmerged) without a separate fetch.
+    let linkedPRCount = 0;
+    let linkedPR: LinkedPR | null = null;
+    for (const event of timeline) {
+      const e = event as CrossRefEvent;
+      if (!isLinkedPREvent(e)) continue;
+      linkedPRCount++;
+      linkedPR ??= buildLinkedPRFromTimelineEvent(e, {
+        owner,
+        repo,
+        issueNumber,
+      });
+    }
 
-    return { passed: linkedPRs.length === 0 };
+    return { passed: linkedPRCount === 0, linkedPR };
   } catch (error) {
     const errMsg = errorMessage(error);
     warn(
       MODULE,
       `Failed to check for existing PRs on ${owner}/${repo}#${issueNumber}: ${errMsg}. Assuming no existing PR.`,
     );
-    return { passed: true, inconclusive: true, reason: errMsg };
+    return { passed: true, inconclusive: true, reason: errMsg, linkedPR: null };
   }
 }
 

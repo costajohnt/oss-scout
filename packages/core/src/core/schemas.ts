@@ -104,6 +104,14 @@ export const ContributionGuidelinesSchema = z.object({
   rawContent: z.string().optional(),
 });
 
+export const LinkedPRSchema = z.object({
+  number: z.number(),
+  author: z.string(),
+  state: z.enum(["open", "closed"]),
+  merged: z.boolean(),
+  url: z.string(),
+});
+
 export const IssueVettingResultSchema = z.object({
   passedAllChecks: z.boolean(),
   checks: z.object({
@@ -114,6 +122,7 @@ export const IssueVettingResultSchema = z.object({
     contributionGuidelinesFound: z.boolean(),
   }),
   contributionGuidelines: ContributionGuidelinesSchema.optional(),
+  linkedPR: LinkedPRSchema.nullable().optional(),
   notes: z.array(z.string()),
 });
 
@@ -221,6 +230,7 @@ export type StoredOpenPR = z.infer<typeof StoredOpenPRSchema>;
 export type ContributionGuidelines = z.infer<
   typeof ContributionGuidelinesSchema
 >;
+export type LinkedPR = z.infer<typeof LinkedPRSchema>;
 export type IssueVettingResult = z.infer<typeof IssueVettingResultSchema>;
 export type TrackedIssue = z.infer<typeof TrackedIssueSchema>;
 export type ScoutPreferences = z.infer<typeof ScoutPreferencesSchema>;
