@@ -74,6 +74,14 @@ vi.mock("./repo-health.js", () => ({
   }),
 }));
 
+vi.mock("./anti-llm-policy.js", () => ({
+  fetchAndScanAntiLLMPolicy: vi.fn().mockResolvedValue({
+    matched: false,
+    matchedKeywords: [],
+    sourceFile: null,
+  }),
+}));
+
 vi.mock("./http-cache.js", () => ({
   getHttpCache: vi.fn(() => ({
     getIfFresh: vi.fn(() => null),
@@ -92,6 +100,7 @@ import {
   checkProjectHealth,
   fetchContributionGuidelines,
 } from "./repo-health.js";
+import { fetchAndScanAntiLLMPolicy } from "./anti-llm-policy.js";
 import { repoBelongsToCategory } from "./category-mapping.js";
 import { isRateLimitError } from "./errors.js";
 import { getHttpCache } from "./http-cache.js";
@@ -169,6 +178,11 @@ describe("IssueVetter", () => {
     vi.mocked(fetchContributionGuidelines).mockResolvedValue({
       url: "https://github.com/owner/repo/blob/main/CONTRIBUTING.md",
       content: "Please read before contributing.",
+    });
+    vi.mocked(fetchAndScanAntiLLMPolicy).mockResolvedValue({
+      matched: false,
+      matchedKeywords: [],
+      sourceFile: null,
     });
     vi.mocked(repoBelongsToCategory).mockReturnValue(false);
     vi.mocked(isRateLimitError).mockReturnValue(false);
@@ -277,6 +291,31 @@ describe("IssueVetter", () => {
       expect(result.vettingResult.linkedPR).toBeNull();
     });
 
+    it("attaches antiLLMPolicy default (no match) when scan finds nothing", async () => {
+      const vetter = makeVetter();
+      const result = await vetter.vetIssue(VALID_ISSUE_URL);
+      expect(result.antiLLMPolicy).toEqual({
+        matched: false,
+        matchedKeywords: [],
+        sourceFile: null,
+      });
+    });
+
+    it("attaches antiLLMPolicy match metadata when scan finds anti-LLM keywords", async () => {
+      vi.mocked(fetchAndScanAntiLLMPolicy).mockResolvedValueOnce({
+        matched: true,
+        matchedKeywords: ["no ai-generated", "human-authored only"],
+        sourceFile: "CONTRIBUTING.md",
+      });
+      const vetter = makeVetter();
+      const result = await vetter.vetIssue(VALID_ISSUE_URL);
+      expect(result.antiLLMPolicy).toEqual({
+        matched: true,
+        matchedKeywords: ["no ai-generated", "human-authored only"],
+        sourceFile: "CONTRIBUTING.md",
+      });
+    });
+
     it("returns cached result within 15min TTL", async () => {
       const cachedResult: IssueCandidate = {
         issue: {
@@ -321,6 +360,11 @@ describe("IssueVetter", () => {
           avgIssueResponseDays: 1,
           ciStatus: "passing",
           isActive: true,
+        },
+        antiLLMPolicy: {
+          matched: false,
+          matchedKeywords: [],
+          sourceFile: null,
         },
         recommendation: "approve",
         reasonsToSkip: [],

@@ -50,11 +50,25 @@ export interface ProjectHealth {
 /** Priority tier for issue search results. */
 export type SearchPriority = "merged_pr" | "starred" | "normal";
 
+/** Source file the anti-LLM policy match came from, or null when no file matched. */
+export type AntiLLMPolicySourceFile =
+  | "CONTRIBUTING.md"
+  | "CODE_OF_CONDUCT.md"
+  | "README.md";
+
+/** Result of scanning a repo's policy docs for anti-LLM/AI keywords. */
+export interface AntiLLMPolicyResult {
+  matched: boolean;
+  matchedKeywords: string[];
+  sourceFile: AntiLLMPolicySourceFile | null;
+}
+
 /** A fully vetted issue candidate with scoring. */
 export interface IssueCandidate {
   issue: TrackedIssue;
   vettingResult: IssueVettingResult;
   projectHealth: ProjectHealth;
+  antiLLMPolicy: AntiLLMPolicyResult;
   recommendation: "approve" | "skip" | "needs_review";
   reasonsToSkip: string[];
   reasonsToApprove: string[];
