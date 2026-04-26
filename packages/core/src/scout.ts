@@ -324,6 +324,17 @@ export class OssScout implements ScoutStateReader {
     return score ? score.score : null;
   }
 
+  /**
+   * Optional SLM pre-triage config read from preferences (oss-autopilot#1122).
+   * Empty `model` disables the call; the vetter treats it as a no-op.
+   */
+  getSLMTriageConfig(): { model: string; host: string } {
+    return {
+      model: this.state.preferences.slmTriageModel ?? "",
+      host: this.state.preferences.slmTriageHost ?? "",
+    };
+  }
+
   /** Get current preferences (read-only). */
   getPreferences(): Readonly<ScoutPreferences> {
     return this.state.preferences;
