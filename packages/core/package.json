@@ -1,6 +1,6 @@
 {
   "name": "@oss-scout/core",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Personalized GitHub issue finder with multi-strategy search, deep vetting, and viability scoring — CLI, library, MCP server, and Claude Code plugin",
   "type": "module",
   "bin": {
