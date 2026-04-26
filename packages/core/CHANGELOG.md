@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.6.0](https://github.com/costajohnt/oss-scout/compare/core-v0.5.0...core-v0.6.0) (2026-04-26)
+
+
+### Features
+
+* add antiLLMPolicy scan on IssueCandidate ([#70](https://github.com/costajohnt/oss-scout/issues/70)) ([#73](https://github.com/costajohnt/oss-scout/issues/73)) ([849d10f](https://github.com/costajohnt/oss-scout/commit/849d10f74d0c140b628dc41fbfd5e60a1027efb6))
+* surface linked-PR metadata on IssueCandidate ([#69](https://github.com/costajohnt/oss-scout/issues/69)) ([#71](https://github.com/costajohnt/oss-scout/issues/71)) ([343f960](https://github.com/costajohnt/oss-scout/commit/343f96005f21e845291de890bd49b229dfd9b97f))
+
+
+### Bug Fixes
+
+* propagate 401/429 in eligibility + repo-health helpers ([#74](https://github.com/costajohnt/oss-scout/issues/74)) ([#76](https://github.com/costajohnt/oss-scout/issues/76)) ([43f5397](https://github.com/costajohnt/oss-scout/commit/43f53972a31b716d39c2a9c07ae09242caa9a819))
+
 ## [0.5.0](https://github.com/costajohnt/oss-scout/compare/core-v0.4.0...core-v0.5.0) (2026-04-18)
 
 ### Features
