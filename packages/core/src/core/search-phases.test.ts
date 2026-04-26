@@ -23,8 +23,27 @@ vi.mock("./errors.js", () => ({
   errorMessage: vi.fn((e: unknown) =>
     e instanceof Error ? e.message : String(e),
   ),
-  isRateLimitError: vi.fn(() => false),
-  getHttpStatusCode: vi.fn(() => undefined),
+  isRateLimitError: vi.fn((e: unknown) => {
+    if (e && typeof e === "object" && "status" in e) {
+      const s = (e as { status: unknown }).status;
+      if (s === 429) return true;
+      if (
+        s === 403 &&
+        e instanceof Error &&
+        e.message.toLowerCase().includes("rate limit")
+      ) {
+        return true;
+      }
+    }
+    return false;
+  }),
+  getHttpStatusCode: vi.fn((e: unknown) => {
+    if (e && typeof e === "object" && "status" in e) {
+      const s = (e as { status: unknown }).status;
+      return typeof s === "number" ? s : undefined;
+    }
+    return undefined;
+  }),
 }));
 
 vi.mock("./search-budget.js", () => ({
@@ -375,6 +394,32 @@ describe("searchInRepos", () => {
 
     expect(result.allBatchesFailed).toBe(true);
     expect(result.candidates).toHaveLength(0);
+  });
+
+  it("propagates 401 auth errors instead of swallowing per-batch", async () => {
+    const authErr = Object.assign(new Error("Unauthorized"), { status: 401 });
+    const octokit = {
+      search: {
+        issuesAndPullRequests: vi.fn().mockRejectedValue(authErr),
+      },
+    } as unknown as Octokit;
+
+    const vetter = makeMockVetter([]);
+
+    // Use unique repo names so we don't hit the cache from earlier tests in
+    // the file (cachedSearchIssues keys include the query, which includes repos).
+    await expect(
+      searchInRepos(
+        octokit,
+        vetter,
+        ["auth-test/r1", "auth-test/r2", "auth-test/r3"],
+        "is:issue is:open",
+        ["unique-401-label"],
+        10,
+        "normal",
+        (items) => items,
+      ),
+    ).rejects.toThrow("Unauthorized");
   });
 
   it("returns partial results when some batches succeed", async () => {

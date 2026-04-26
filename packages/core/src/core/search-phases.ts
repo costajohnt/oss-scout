@@ -534,6 +534,7 @@ export async function searchInRepos(
         if (vetRateLimitHit) rateLimitFailures++;
       }
     } catch (error) {
+      if (getHttpStatusCode(error) === 401) throw error;
       failedBatches++;
       if (isRateLimitError(error)) {
         rateLimitFailures++;

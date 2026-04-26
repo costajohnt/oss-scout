@@ -110,6 +110,36 @@ describe("checkProjectHealth", () => {
     expect(health.failureReason).toBeDefined();
     expect(health.isActive).toBe(false);
   });
+
+  it("propagates 401 auth errors instead of swallowing", async () => {
+    const authErr = Object.assign(new Error("Unauthorized"), { status: 401 });
+    const octokit = {
+      repos: {
+        get: vi.fn().mockRejectedValue(authErr),
+        listCommits: vi.fn().mockRejectedValue(authErr),
+      },
+    } as unknown as Octokit;
+
+    await expect(
+      checkProjectHealth(octokit, "auth-org", "auth-repo"),
+    ).rejects.toThrow("Unauthorized");
+  });
+
+  it("propagates 429 rate-limit errors instead of swallowing", async () => {
+    const rateErr = Object.assign(new Error("API rate limit exceeded"), {
+      status: 429,
+    });
+    const octokit = {
+      repos: {
+        get: vi.fn().mockRejectedValue(rateErr),
+        listCommits: vi.fn().mockRejectedValue(rateErr),
+      },
+    } as unknown as Octokit;
+
+    await expect(
+      checkProjectHealth(octokit, "limited-org", "limited-repo"),
+    ).rejects.toThrow("rate limit");
+  });
 });
 
 // ── fetchContributionGuidelines ──

@@ -121,6 +121,9 @@ export async function checkProjectHealth(
       },
     );
   } catch (error) {
+    if (getHttpStatusCode(error) === 401 || isRateLimitError(error)) {
+      throw error;
+    }
     const errMsg = errorMessage(error);
     warn(
       MODULE,

@@ -408,6 +408,7 @@ async function runPhase3(
       rateLimitHit: vetRateLimitHit,
     };
   } catch (error) {
+    if (getHttpStatusCode(error) === 401) throw error;
     const errMsg = errorMessage(error);
     warn(MODULE, `Error in maintained-repo search: ${errMsg}`);
     return {
