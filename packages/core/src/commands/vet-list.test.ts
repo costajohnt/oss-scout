@@ -174,13 +174,62 @@ describe("vetList", () => {
     expect(result.summary.hasPR).toBe(1);
   });
 
+  it("propagates 401 auth errors instead of swallowing per-item", async () => {
+    const { OssScout } = await import("../scout.js");
+    const state = ScoutStateSchema.parse({ version: 1 });
+    state.savedResults = [
+      makeSavedCandidate({ issueUrl: "https://github.com/a/b/issues/1" }),
+      makeSavedCandidate({ issueUrl: "https://github.com/a/b/issues/2" }),
+    ];
+    const scout = new OssScout("fake-token", state);
+
+    const authErr = Object.assign(new Error("Bad credentials"), {
+      status: 401,
+    });
+    vi.spyOn(scout, "vetIssue").mockRejectedValue(authErr);
+
+    await expect(scout.vetList()).rejects.toThrow("Bad credentials");
+  });
+
+  it("propagates rate-limit errors instead of producing N error rows", async () => {
+    const { OssScout } = await import("../scout.js");
+    const state = ScoutStateSchema.parse({ version: 1 });
+    state.savedResults = [
+      makeSavedCandidate({ issueUrl: "https://github.com/a/b/issues/1" }),
+      makeSavedCandidate({ issueUrl: "https://github.com/a/b/issues/2" }),
+    ];
+    const scout = new OssScout("fake-token", state);
+
+    const rateErr = Object.assign(new Error("API rate limit exceeded"), {
+      status: 429,
+    });
+    vi.spyOn(scout, "vetIssue").mockRejectedValue(rateErr);
+
+    await expect(scout.vetList()).rejects.toThrow("rate limit");
+  });
+
+  it("classifies closed issues from 410 (gone) errors", async () => {
+    const { OssScout } = await import("../scout.js");
+    const state = ScoutStateSchema.parse({ version: 1 });
+    state.savedResults = [makeSavedCandidate()];
+    const scout = new OssScout("fake-token", state);
+
+    const gone = Object.assign(new Error("Gone"), { status: 410 });
+    vi.spyOn(scout, "vetIssue").mockRejectedValue(gone);
+
+    const result = await scout.vetList();
+    expect(result.results[0].status).toBe("closed");
+    expect(result.summary.closed).toBe(1);
+  });
+
   it("classifies closed issues from 404 errors", async () => {
     const { OssScout } = await import("../scout.js");
     const state = ScoutStateSchema.parse({ version: 1 });
     state.savedResults = [makeSavedCandidate()];
     const scout = new OssScout("fake-token", state);
 
-    vi.spyOn(scout, "vetIssue").mockRejectedValue(new Error("Not Found"));
+    const notFound = Object.assign(new Error("Not Found"), { status: 404 });
+    vi.spyOn(scout, "vetIssue").mockRejectedValue(notFound);
 
     const result = await scout.vetList();
 
@@ -236,7 +285,9 @@ describe("vetList", () => {
       callCount++;
       if (callCount === 1) return makeIssueCandidate(); // still_available
       if (callCount === 2) return makeIssueCandidate({ notClaimed: false }); // claimed
-      if (callCount === 3) throw new Error("Not Found"); // closed
+      if (callCount === 3) {
+        throw Object.assign(new Error("Not Found"), { status: 404 }); // closed
+      }
       return makeIssueCandidate({ noExistingPR: false }); // has_pr
     });
 

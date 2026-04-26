@@ -16,7 +16,12 @@ import {
   type IssueCandidate,
   type ProjectCategory,
 } from "./types.js";
-import { ValidationError, errorMessage, isRateLimitError } from "./errors.js";
+import {
+  ValidationError,
+  errorMessage,
+  getHttpStatusCode,
+  isRateLimitError,
+} from "./errors.js";
 import { debug, warn } from "./logger.js";
 import {
   calculateRepoQualityBonus,
@@ -383,9 +388,15 @@ export class IssueVetter {
     let failedVettingCount = 0;
     let rateLimitFailures = 0;
     let attemptedCount = 0;
+    // Capture the first 401 so we can re-throw after in-flight tasks settle.
+    // Per-item tolerance is right for transient failures, but a 401 means
+    // the token is invalid and no other issue will succeed either —
+    // continuing to log per-issue warnings buries the actual problem.
+    let firstAuthError: unknown = null;
 
     for (const url of urls) {
       if (candidates.length >= maxResults) break;
+      if (firstAuthError) break; // stop scheduling once auth has failed
       attemptedCount++;
 
       const task = this.vetIssue(url)
@@ -399,6 +410,10 @@ export class IssueVetter {
           }
         })
         .catch((error) => {
+          if (getHttpStatusCode(error) === 401) {
+            firstAuthError ??= error;
+            return;
+          }
           failedVettingCount++;
           if (isRateLimitError(error)) {
             rateLimitFailures++;
@@ -417,6 +432,16 @@ export class IssueVetter {
 
     // Wait for remaining
     await Promise.allSettled(pending.values());
+
+    if (firstAuthError) {
+      if (candidates.length > 0) {
+        warn(
+          MODULE,
+          `Auth failed mid-batch after ${candidates.length} successful vet(s) — discarding partial results`,
+        );
+      }
+      throw firstAuthError;
+    }
 
     const allFailed =
       failedVettingCount === attemptedCount && attemptedCount > 0;
