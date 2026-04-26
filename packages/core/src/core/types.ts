@@ -63,12 +63,27 @@ export interface AntiLLMPolicyResult {
   sourceFile: AntiLLMPolicySourceFile | null;
 }
 
+/**
+ * Optional SLM (small language model) pre-triage classification for an
+ * issue (oss-autopilot#1122). Populated when the user has configured
+ * `slmTriageModel` and a local Ollama instance is reachable. Always
+ * fail-open: any error path leaves this `null`.
+ */
+export interface SLMTriageSummary {
+  decision: "pursue" | "investigate" | "skip";
+  confidence: "high" | "medium" | "low";
+  reasons: string[];
+  modelVersion: string;
+}
+
 /** A fully vetted issue candidate with scoring. */
 export interface IssueCandidate {
   issue: TrackedIssue;
   vettingResult: IssueVettingResult;
   projectHealth: ProjectHealth;
   antiLLMPolicy: AntiLLMPolicyResult;
+  /** SLM pre-triage result, or `null` when not configured / unavailable. */
+  slmTriage: SLMTriageSummary | null;
   recommendation: "approve" | "skip" | "needs_review";
   reasonsToSkip: string[];
   reasonsToApprove: string[];
