@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/costajohnt/oss-scout/compare/core-v0.6.0...core-v0.7.0) (2026-04-26)
+
+
+### Features
+
+* optional SLM pre-triage pass during issue vetting ([#81](https://github.com/costajohnt/oss-scout/issues/81)) ([1c50091](https://github.com/costajohnt/oss-scout/commit/1c5009116d0539a4b17b8fe8e06afdd0c33ecb56))
+
 ## [0.6.0](https://github.com/costajohnt/oss-scout/compare/core-v0.5.0...core-v0.6.0) (2026-04-26)
 
 
