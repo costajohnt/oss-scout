@@ -138,9 +138,11 @@ describe("fetchContributionGuidelines", () => {
   });
 
   it("returns undefined when no CONTRIBUTING.md found (404)", async () => {
+    const err = new Error("Not Found") as Error & { status: number };
+    err.status = 404;
     const octokit = {
       repos: {
-        getContent: vi.fn().mockRejectedValue(new Error("Not Found")),
+        getContent: vi.fn().mockRejectedValue(err),
       },
     } as unknown as Octokit;
 
@@ -150,5 +152,66 @@ describe("fetchContributionGuidelines", () => {
       "missing-repo",
     );
     expect(guidelines).toBeUndefined();
+  });
+
+  it("propagates 401 auth errors instead of swallowing", async () => {
+    const err = new Error("Unauthorized") as Error & { status: number };
+    err.status = 401;
+    const octokit = {
+      repos: {
+        getContent: vi.fn().mockRejectedValue(err),
+      },
+    } as unknown as Octokit;
+
+    await expect(
+      fetchContributionGuidelines(octokit, "auth-org", "auth-repo"),
+    ).rejects.toThrow("Unauthorized");
+  });
+
+  it("propagates 429 rate-limit errors instead of swallowing", async () => {
+    const err = new Error("API rate limit exceeded") as Error & {
+      status: number;
+    };
+    err.status = 429;
+    const octokit = {
+      repos: {
+        getContent: vi.fn().mockRejectedValue(err),
+      },
+    } as unknown as Octokit;
+
+    await expect(
+      fetchContributionGuidelines(octokit, "limited-org", "limited-repo"),
+    ).rejects.toThrow("rate limit");
+  });
+
+  it("propagates 401 even when a different probe path succeeded first", async () => {
+    // Path-restricted token: CONTRIBUTING.md returns content, but
+    // .github/CONTRIBUTING.md 401s. Auth misconfig must surface, not be hidden.
+    const authErr = new Error("Unauthorized") as Error & { status: number };
+    authErr.status = 401;
+    const content = "# Contributing\n\nUse conventional commits.";
+    const octokit = {
+      repos: {
+        getContent: vi.fn(({ path }: { path: string }) => {
+          if (path === "CONTRIBUTING.md") {
+            return Promise.resolve({
+              data: { content: Buffer.from(content).toString("base64") },
+            });
+          }
+          if (path === ".github/CONTRIBUTING.md") {
+            return Promise.reject(authErr);
+          }
+          const notFound = new Error("Not Found") as Error & {
+            status: number;
+          };
+          notFound.status = 404;
+          return Promise.reject(notFound);
+        }),
+      },
+    } as unknown as Octokit;
+
+    await expect(
+      fetchContributionGuidelines(octokit, "mixed-org", "mixed-repo"),
+    ).rejects.toThrow("Unauthorized");
   });
 });

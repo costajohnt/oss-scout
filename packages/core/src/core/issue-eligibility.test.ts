@@ -39,6 +39,15 @@ const mockPaginateAll = vi.mocked(paginateAll);
 
 // ── Helpers ────────────────────────────────────────────────────────
 
+function httpError(
+  status: number,
+  message: string,
+): Error & { status: number } {
+  const err = new Error(message) as Error & { status: number };
+  err.status = status;
+  return err;
+}
+
 function makeMockOctokit(overrides: Record<string, unknown> = {}): Octokit {
   return {
     issues: {
@@ -233,6 +242,24 @@ describe("checkNoExistingPR", () => {
     expect(result.linkedPR).toBeNull();
   });
 
+  it("propagates 401 auth errors instead of swallowing", async () => {
+    mockPaginateAll.mockRejectedValue(httpError(401, "Unauthorized"));
+    const octokit = makeMockOctokit();
+    await expect(
+      checkNoExistingPR(octokit, "owner", "repo", 1),
+    ).rejects.toThrow("Unauthorized");
+  });
+
+  it("propagates 429 rate-limit errors instead of swallowing", async () => {
+    mockPaginateAll.mockRejectedValue(
+      httpError(429, "API rate limit exceeded"),
+    );
+    const octokit = makeMockOctokit();
+    await expect(
+      checkNoExistingPR(octokit, "owner", "repo", 1),
+    ).rejects.toThrow("rate limit");
+  });
+
   it("returns passed:true when timeline is empty", async () => {
     mockPaginateAll.mockResolvedValue([]);
     const octokit = makeMockOctokit();
@@ -296,6 +323,26 @@ describe("checkNotClaimed", () => {
     expect(result.reason).toContain("Network error");
   });
 
+  it("propagates 401 auth errors instead of swallowing", async () => {
+    const octokit = makeMockOctokit({
+      paginate: vi.fn().mockRejectedValue(httpError(401, "Unauthorized")),
+    });
+    await expect(
+      checkNotClaimed(octokit, "owner", "repo", 1, 3),
+    ).rejects.toThrow("Unauthorized");
+  });
+
+  it("propagates 429 rate-limit errors instead of swallowing", async () => {
+    const octokit = makeMockOctokit({
+      paginate: vi
+        .fn()
+        .mockRejectedValue(httpError(429, "API rate limit exceeded")),
+    });
+    await expect(
+      checkNotClaimed(octokit, "owner", "repo", 1, 3),
+    ).rejects.toThrow("rate limit");
+  });
+
   it("returns passed:true when commentCount is zero (skips API)", async () => {
     const paginateFn = vi.fn();
     const octokit = makeMockOctokit({ paginate: paginateFn });
@@ -356,6 +403,32 @@ describe("checkUserMergedPRsInRepo", () => {
     });
     const result = await checkUserMergedPRsInRepo(octokit, "owner", "repo");
     expect(result).toBe(0);
+  });
+
+  it("propagates 401 auth errors instead of returning 0", async () => {
+    const octokit = makeMockOctokit({
+      search: {
+        issuesAndPullRequests: vi
+          .fn()
+          .mockRejectedValue(httpError(401, "Unauthorized")),
+      },
+    });
+    await expect(
+      checkUserMergedPRsInRepo(octokit, "owner", "repo"),
+    ).rejects.toThrow("Unauthorized");
+  });
+
+  it("propagates 429 rate-limit errors instead of returning 0", async () => {
+    const octokit = makeMockOctokit({
+      search: {
+        issuesAndPullRequests: vi
+          .fn()
+          .mockRejectedValue(httpError(429, "API rate limit exceeded")),
+      },
+    });
+    await expect(
+      checkUserMergedPRsInRepo(octokit, "owner", "repo"),
+    ).rejects.toThrow("rate limit");
   });
 });
 
