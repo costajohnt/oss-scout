@@ -35,6 +35,13 @@ vi.mock("./errors.js", () => ({
   errorMessage: vi.fn((e: unknown) =>
     e instanceof Error ? e.message : String(e),
   ),
+  getHttpStatusCode: vi.fn((e: unknown) => {
+    if (e && typeof e === "object" && "status" in e) {
+      const s = (e as { status: unknown }).status;
+      return typeof s === "number" ? s : undefined;
+    }
+    return undefined;
+  }),
   isRateLimitError: vi.fn(() => false),
 }));
 
@@ -531,6 +538,28 @@ describe("IssueVetter", () => {
         10,
       );
       expect(result.rateLimitHit).toBe(true);
+    });
+
+    it("propagates 401 auth errors instead of swallowing per-item", async () => {
+      const authErr = Object.assign(new Error("Bad credentials"), {
+        status: 401,
+      });
+      const octokit = {
+        issues: { get: vi.fn().mockRejectedValue(authErr) },
+      } as unknown as Octokit;
+
+      const stateReader = makeStubStateReader();
+      const vetter = new IssueVetter(octokit, stateReader);
+      await expect(
+        vetter.vetIssuesParallel(
+          [
+            "https://github.com/owner/repo/issues/1",
+            "https://github.com/owner/repo/issues/2",
+            "https://github.com/owner/repo/issues/3",
+          ],
+          10,
+        ),
+      ).rejects.toThrow("Bad credentials");
     });
   });
 });

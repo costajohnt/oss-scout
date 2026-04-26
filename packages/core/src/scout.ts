@@ -36,6 +36,11 @@ import type { Octokit } from "@octokit/rest";
 import { loadLocalState } from "./core/local-state.js";
 import { warn } from "./core/logger.js";
 import { extractRepoFromUrl } from "./core/utils.js";
+import {
+  errorMessage,
+  getHttpStatusCode,
+  isRateLimitError,
+} from "./core/errors.js";
 
 /** Wrap a real Octokit instance as GistOctokitLike without unsafe double casts. */
 function toGistOctokit(octokit: Octokit): GistOctokitLike {
@@ -210,8 +215,15 @@ export class OssScout implements ScoutStateReader {
     const concurrency = options?.concurrency ?? 5;
     const results: VetListEntry[] = [];
     const pending = new Map<string, Promise<void>>();
+    // First 401 OR rate-limit short-circuits the whole batch. Unlike
+    // vetIssuesParallel (which has a batch-level rateLimitHit flag the
+    // search orchestrator surfaces via rateLimitWarning), vetList is the
+    // user-facing CLI entry point — N rows of "rate limit exceeded" is the
+    // exact silent-failure mode the documented strategy aims to prevent.
+    let firstHardError: unknown = null;
 
     for (const item of saved) {
+      if (firstHardError) break;
       const task = this.vetIssue(item.issueUrl)
         .then((candidate) => {
           results.push({
@@ -225,15 +237,19 @@ export class OssScout implements ScoutStateReader {
           });
         })
         .catch((error) => {
-          const msg = error instanceof Error ? error.message : String(error);
-          const isGone = msg.includes("Not Found") || msg.includes("410");
+          if (getHttpStatusCode(error) === 401 || isRateLimitError(error)) {
+            firstHardError ??= error;
+            return;
+          }
+          const status = getHttpStatusCode(error);
+          const isGone = status === 404 || status === 410;
           results.push({
             issueUrl: item.issueUrl,
             repo: item.repo,
             number: item.number,
             title: item.title,
             status: isGone ? "closed" : "error",
-            errorMessage: msg,
+            errorMessage: errorMessage(error),
           });
         })
         .finally(() => {
@@ -246,6 +262,16 @@ export class OssScout implements ScoutStateReader {
       }
     }
     await Promise.allSettled(pending.values());
+
+    if (firstHardError) {
+      if (results.length > 0) {
+        warn(
+          "scout",
+          `vetList aborted mid-batch after ${results.length} result(s) — discarding partial results due to auth/rate-limit failure`,
+        );
+      }
+      throw firstHardError;
+    }
 
     const summary = {
       total: results.length,
