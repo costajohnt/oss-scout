@@ -320,4 +320,109 @@ describe("fetchAndScanAntiLLMPolicy", () => {
     expect(result.matched).toBe(false);
     expect(result.sourceFile).toBeNull();
   });
+
+  // ── Caller-provided contributingText (deduplication) ────────────────
+
+  it("uses caller-provided contributingText without fetching CONTRIBUTING.md", async () => {
+    const getContent = vi.fn(() => {
+      const notFound = new Error("Not Found") as Error & { status: number };
+      notFound.status = 404;
+      return Promise.reject(notFound);
+    });
+    const octokit = { repos: { getContent } } as unknown as Octokit;
+
+    const result = await fetchAndScanAntiLLMPolicy(octokit, "owner", "repo", {
+      contributingText:
+        "We require human-authored only contributions. No exceptions.",
+    });
+
+    expect(result).toEqual({
+      matched: true,
+      matchedKeywords: ["human-authored only"],
+      sourceFile: "CONTRIBUTING.md",
+    });
+    // No CONTRIBUTING family probe should have been issued.
+    const probedPaths = getContent.mock.calls.map(
+      (c) => (c[0] as { path: string }).path,
+    );
+    expect(probedPaths).not.toContain("CONTRIBUTING.md");
+    expect(probedPaths).not.toContain(".github/CONTRIBUTING.md");
+    expect(probedPaths).not.toContain("docs/CONTRIBUTING.md");
+    expect(probedPaths).not.toContain("contributing.md");
+  });
+
+  it("skips CONTRIBUTING family entirely when contributingText is null (known absent)", async () => {
+    const getContent = vi.fn(({ path }: { path: string }) => {
+      if (path === "CODE_OF_CONDUCT.md") {
+        return Promise.resolve({
+          data: {
+            content: Buffer.from(
+              "All contributions must be human-written only.",
+            ).toString("base64"),
+          },
+        });
+      }
+      const notFound = new Error("Not Found") as Error & { status: number };
+      notFound.status = 404;
+      return Promise.reject(notFound);
+    });
+    const octokit = { repos: { getContent } } as unknown as Octokit;
+
+    const result = await fetchAndScanAntiLLMPolicy(octokit, "owner", "repo", {
+      contributingText: null,
+    });
+
+    expect(result.sourceFile).toBe("CODE_OF_CONDUCT.md");
+    const probedPaths = getContent.mock.calls.map(
+      (c) => (c[0] as { path: string }).path,
+    );
+    expect(probedPaths).not.toContain("CONTRIBUTING.md");
+    expect(probedPaths).not.toContain(".github/CONTRIBUTING.md");
+  });
+
+  it("falls through to COC when caller-provided contributingText has no match", async () => {
+    const octokit = makeMockOctokit({
+      "CODE_OF_CONDUCT.md":
+        "All contributions must be human-authored only. No AI tools.",
+    });
+
+    const result = await fetchAndScanAntiLLMPolicy(octokit, "owner", "repo", {
+      contributingText: "Just a plain CONTRIBUTING with no keywords.",
+    });
+
+    expect(result.matched).toBe(true);
+    expect(result.sourceFile).toBe("CODE_OF_CONDUCT.md");
+  });
+
+  it("falls back to its own CONTRIBUTING fetch when contributingText is undefined", async () => {
+    // When the caller couldn't pre-fetch (e.g., contributionGuidelines was
+    // undefined due to a transient 5xx), passing contributingText: undefined
+    // must NOT short-circuit. We need the existing transient-failure tracking.
+    const getContent = vi.fn(({ path }: { path: string }) => {
+      if (path === "CONTRIBUTING.md") {
+        return Promise.resolve({
+          data: {
+            content: Buffer.from(
+              "We accept human-authored only contributions.",
+            ).toString("base64"),
+          },
+        });
+      }
+      const notFound = new Error("Not Found") as Error & { status: number };
+      notFound.status = 404;
+      return Promise.reject(notFound);
+    });
+    const octokit = { repos: { getContent } } as unknown as Octokit;
+
+    const result = await fetchAndScanAntiLLMPolicy(octokit, "owner", "repo", {
+      contributingText: undefined,
+    });
+
+    expect(result.matched).toBe(true);
+    expect(result.sourceFile).toBe("CONTRIBUTING.md");
+    const probedPaths = getContent.mock.calls.map(
+      (c) => (c[0] as { path: string }).path,
+    );
+    expect(probedPaths).toContain("CONTRIBUTING.md");
+  });
 });

@@ -116,7 +116,6 @@ export class IssueVetter {
       projectHealth,
       contributionGuidelines,
       userMergedPRCount,
-      antiLLMPolicy,
     ] = await Promise.all([
       checkNoExistingPR(this.octokit, owner, repo, number),
       checkNotClaimed(this.octokit, owner, repo, number, ghIssue.comments),
@@ -125,8 +124,20 @@ export class IssueVetter {
       hasMergedPRsInRepo
         ? Promise.resolve(0)
         : checkUserMergedPRsInRepo(this.octokit, owner, repo),
-      fetchAndScanAntiLLMPolicy(this.octokit, owner, repo),
     ]);
+
+    // Anti-LLM scan reuses the CONTRIBUTING text just fetched above —
+    // dedup'd to avoid 4 redundant getContent calls on cold-cache repos.
+    // We deliberately pass undefined (not null) when guidelines is missing,
+    // because fetchContributionGuidelines returns undefined for BOTH a 404
+    // and a transient 5xx — collapsing them to null would bypass the
+    // anti-llm-policy transient-failure cache safeguard.
+    const antiLLMPolicy = await fetchAndScanAntiLLMPolicy(
+      this.octokit,
+      owner,
+      repo,
+      { contributingText: contributionGuidelines?.rawContent },
+    );
 
     const noExistingPR = existingPRCheck.passed;
     const notClaimed = claimCheck.passed;
