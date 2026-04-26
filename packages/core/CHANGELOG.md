@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.8.0](https://github.com/costajohnt/oss-scout/compare/core-v0.7.1...core-v0.8.0) (2026-04-26)
+
+
+### Features
+
+* distinguish cause in degraded-mode bootstrap warning ([#90](https://github.com/costajohnt/oss-scout/issues/90)) ([#91](https://github.com/costajohnt/oss-scout/issues/91)) ([b40455a](https://github.com/costajohnt/oss-scout/commit/b40455a0c6f09bac7ac1e06bf8d1656847c1a1b9))
+
+
+### Bug Fixes
+
+* add 401/rate-limit propagation guards to remaining core/ catches ([#80](https://github.com/costajohnt/oss-scout/issues/80)) ([#85](https://github.com/costajohnt/oss-scout/issues/85)) ([961e235](https://github.com/costajohnt/oss-scout/commit/961e2350b9873af93c48a556846c24ef7fde4f23))
+* propagate 401/rate-limit in gist-state-store ([#88](https://github.com/costajohnt/oss-scout/issues/88)) ([#89](https://github.com/costajohnt/oss-scout/issues/89)) ([cecc393](https://github.com/costajohnt/oss-scout/commit/cecc39384f31424c40e5da1e5284c029fa3bb6a7))
+* propagate 401/rate-limit through vetIssuesParallel and vetList ([#79](https://github.com/costajohnt/oss-scout/issues/79)) ([#87](https://github.com/costajohnt/oss-scout/issues/87)) ([231e559](https://github.com/costajohnt/oss-scout/commit/231e559079b5ebf42706ff3d4177b99e6fdafe7e))
+
 ## [0.7.1](https://github.com/costajohnt/oss-scout/compare/core-v0.7.0...core-v0.7.1) (2026-04-26)
 
 
