@@ -145,7 +145,8 @@ export async function triageWithSLM(
   }
 
   // Ollama `chat` returns { message: { content: string }, ... }.
-  const content = (payload as { message?: { content?: string } })?.message?.content;
+  const content = (payload as { message?: { content?: string } })?.message
+    ?.content;
   if (typeof content !== "string") return null;
 
   let parsed: unknown;
@@ -175,7 +176,11 @@ export function buildTriageInput(args: {
   linkedPR: LinkedPR | null | undefined;
 }): SLMTriageInput {
   return {
-    issue: { title: args.issue.title, labels: args.issue.labels, body: args.issue.body },
+    issue: {
+      title: args.issue.title,
+      labels: args.issue.labels,
+      body: args.issue.body,
+    },
     linkedPRExists: !!args.linkedPR,
   };
 }
@@ -187,9 +192,24 @@ function isValidTriageShape(value: unknown): value is {
 } {
   if (typeof value !== "object" || value === null) return false;
   const v = value as Record<string, unknown>;
-  if (v.decision !== "pursue" && v.decision !== "investigate" && v.decision !== "skip") return false;
-  if (v.confidence !== "high" && v.confidence !== "medium" && v.confidence !== "low") return false;
-  if (!Array.isArray(v.reasons) || v.reasons.length === 0 || v.reasons.length > 3) return false;
+  if (
+    v.decision !== "pursue" &&
+    v.decision !== "investigate" &&
+    v.decision !== "skip"
+  )
+    return false;
+  if (
+    v.confidence !== "high" &&
+    v.confidence !== "medium" &&
+    v.confidence !== "low"
+  )
+    return false;
+  if (
+    !Array.isArray(v.reasons) ||
+    v.reasons.length === 0 ||
+    v.reasons.length > 3
+  )
+    return false;
   if (!v.reasons.every((r) => typeof r === "string")) return false;
   return true;
 }

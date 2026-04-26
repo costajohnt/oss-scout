@@ -35,7 +35,11 @@ import {
 } from "./repo-health.js";
 import { fetchAndScanAntiLLMPolicy } from "./anti-llm-policy.js";
 import { getHttpCache } from "./http-cache.js";
-import { triageWithSLM, buildTriageInput, type SLMTriageOptions } from "./slm-triage.js";
+import {
+  triageWithSLM,
+  buildTriageInput,
+  type SLMTriageOptions,
+} from "./slm-triage.js";
 
 const MODULE = "issue-vetting";
 
@@ -326,7 +330,10 @@ export class IssueVetter {
 
     // Optional SLM pre-triage (oss-autopilot#1122). Fail-open: any error
     // path returns null and the rest of the pipeline is unaffected.
-    const slmConfig = this.stateReader.getSLMTriageConfig?.() ?? { model: "", host: "" };
+    const slmConfig = this.stateReader.getSLMTriageConfig?.() ?? {
+      model: "",
+      host: "",
+    };
     let slmTriage: IssueCandidate["slmTriage"] = null;
     if (slmConfig.model) {
       const slmOpts: SLMTriageOptions = { model: slmConfig.model };

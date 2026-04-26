@@ -8,8 +8,12 @@ const ISSUE = {
 };
 
 function mockFetchOk(body: unknown): typeof fetch {
-  return vi.fn(async () =>
-    new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } }),
+  return vi.fn(
+    async () =>
+      new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
   ) as unknown as typeof fetch;
 }
 
@@ -47,8 +51,8 @@ describe("triageWithSLM", () => {
   });
 
   it("returns null when Ollama returns a non-200 status", async () => {
-    const fetchImpl = vi.fn(async () =>
-      new Response("server error", { status: 500 }),
+    const fetchImpl = vi.fn(
+      async () => new Response("server error", { status: 500 }),
     ) as unknown as typeof fetch;
 
     const result = await triageWithSLM(
@@ -73,8 +77,8 @@ describe("triageWithSLM", () => {
   });
 
   it("returns null when the response body is not valid JSON", async () => {
-    const fetchImpl = vi.fn(async () =>
-      new Response("not valid json", { status: 200 }),
+    const fetchImpl = vi.fn(
+      async () => new Response("not valid json", { status: 200 }),
     ) as unknown as typeof fetch;
 
     const result = await triageWithSLM(
@@ -156,11 +160,20 @@ describe("triageWithSLM", () => {
   });
 
   it("posts to the configured host", async () => {
-    const fetchImpl = vi.fn(async () =>
-      new Response(
-        JSON.stringify({ message: { content: JSON.stringify({ decision: "skip", confidence: "low", reasons: ["x"] }) } }),
-        { status: 200 },
-      ),
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            message: {
+              content: JSON.stringify({
+                decision: "skip",
+                confidence: "low",
+                reasons: ["x"],
+              }),
+            },
+          }),
+          { status: 200 },
+        ),
     ) as unknown as typeof fetch;
 
     await triageWithSLM(
@@ -174,14 +187,26 @@ describe("triageWithSLM", () => {
   });
 
   it("includes the configured model in the request body", async () => {
-    const fetchImpl = vi.fn(async () =>
-      new Response(
-        JSON.stringify({ message: { content: JSON.stringify({ decision: "skip", confidence: "low", reasons: ["x"] }) } }),
-        { status: 200 },
-      ),
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            message: {
+              content: JSON.stringify({
+                decision: "skip",
+                confidence: "low",
+                reasons: ["x"],
+              }),
+            },
+          }),
+          { status: 200 },
+        ),
     ) as unknown as typeof fetch;
 
-    await triageWithSLM({ issue: ISSUE, linkedPRExists: false }, { model: "qwen3:4b", fetchImpl });
+    await triageWithSLM(
+      { issue: ISSUE, linkedPRExists: false },
+      { model: "qwen3:4b", fetchImpl },
+    );
 
     const body = JSON.parse(
       (fetchImpl as ReturnType<typeof vi.fn>).mock.calls[0][1].body,
@@ -195,8 +220,16 @@ describe("triageWithSLM", () => {
 describe("buildTriageInput", () => {
   it("flattens issue and linkedPR existence into prompt input", () => {
     const result = buildTriageInput({
-      issue: { title: "T", labels: ["L"], body: "B" } as Parameters<typeof buildTriageInput>[0]["issue"],
-      linkedPR: { number: 1, author: "x", state: "open", merged: false, url: "https://x" },
+      issue: { title: "T", labels: ["L"], body: "B" } as Parameters<
+        typeof buildTriageInput
+      >[0]["issue"],
+      linkedPR: {
+        number: 1,
+        author: "x",
+        state: "open",
+        merged: false,
+        url: "https://x",
+      },
     });
     expect(result).toEqual({
       issue: { title: "T", labels: ["L"], body: "B" },
@@ -206,7 +239,9 @@ describe("buildTriageInput", () => {
 
   it("sets linkedPRExists to false when null", () => {
     const result = buildTriageInput({
-      issue: { title: "T", labels: [], body: "" } as Parameters<typeof buildTriageInput>[0]["issue"],
+      issue: { title: "T", labels: [], body: "" } as Parameters<
+        typeof buildTriageInput
+      >[0]["issue"],
       linkedPR: null,
     });
     expect(result.linkedPRExists).toBe(false);
