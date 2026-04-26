@@ -297,9 +297,88 @@ describe("GistStateStore", () => {
         const result = await store.bootstrap();
 
         expect(result.degraded).toBe(true);
+        expect(result.degradedReason).toBe("rate_limit");
         expect(result.state.preferences.githubUsername).toBe(
           "cached-during-ratelimit",
         );
+      });
+
+      it("classifies a 5xx server error as 'server'", async () => {
+        const serverErr = Object.assign(new Error("Bad gateway"), {
+          status: 502,
+        });
+        const octokit = makeOctokit({
+          list: vi.fn().mockRejectedValue(serverErr),
+        });
+        const store = new GistStateStore(octokit);
+        const result = await store.bootstrap();
+        expect(result.degraded).toBe(true);
+        expect(result.degradedReason).toBe("server");
+      });
+
+      it("classifies a 403+rate-limit-message as 'rate_limit'", async () => {
+        const abuseErr = Object.assign(
+          new Error("You have exceeded a secondary rate limit"),
+          { status: 403 },
+        );
+        const octokit = makeOctokit({
+          list: vi.fn().mockRejectedValue(abuseErr),
+        });
+        const store = new GistStateStore(octokit);
+        const result = await store.bootstrap();
+        expect(result.degradedReason).toBe("rate_limit");
+      });
+
+      it("classifies a 403+abuse-detection-message as 'rate_limit'", async () => {
+        // GitHub's older abuse-detection 403s use this phrasing without the
+        // "rate limit" substring — resolveErrorCode in errors.ts handles both;
+        // the classifier must too.
+        const abuseErr = Object.assign(
+          new Error("You have triggered an abuse detection mechanism"),
+          { status: 403 },
+        );
+        const octokit = makeOctokit({
+          list: vi.fn().mockRejectedValue(abuseErr),
+        });
+        const store = new GistStateStore(octokit);
+        const result = await store.bootstrap();
+        expect(result.degradedReason).toBe("rate_limit");
+      });
+
+      it("classifies a network error (ENOTFOUND) as 'network'", async () => {
+        const netErr = Object.assign(
+          new Error("getaddrinfo ENOTFOUND api.github.com"),
+          {
+            code: "ENOTFOUND",
+          },
+        );
+        const octokit = makeOctokit({
+          list: vi.fn().mockRejectedValue(netErr),
+        });
+        const store = new GistStateStore(octokit);
+        const result = await store.bootstrap();
+        expect(result.degradedReason).toBe("network");
+      });
+
+      it("classifies a Node fetch failure as 'network'", async () => {
+        // Node 18+ undici-backed fetch errors arrive as `Error: fetch failed`
+        // with no .status and no .code (cause is on err.cause).
+        const fetchErr = new Error("fetch failed");
+        const octokit = makeOctokit({
+          list: vi.fn().mockRejectedValue(fetchErr),
+        });
+        const store = new GistStateStore(octokit);
+        const result = await store.bootstrap();
+        expect(result.degradedReason).toBe("network");
+      });
+
+      it("classifies an unrecognized error as 'unknown'", async () => {
+        const octokit = makeOctokit({
+          list: vi.fn().mockRejectedValue(new Error("Something weird")),
+        });
+        const store = new GistStateStore(octokit);
+        const result = await store.bootstrap();
+        expect(result.degradedReason).toBe("unknown");
       });
     });
   });

@@ -52,11 +52,51 @@ export interface GistOctokitLike {
   };
 }
 
+/** Why bootstrap fell back to local-cache mode, when known. */
+export type DegradedReason = "rate_limit" | "network" | "server" | "unknown";
+
 export interface BootstrapResult {
   gistId: string;
   state: ScoutState;
   created: boolean;
   degraded?: boolean;
+  degradedReason?: DegradedReason;
+}
+
+/** Classify an unknown error into a DegradedReason for user-facing messaging. */
+function classifyDegradedReason(err: unknown): DegradedReason {
+  if (isRateLimitError(err)) return "rate_limit";
+  const status = getHttpStatusCode(err);
+  // GitHub's abuse-detection responses arrive as 403 with "abuse detection"
+  // in the message but no "rate limit" substring — match resolveErrorCode's
+  // logic in errors.ts so we don't misclassify as 'unknown'.
+  if (
+    status === 403 &&
+    errorMessage(err).toLowerCase().includes("abuse detection")
+  ) {
+    return "rate_limit";
+  }
+  if (status !== undefined && status >= 500 && status < 600) return "server";
+  if (err && typeof err === "object" && "code" in err) {
+    const code = (err as { code: unknown }).code;
+    if (
+      code === "ECONNREFUSED" ||
+      code === "ENOTFOUND" ||
+      code === "ETIMEDOUT" ||
+      code === "ECONNRESET" ||
+      code === "EAI_AGAIN"
+    ) {
+      return "network";
+    }
+  }
+  // Node 18+ fetch errors arrive as `Error: fetch failed` with the cause set.
+  if (
+    err instanceof Error &&
+    err.message.toLowerCase().includes("fetch failed")
+  ) {
+    return "network";
+  }
+  return "unknown";
 }
 
 function getGistIdPath(): string {
@@ -85,7 +125,7 @@ export class GistStateStore {
       // keep working offline until the issue resolves.
       if (getHttpStatusCode(err) === 401) throw err;
       warn(MODULE, `API bootstrap failed: ${errorMessage(err)}`);
-      return this.bootstrapFromCache();
+      return this.bootstrapFromCache(classifyDegradedReason(err));
     }
   }
 
@@ -195,7 +235,7 @@ export class GistStateStore {
         MODULE,
         `Found existing gist ${foundId} but content failed validation. Using local cache to avoid data loss.`,
       );
-      return this.bootstrapFromCache();
+      return this.bootstrapFromCache("unknown");
     }
 
     // 3. Create new gist
@@ -208,7 +248,7 @@ export class GistStateStore {
     return { gistId: newId, state: freshState, created: true };
   }
 
-  private bootstrapFromCache(): BootstrapResult {
+  private bootstrapFromCache(reason: DegradedReason): BootstrapResult {
     const cached = this.readCache();
     if (cached) {
       debug(MODULE, "Bootstrapped from local cache (degraded mode)");
@@ -219,12 +259,19 @@ export class GistStateStore {
         state: cached,
         created: false,
         degraded: true,
+        degradedReason: reason,
       };
     }
 
     debug(MODULE, "No cache available, using fresh state (degraded mode)");
     const fresh = ScoutStateSchema.parse({ version: 1 });
-    return { gistId: "", state: fresh, created: false, degraded: true };
+    return {
+      gistId: "",
+      state: fresh,
+      created: false,
+      degraded: true,
+      degradedReason: reason,
+    };
   }
 
   // ── Gist API operations ──────────────────────────────────────────────
