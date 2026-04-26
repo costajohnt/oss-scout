@@ -16,7 +16,7 @@ import type {
 } from "./schemas.js";
 import { getDataDir } from "./utils.js";
 import { debug, warn } from "./logger.js";
-import { errorMessage } from "./errors.js";
+import { errorMessage, getHttpStatusCode, isRateLimitError } from "./errors.js";
 
 const MODULE = "gist-state";
 
@@ -80,6 +80,10 @@ export class GistStateStore {
     try {
       return await this.bootstrapFromApi();
     } catch (err) {
+      // 401 means the token is invalid — fail loudly so the user re-auths.
+      // Rate-limit / network / 5xx fall back to local cache so the user can
+      // keep working offline until the issue resolves.
+      if (getHttpStatusCode(err) === 401) throw err;
       warn(MODULE, `API bootstrap failed: ${errorMessage(err)}`);
       return this.bootstrapFromCache();
     }
@@ -115,6 +119,10 @@ export class GistStateStore {
       debug(MODULE, "State pushed to gist");
       return true;
     } catch (err) {
+      // Both auth and rate-limit propagate per documented strategy.
+      // Local cache write already happened above, so the user's work isn't
+      // lost — but they need clear feedback that the sync failed.
+      if (getHttpStatusCode(err) === 401 || isRateLimitError(err)) throw err;
       warn(MODULE, `Failed to push: ${errorMessage(err)}`);
       return false;
     }
@@ -133,6 +141,7 @@ export class GistStateStore {
       }
       return state;
     } catch (err) {
+      if (getHttpStatusCode(err) === 401 || isRateLimitError(err)) throw err;
       warn(MODULE, `Failed to pull: ${errorMessage(err)}`);
       return null;
     }
@@ -158,7 +167,13 @@ export class GistStateStore {
           return { gistId: cachedId, state, created: false };
         }
       } catch (err) {
-        debug(MODULE, `Cached gist ID invalid: ${errorMessage(err)}`);
+        // Only "the cached gist was deleted server-side" (404) justifies
+        // falling through to search. Auth/rate-limit/network must propagate
+        // so the outer bootstrap() catch can apply the documented strategy
+        // — otherwise a 401 here silently creates a brand-new empty gist
+        // for users with stale cached IDs.
+        if (getHttpStatusCode(err) !== 404) throw err;
+        debug(MODULE, `Cached gist gone (404): ${errorMessage(err)}`);
       }
       debug(MODULE, "Cached gist ID invalid, searching...");
     }

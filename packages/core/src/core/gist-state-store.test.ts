@@ -114,10 +114,11 @@ describe("GistStateStore", () => {
     it("falls back to search when cached gist ID is invalid", async () => {
       fs.writeFileSync(path.join(tempDir, "gist-id"), "stale-id\n");
       const state = makeState();
+      const notFound = Object.assign(new Error("Not Found"), { status: 404 });
       const octokit = makeOctokit({
         get: vi
           .fn()
-          .mockRejectedValueOnce(new Error("Not Found"))
+          .mockRejectedValueOnce(notFound)
           .mockResolvedValueOnce(gistResponse(state, "found-gist")),
         list: vi.fn().mockResolvedValue({
           data: [{ id: "found-gist", description: "oss-scout-state" }],
@@ -231,6 +232,75 @@ describe("GistStateStore", () => {
         expect(result.gistId).toBe("");
         expect(result.state.version).toBe(1);
       });
+
+      it("propagates 401 (does NOT fall back to cache silently)", async () => {
+        // Pre-seed a cache so we can verify it's NOT used as the fallback.
+        const sentinelCache = makeState({
+          preferences: { githubUsername: "should-not-be-used" },
+        });
+        fs.writeFileSync(
+          path.join(tempDir, "state-cache.json"),
+          JSON.stringify(sentinelCache),
+        );
+        const authErr = Object.assign(new Error("Bad credentials"), {
+          status: 401,
+        });
+        const octokit = makeOctokit({
+          list: vi.fn().mockRejectedValue(authErr),
+        });
+
+        const store = new GistStateStore(octokit);
+        await expect(store.bootstrap()).rejects.toThrow("Bad credentials");
+        // Verify cache was not consumed as a side-effect-of-throwing.
+        expect(store.getGistId()).toBeNull();
+      });
+
+      it("propagates 401 from cached-gist-ID fetch (not just the search path)", async () => {
+        // Steady-state regression: any user past their first run has a cached
+        // gist-id. A 401 on get-by-id must propagate, not silently fall through
+        // to search-and-create-a-new-empty-gist.
+        fs.writeFileSync(path.join(tempDir, "gist-id"), "stale-id\n");
+        const authErr = Object.assign(new Error("Bad credentials"), {
+          status: 401,
+        });
+        const create = vi.fn();
+        const octokit = makeOctokit({
+          get: vi.fn().mockRejectedValue(authErr),
+          list: vi.fn().mockResolvedValue({ data: [] }),
+          create,
+        });
+
+        const store = new GistStateStore(octokit);
+        await expect(store.bootstrap()).rejects.toThrow("Bad credentials");
+        // Critical: must NOT have created a new gist as a side effect of swallowing.
+        expect(create).not.toHaveBeenCalled();
+      });
+
+      it("falls back to cache on rate-limit (offline mode is desirable)", async () => {
+        // Rate-limit recovery deliberately stays as cache fallback so the
+        // user can keep working until the limit resets.
+        const cachedState = makeState({
+          preferences: { githubUsername: "cached-during-ratelimit" },
+        });
+        fs.writeFileSync(
+          path.join(tempDir, "state-cache.json"),
+          JSON.stringify(cachedState),
+        );
+        const rateErr = Object.assign(new Error("API rate limit exceeded"), {
+          status: 429,
+        });
+        const octokit = makeOctokit({
+          list: vi.fn().mockRejectedValue(rateErr),
+        });
+
+        const store = new GistStateStore(octokit);
+        const result = await store.bootstrap();
+
+        expect(result.degraded).toBe(true);
+        expect(result.state.preferences.githubUsername).toBe(
+          "cached-during-ratelimit",
+        );
+      });
     });
   });
 
@@ -282,6 +352,43 @@ describe("GistStateStore", () => {
       expect(ok).toBe(false);
       expect(fs.existsSync(path.join(tempDir, "state-cache.json"))).toBe(true);
     });
+
+    it("propagates 401 instead of returning false", async () => {
+      const authErr = Object.assign(new Error("Bad credentials"), {
+        status: 401,
+      });
+      const octokit = makeOctokit({
+        list: vi.fn().mockResolvedValue({ data: [] }),
+        create: vi.fn().mockResolvedValue({ data: { id: "gist-1" } }),
+        update: vi.fn().mockRejectedValue(authErr),
+      });
+
+      const store = new GistStateStore(octokit);
+      await store.bootstrap();
+
+      await expect(store.push(makeState())).rejects.toThrow("Bad credentials");
+    });
+
+    it("propagates rate-limit instead of returning false", async () => {
+      // Local cache is written before the API call, so the user's work is
+      // preserved even when push throws — they just get clear feedback that
+      // the gist sync failed (vs. a buried warn line).
+      const rateErr = Object.assign(new Error("API rate limit exceeded"), {
+        status: 429,
+      });
+      const octokit = makeOctokit({
+        list: vi.fn().mockResolvedValue({ data: [] }),
+        create: vi.fn().mockResolvedValue({ data: { id: "gist-1" } }),
+        update: vi.fn().mockRejectedValue(rateErr),
+      });
+
+      const store = new GistStateStore(octokit);
+      await store.bootstrap();
+
+      await expect(store.push(makeState())).rejects.toThrow("rate limit");
+      // Verify local cache write still happened (push writes cache before API call).
+      expect(fs.existsSync(path.join(tempDir, "state-cache.json"))).toBe(true);
+    });
   });
 
   describe("pull", () => {
@@ -324,6 +431,40 @@ describe("GistStateStore", () => {
       const result = await store.pull();
 
       expect(result).toBeNull();
+    });
+
+    it("propagates 401 instead of returning null", async () => {
+      const authErr = Object.assign(new Error("Bad credentials"), {
+        status: 401,
+      });
+      // Bootstrap creates a new gist (no get call needed); pull() then calls
+      // get which fails with 401.
+      const octokit = makeOctokit({
+        list: vi.fn().mockResolvedValue({ data: [] }),
+        create: vi.fn().mockResolvedValue({ data: { id: "gist-1" } }),
+        get: vi.fn().mockRejectedValue(authErr),
+      });
+
+      const store = new GistStateStore(octokit);
+      await store.bootstrap();
+
+      await expect(store.pull()).rejects.toThrow("Bad credentials");
+    });
+
+    it("propagates rate-limit instead of returning null", async () => {
+      const rateErr = Object.assign(new Error("API rate limit exceeded"), {
+        status: 429,
+      });
+      const octokit = makeOctokit({
+        list: vi.fn().mockResolvedValue({ data: [] }),
+        create: vi.fn().mockResolvedValue({ data: { id: "gist-1" } }),
+        get: vi.fn().mockRejectedValue(rateErr),
+      });
+
+      const store = new GistStateStore(octokit);
+      await store.bootstrap();
+
+      await expect(store.pull()).rejects.toThrow("rate limit");
     });
   });
 
