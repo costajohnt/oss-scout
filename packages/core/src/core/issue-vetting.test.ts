@@ -48,7 +48,9 @@ vi.mock("./category-mapping.js", () => ({
 }));
 
 vi.mock("./issue-eligibility.js", () => ({
-  checkNoExistingPR: vi.fn().mockResolvedValue({ passed: true, linkedPR: null }),
+  checkNoExistingPR: vi
+    .fn()
+    .mockResolvedValue({ passed: true, linkedPR: null }),
   checkNotClaimed: vi.fn().mockResolvedValue({ passed: true }),
   checkUserMergedPRsInRepo: vi.fn().mockResolvedValue(0),
   analyzeRequirements: vi.fn(() => true),
@@ -186,7 +188,10 @@ describe("IssueVetter", () => {
     });
 
     it("recommends skip when an existing PR is found", async () => {
-      vi.mocked(checkNoExistingPR).mockResolvedValueOnce({ passed: false, linkedPR: null });
+      vi.mocked(checkNoExistingPR).mockResolvedValueOnce({
+        passed: false,
+        linkedPR: null,
+      });
       vi.mocked(checkNotClaimed).mockResolvedValueOnce({ passed: false });
       vi.mocked(analyzeRequirements).mockReturnValueOnce(false);
       const vetter = makeVetter();
@@ -196,7 +201,10 @@ describe("IssueVetter", () => {
     });
 
     it("recommends skip when issue is claimed", async () => {
-      vi.mocked(checkNoExistingPR).mockResolvedValueOnce({ passed: false, linkedPR: null });
+      vi.mocked(checkNoExistingPR).mockResolvedValueOnce({
+        passed: false,
+        linkedPR: null,
+      });
       vi.mocked(checkNotClaimed).mockResolvedValueOnce({ passed: false });
       vi.mocked(analyzeRequirements).mockReturnValueOnce(false);
       const vetter = makeVetter();
@@ -206,7 +214,10 @@ describe("IssueVetter", () => {
     });
 
     it("recommends skip when 2+ skip reasons exist", async () => {
-      vi.mocked(checkNoExistingPR).mockResolvedValueOnce({ passed: false, linkedPR: null });
+      vi.mocked(checkNoExistingPR).mockResolvedValueOnce({
+        passed: false,
+        linkedPR: null,
+      });
       vi.mocked(checkNotClaimed).mockResolvedValueOnce({ passed: false });
       vi.mocked(analyzeRequirements).mockReturnValueOnce(false);
       const vetter = makeVetter();
