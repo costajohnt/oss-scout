@@ -8,7 +8,7 @@
 import { Octokit } from "@octokit/rest";
 import { daysBetween } from "./utils.js";
 import { type ContributionGuidelines, type ProjectHealth } from "./types.js";
-import { errorMessage } from "./errors.js";
+import { errorMessage, getHttpStatusCode, isRateLimitError } from "./errors.js";
 import { warn } from "./logger.js";
 import { getHttpCache, cachedRequest, cachedTimeBased } from "./http-cache.js";
 
@@ -179,6 +179,19 @@ export async function fetchContributionGuidelines(
     ),
   );
 
+  // Pre-scan: auth/rate-limit must propagate even if a faster probe succeeded —
+  // otherwise a path-restricted token that 401s on .github/CONTRIBUTING.md but
+  // wins on CONTRIBUTING.md would silently hide the auth misconfiguration.
+  for (const result of results) {
+    if (result.status !== "rejected") continue;
+    if (
+      getHttpStatusCode(result.reason) === 401 ||
+      isRateLimitError(result.reason)
+    ) {
+      throw result.reason;
+    }
+  }
+
   for (let i = 0; i < results.length; i++) {
     const result = results[i];
     if (result.status === "fulfilled" && result.value) {
@@ -188,14 +201,11 @@ export async function fetchContributionGuidelines(
       return guidelines;
     }
     if (result.status === "rejected") {
-      const msg =
-        result.reason instanceof Error
-          ? result.reason.message
-          : String(result.reason);
-      if (!msg.includes("404") && !msg.includes("Not Found")) {
+      const status = getHttpStatusCode(result.reason);
+      if (status !== 404) {
         warn(
           MODULE,
-          `Unexpected error fetching ${filesToCheck[i]} from ${owner}/${repo}: ${msg}`,
+          `Unexpected error fetching ${filesToCheck[i]} from ${owner}/${repo}: ${errorMessage(result.reason)}`,
         );
       }
     }
