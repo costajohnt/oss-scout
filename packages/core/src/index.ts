@@ -31,6 +31,8 @@ export type {
   ProjectHealth,
   SearchPriority,
   CheckResult,
+  AntiLLMPolicyResult,
+  AntiLLMPolicySourceFile,
   VetListOptions,
   VetListResult,
   VetListEntry,
@@ -72,3 +74,7 @@ export { requireGitHubToken, getGitHubToken } from "./core/utils.js";
 // Internal classes (for advanced use)
 export { IssueDiscovery } from "./core/issue-discovery.js";
 export { IssueVetter, type ScoutStateReader } from "./core/issue-vetting.js";
+export {
+  scanForAntiLLMPolicy,
+  ANTI_LLM_KEYWORDS,
+} from "./core/anti-llm-policy.js";

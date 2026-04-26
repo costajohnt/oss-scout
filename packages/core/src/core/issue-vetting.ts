@@ -33,6 +33,7 @@ import {
   checkProjectHealth,
   fetchContributionGuidelines,
 } from "./repo-health.js";
+import { fetchAndScanAntiLLMPolicy } from "./anti-llm-policy.js";
 import { getHttpCache } from "./http-cache.js";
 
 const MODULE = "issue-vetting";
@@ -115,6 +116,7 @@ export class IssueVetter {
       projectHealth,
       contributionGuidelines,
       userMergedPRCount,
+      antiLLMPolicy,
     ] = await Promise.all([
       checkNoExistingPR(this.octokit, owner, repo, number),
       checkNotClaimed(this.octokit, owner, repo, number, ghIssue.comments),
@@ -123,6 +125,7 @@ export class IssueVetter {
       hasMergedPRsInRepo
         ? Promise.resolve(0)
         : checkUserMergedPRsInRepo(this.octokit, owner, repo),
+      fetchAndScanAntiLLMPolicy(this.octokit, owner, repo),
     ]);
 
     const noExistingPR = existingPRCheck.passed;
@@ -307,6 +310,7 @@ export class IssueVetter {
       issue: trackedIssue,
       vettingResult,
       projectHealth,
+      antiLLMPolicy,
       recommendation,
       reasonsToSkip,
       reasonsToApprove,
