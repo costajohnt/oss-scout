@@ -73,8 +73,27 @@ vi.mock("./errors.js", () => ({
   errorMessage: vi.fn((e: unknown) =>
     e instanceof Error ? e.message : String(e),
   ),
-  getHttpStatusCode: vi.fn(() => undefined),
-  isRateLimitError: vi.fn(() => false),
+  getHttpStatusCode: vi.fn((e: unknown) => {
+    if (e && typeof e === "object" && "status" in e) {
+      const s = (e as { status: unknown }).status;
+      return typeof s === "number" ? s : undefined;
+    }
+    return undefined;
+  }),
+  isRateLimitError: vi.fn((e: unknown) => {
+    if (e && typeof e === "object" && "status" in e) {
+      const s = (e as { status: unknown }).status;
+      if (s === 429) return true;
+      if (
+        s === 403 &&
+        e instanceof Error &&
+        e.message.toLowerCase().includes("rate limit")
+      ) {
+        return true;
+      }
+    }
+    return false;
+  }),
 }));
 
 const mockFetchIssuesFromKnownRepos = vi.fn().mockResolvedValue({
@@ -488,6 +507,30 @@ describe("IssueDiscovery", () => {
 
       // Should fall back to Search API
       expect(mockCachedSearchIssues).toHaveBeenCalled();
+    });
+
+    it("Phase 3: propagates 401 from Search API fallback instead of swallowing", async () => {
+      // REST returns empty so Phase 3 falls back to Search API.
+      mockFetchIssuesFromMaintainedRepos.mockResolvedValue([]);
+
+      // The Search API call rejects with 401.
+      const authErr = Object.assign(new Error("Unauthorized"), { status: 401 });
+      mockCachedSearchIssues.mockRejectedValue(authErr);
+
+      // Phase 2 returns empty so we get to Phase 3.
+      mockFilterVetAndScore.mockResolvedValue({
+        candidates: [],
+        allVetFailed: false,
+        rateLimitHit: false,
+      });
+
+      const discovery = makeDiscovery({
+        getStarredRepos: vi.fn(() => ["starred/repo"]),
+      });
+
+      await expect(discovery.searchIssues({ maxResults: 5 })).rejects.toThrow(
+        "Unauthorized",
+      );
     });
 
     it("Phase 3: falls back to Search API when no starred repos available", async () => {

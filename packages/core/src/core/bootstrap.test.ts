@@ -250,6 +250,44 @@ describe("bootstrapScout", () => {
     expect(result.errors).toContain("open PR fetch failed");
   });
 
+  it("propagates auth errors from starred-repos fetch (does not silently degrade)", async () => {
+    mockRateLimit(30);
+    const authError = Object.assign(new Error("Bad credentials"), {
+      status: 401,
+    });
+    // The starred-repos fetch goes through paginate.iterator. The error
+    // surfaces when the for-await loop pulls the first page.
+    mockOctokitInstance.paginate.iterator = vi.fn().mockReturnValue({
+      [Symbol.asyncIterator]: () => ({
+        next: () => Promise.reject(authError),
+      }),
+    });
+
+    const token = uniqueToken();
+    const scout = new OssScout(token, makeState());
+    await expect(bootstrapScout(scout, token)).rejects.toThrow(
+      "Bad credentials",
+    );
+  });
+
+  it("propagates rate-limit errors from starred-repos fetch (does not silently degrade)", async () => {
+    mockRateLimit(30);
+    const rateLimitError = Object.assign(new Error("API rate limit exceeded"), {
+      status: 429,
+    });
+    mockOctokitInstance.paginate.iterator = vi.fn().mockReturnValue({
+      [Symbol.asyncIterator]: () => ({
+        next: () => Promise.reject(rateLimitError),
+      }),
+    });
+
+    const token = uniqueToken();
+    const scout = new OssScout(token, makeState());
+    await expect(bootstrapScout(scout, token)).rejects.toThrow(
+      "API rate limit exceeded",
+    );
+  });
+
   it("propagates auth errors from open-PR fetch (does not silently degrade)", async () => {
     mockRateLimit(30);
     mockOctokitInstance.paginate.iterator = vi.fn().mockReturnValue(

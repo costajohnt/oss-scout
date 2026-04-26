@@ -84,6 +84,7 @@ export async function bootstrapScout(
     debug(MODULE, `Fetched ${starredRepos.length} starred repos`);
     scout.setStarredRepos(starredRepos);
   } catch (err) {
+    if (getHttpStatusCode(err) === 401 || isRateLimitError(err)) throw err;
     warn(MODULE, `Failed to fetch starred repos: ${errorMessage(err)}`);
     errors.push("starred repos fetch failed");
   }
