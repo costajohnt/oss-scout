@@ -30,7 +30,10 @@ import type {
   VetListEntry,
 } from "./core/types.js";
 import { GistStateStore, mergeStates } from "./core/gist-state-store.js";
-import type { GistOctokitLike } from "./core/gist-state-store.js";
+import type {
+  DegradedReason,
+  GistOctokitLike,
+} from "./core/gist-state-store.js";
 import { getOctokit } from "./core/github.js";
 import type { Octokit } from "@octokit/rest";
 import { loadLocalState } from "./core/local-state.js";
@@ -41,6 +44,22 @@ import {
   getHttpStatusCode,
   isRateLimitError,
 } from "./core/errors.js";
+
+/** Cause-specific user-facing message for degraded (offline) mode. */
+function offlineModeMessage(reason: DegradedReason | undefined): string {
+  const tail = "Changes will only be saved locally.";
+  switch (reason) {
+    case "rate_limit":
+      return `Gist sync unavailable — GitHub API rate limit exceeded. ${tail} Try again after the rate limit resets.`;
+    case "network":
+      return `Gist sync unavailable — could not reach GitHub. ${tail} Check your network connection.`;
+    case "server":
+      return `Gist sync unavailable — GitHub returned a server error. ${tail} Try again later.`;
+    case "unknown":
+    case undefined:
+      return `Gist sync unavailable — running in offline mode. ${tail}`;
+  }
+}
 
 /** Wrap a real Octokit instance as GistOctokitLike without unsafe double casts. */
 function toGistOctokit(octokit: Octokit): GistOctokitLike {
@@ -118,10 +137,7 @@ export async function createScout(config: ScoutConfig): Promise<OssScout> {
     );
     const result = await gistStore.bootstrap();
     if (result.degraded) {
-      warn(
-        "scout",
-        "Gist sync unavailable — running in offline mode. Changes will only be saved locally.",
-      );
+      warn("scout", offlineModeMessage(result.degradedReason));
     }
     const localState = loadLocalState();
     state = mergeStates(localState, result.state);
