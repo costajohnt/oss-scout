@@ -188,6 +188,19 @@ export const ScoutPreferencesSchema = z.object({
   defaultStrategy: z.array(SearchStrategySchema).optional(),
   broadPhaseDelayMs: z.number().min(0).max(300000).default(90000),
   skipBroadWhenSufficientResults: z.number().int().min(0).max(100).default(15),
+  /**
+   * Optional Ollama model id used for SLM pre-triage during vetting
+   * (oss-autopilot#1122). Empty disables the feature. Recommended values:
+   * `gemma4:e4b` (default for capable hardware) or `gemma4:e2b` /
+   * `qwen3:1.7b` for low-RAM machines.
+   */
+  slmTriageModel: z.string().default(""),
+  /**
+   * Override the Ollama HTTP host. Defaults to `http://127.0.0.1:11434`
+   * when empty. Useful when Ollama runs on a different machine on the
+   * local network.
+   */
+  slmTriageHost: z.string().default(""),
 });
 
 // ── Root state schema ───────────────────────────────────────────────

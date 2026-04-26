@@ -35,6 +35,7 @@ import {
 } from "./repo-health.js";
 import { fetchAndScanAntiLLMPolicy } from "./anti-llm-policy.js";
 import { getHttpCache } from "./http-cache.js";
+import { triageWithSLM, buildTriageInput, type SLMTriageOptions } from "./slm-triage.js";
 
 const MODULE = "issue-vetting";
 
@@ -59,6 +60,12 @@ export interface ScoutStateReader {
   getProjectCategories(): ProjectCategory[];
   /** Numeric quality score for a repo, or null if not evaluated. */
   getRepoScore(repo: string): number | null;
+  /**
+   * SLM pre-triage config (oss-autopilot#1122). Returns the configured
+   * model id and Ollama host, or empty strings when not configured —
+   * vetIssue treats either of these as "skip the SLM call".
+   */
+  getSLMTriageConfig?(): { model: string; host: string };
 }
 
 export class IssueVetter {
@@ -317,11 +324,28 @@ export class IssueVetter {
       searchPriority = "starred";
     }
 
+    // Optional SLM pre-triage (oss-autopilot#1122). Fail-open: any error
+    // path returns null and the rest of the pipeline is unaffected.
+    const slmConfig = this.stateReader.getSLMTriageConfig?.() ?? { model: "", host: "" };
+    let slmTriage: IssueCandidate["slmTriage"] = null;
+    if (slmConfig.model) {
+      const slmOpts: SLMTriageOptions = { model: slmConfig.model };
+      if (slmConfig.host) slmOpts.host = slmConfig.host;
+      slmTriage = await triageWithSLM(
+        buildTriageInput({
+          issue: { ...trackedIssue, body: ghIssue.body ?? "" },
+          linkedPR: existingPRCheck.linkedPR ?? null,
+        }),
+        slmOpts,
+      );
+    }
+
     const result: IssueCandidate = {
       issue: trackedIssue,
       vettingResult,
       projectHealth,
       antiLLMPolicy,
+      slmTriage,
       recommendation,
       reasonsToSkip,
       reasonsToApprove,
