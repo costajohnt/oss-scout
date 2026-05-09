@@ -159,6 +159,50 @@ describe("registerTools", () => {
       expect(result.isError).toBeUndefined();
       expect(JSON.parse(result.content[0].text)).toMatchObject(featuresResult);
     });
+
+    it("forwards anchorThreshold and splitRatio to scout.features", async () => {
+      const featuresFn = vi.fn().mockResolvedValue({
+        quickWins: [],
+        biggerBets: [],
+        anchorRepos: [],
+        message: null,
+      });
+      const local = createMockScout({
+        features: featuresFn,
+      } as Partial<OssScout>);
+      const localServer = new McpServer({ name: "t", version: "0.0.1" });
+      vi.spyOn(localServer, "tool");
+      registerTools(localServer, local);
+      const handler = getToolHandler(localServer, "scout-features");
+      await handler({ maxResults: 8, anchorThreshold: 5, splitRatio: 0.5 }, {});
+      expect(featuresFn).toHaveBeenCalledWith({
+        count: 8,
+        anchorThreshold: 5,
+        splitRatio: 0.5,
+      });
+    });
+
+    it("omits overrides when not provided", async () => {
+      const featuresFn = vi.fn().mockResolvedValue({
+        quickWins: [],
+        biggerBets: [],
+        anchorRepos: [],
+        message: null,
+      });
+      const local = createMockScout({
+        features: featuresFn,
+      } as Partial<OssScout>);
+      const localServer = new McpServer({ name: "t", version: "0.0.1" });
+      vi.spyOn(localServer, "tool");
+      registerTools(localServer, local);
+      const handler = getToolHandler(localServer, "scout-features");
+      await handler({ maxResults: 5 }, {});
+      expect(featuresFn).toHaveBeenCalledWith({
+        count: 5,
+        anchorThreshold: undefined,
+        splitRatio: undefined,
+      });
+    });
   });
 
   describe("vet tool execution", () => {
