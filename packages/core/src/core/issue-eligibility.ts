@@ -27,6 +27,7 @@ type CrossRefEvent = {
       number?: number;
       state?: string;
       html_url?: string;
+      updated_at?: string;
       user?: { login?: string };
       pull_request?: { merged_at?: string | null };
     };
@@ -72,12 +73,17 @@ function buildLinkedPRFromTimelineEvent(
     );
     return null;
   }
+  // updatedAt is read directly from the timeline event's source.issue
+  // (issue.updated_at is exposed on the cross-reference payload), so no
+  // extra pulls.get round-trip is needed. Left undefined when absent —
+  // isLinkedPRStalled treats missing data as not-stalled.
   return {
     number: issue.number,
     author,
     state: issue.state === "closed" ? "closed" : "open",
     merged: !!issue.pull_request?.merged_at,
     url,
+    updatedAt: issue.updated_at,
   };
 }
 
