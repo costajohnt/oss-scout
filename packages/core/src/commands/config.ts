@@ -14,7 +14,7 @@ import type { ScoutPreferences } from "../core/schemas.js";
 import { ValidationError } from "../core/errors.js";
 
 type FieldConfig =
-  | { type: "array" | "number" | "boolean" | "string" }
+  | { type: "array" | "number" | "float" | "boolean" | "string" }
   | { type: "enum" | "enum-array"; validValues: readonly string[] };
 
 const FIELD_CONFIGS: Record<string, FieldConfig> = {
@@ -41,6 +41,8 @@ const FIELD_CONFIGS: Record<string, FieldConfig> = {
   githubUsername: { type: "string" },
   broadPhaseDelayMs: { type: "number" },
   skipBroadWhenSufficientResults: { type: "number" },
+  featuresAnchorThreshold: { type: "number" },
+  featuresSplitRatio: { type: "float" },
 };
 
 function parseBoolean(value: string): boolean {
@@ -54,6 +56,14 @@ function parseBoolean(value: string): boolean {
 
 function parseNumber(value: string, key: string): number {
   const num = parseInt(value, 10);
+  if (isNaN(num)) {
+    throw new ValidationError(`Invalid number for "${key}": "${value}"`);
+  }
+  return num;
+}
+
+function parseFloat(value: string, key: string): number {
+  const num = Number.parseFloat(value);
   if (isNaN(num)) {
     throw new ValidationError(`Invalid number for "${key}": "${value}"`);
   }
@@ -131,6 +141,8 @@ export function runConfigShow(): void {
   console.log(
     `  skipBroadWhenSufficientResults: ${prefs.skipBroadWhenSufficientResults}`,
   );
+  console.log(`  featuresAnchorThreshold: ${prefs.featuresAnchorThreshold}`);
+  console.log(`  featuresSplitRatio:    ${prefs.featuresSplitRatio}`);
   console.log();
 }
 
@@ -167,6 +179,10 @@ export function runConfigSet(key: string, value: string): ScoutPreferences {
 
     case "number":
       (prefs as Record<string, unknown>)[key] = parseNumber(value, key);
+      break;
+
+    case "float":
+      (prefs as Record<string, unknown>)[key] = parseFloat(value, key);
       break;
 
     case "array": {
