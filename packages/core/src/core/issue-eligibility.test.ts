@@ -267,6 +267,48 @@ describe("checkNoExistingPR", () => {
     expect(result.passed).toBe(true);
     expect(result.linkedPR).toBeNull();
   });
+
+  it("populates linkedPR.updatedAt from source.issue.updated_at", async () => {
+    mockPaginateAll.mockResolvedValue([
+      {
+        event: "cross-referenced",
+        source: {
+          issue: {
+            number: 50,
+            state: "open",
+            html_url: "https://github.com/owner/repo/pull/50",
+            updated_at: "2026-04-01T12:00:00Z",
+            user: { login: "alice" },
+            pull_request: { url: "u", merged_at: null },
+          },
+        },
+      },
+    ]);
+    const octokit = makeMockOctokit();
+    const result = await checkNoExistingPR(octokit, "owner", "repo", 5);
+    expect(result.linkedPR?.updatedAt).toBe("2026-04-01T12:00:00Z");
+  });
+
+  it("leaves linkedPR.updatedAt undefined when source data lacks updated_at", async () => {
+    mockPaginateAll.mockResolvedValue([
+      {
+        event: "cross-referenced",
+        source: {
+          issue: {
+            number: 51,
+            state: "open",
+            html_url: "https://github.com/owner/repo/pull/51",
+            user: { login: "alice" },
+            pull_request: { url: "u", merged_at: null },
+          },
+        },
+      },
+    ]);
+    const octokit = makeMockOctokit();
+    const result = await checkNoExistingPR(octokit, "owner", "repo", 5);
+    expect(result.linkedPR).not.toBeNull();
+    expect(result.linkedPR?.updatedAt).toBeUndefined();
+  });
 });
 
 // ── checkNotClaimed ───────────────────────────────────────────────

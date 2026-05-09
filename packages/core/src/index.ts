@@ -99,3 +99,9 @@ export {
   type FeatureSearchResult,
   type DiscoverFeaturesOptions,
 } from "./core/feature-discovery.js";
+
+// Linked-PR helpers (#97)
+export {
+  isLinkedPRStalled,
+  STALLED_PR_THRESHOLD_DAYS,
+} from "./core/linked-pr.js";

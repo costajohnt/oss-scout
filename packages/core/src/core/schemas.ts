@@ -110,6 +110,12 @@ export const LinkedPRSchema = z.object({
   state: z.enum(["open", "closed"]),
   merged: z.boolean(),
   url: z.string(),
+  /**
+   * ISO-8601 timestamp of the linked PR's last update. Optional so existing
+   * persisted state validates unchanged. Used by `isLinkedPRStalled` to
+   * surface stale revive opportunities (#97).
+   */
+  updatedAt: z.string().optional(),
 });
 
 export const IssueVettingResultSchema = z.object({
