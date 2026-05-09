@@ -48,6 +48,17 @@ describe("resolveAnchorRepos", () => {
     );
     expect(out).toEqual(["c/d", "e/f", "a/b"]);
   });
+  it("honors an explicit threshold override", () => {
+    const out = resolveAnchorRepos(
+      mkScores(["a/b", 3], ["c/d", 5], ["e/f", 8]),
+      5,
+    );
+    expect(out).toEqual(["e/f", "c/d"]);
+  });
+  it("defaults to ANCHOR_THRESHOLD when threshold is undefined", () => {
+    const out = resolveAnchorRepos(mkScores(["a/b", 2], ["c/d", 3]), undefined);
+    expect(out).toEqual(["c/d"]);
+  });
 });
 
 describe("classifyHorizon", () => {
@@ -166,6 +177,21 @@ describe("splitByHorizon 60/40 split", () => {
       95, 92, 88, 85,
     ]);
   });
+  it("honors an explicit ratio override (0.5 = 5+5 at count 10)", () => {
+    const out = splitByHorizon([...quickWinPool, ...biggerBetPool], 10, 0.5);
+    expect(out.quickWins).toHaveLength(5);
+    expect(out.biggerBets).toHaveLength(5);
+  });
+  it("ratio 1.0 puts all into quick wins", () => {
+    const out = splitByHorizon([...quickWinPool, ...biggerBetPool], 5, 1);
+    expect(out.quickWins).toHaveLength(5);
+    expect(out.biggerBets).toHaveLength(0);
+  });
+  it("ratio 0 puts all into bigger bets when both available", () => {
+    const out = splitByHorizon([...quickWinPool, ...biggerBetPool], 4, 0);
+    expect(out.quickWins).toHaveLength(0);
+    expect(out.biggerBets).toHaveLength(4);
+  });
 });
 
 describe("discoverFeatures orchestrator", () => {
@@ -280,6 +306,90 @@ describe("discoverFeatures orchestrator", () => {
       "https://github.com/a/b/issues/2",
       { featureSignals: { reactions: 50, comments: 30, hasMilestone: true } },
     );
+  });
+
+  it("honors anchorThreshold and splitRatio overrides", async () => {
+    // Build issues so quick-win and bigger-bet candidates both exist.
+    const octokit = {
+      issues: {
+        listForRepo: vi.fn().mockResolvedValue({
+          data: [
+            {
+              html_url: "https://github.com/a/b/issues/1",
+              title: "qw",
+              labels: [{ name: "enhancement" }],
+              comments: 1,
+              reactions: { total_count: 1 },
+              milestone: null,
+              pull_request: undefined,
+              assignee: null,
+            },
+            {
+              html_url: "https://github.com/a/b/issues/2",
+              title: "bb",
+              labels: [{ name: "proposal" }],
+              comments: 1,
+              reactions: { total_count: 1 },
+              milestone: { number: 1 },
+              pull_request: undefined,
+              assignee: null,
+            },
+          ],
+        }),
+      },
+    } as never;
+    const vetter = {
+      vetIssue: vi.fn().mockImplementation(async (url: string) => ({
+        issue: {
+          url,
+          repo: "a/b",
+          number: 1,
+          title: "t",
+          labels: [],
+          updatedAt: "2026-05-01",
+        },
+        vettingResult: { passedAllChecks: true, checks: {}, notes: [] },
+        projectHealth: {},
+        antiLLMPolicy: {
+          matched: false,
+          matchedKeywords: [],
+          sourceFile: null,
+        },
+        slmTriage: null,
+        recommendation: "approve",
+        reasonsToApprove: [],
+        reasonsToSkip: [],
+        viabilityScore: 80,
+        searchPriority: "merged_pr",
+      })),
+    } as never;
+
+    // anchorThreshold 10 → "a/b" (mergedPRCount 4) is below threshold; no anchors.
+    const tightened = await discoverFeatures({
+      octokit,
+      vetter,
+      repoScores: mkScores(["a/b", 4]),
+      count: 10,
+      anchorThreshold: 10,
+    });
+    expect(tightened.anchorRepos).toEqual([]);
+    expect(tightened.message).toContain("No anchor repos yet");
+
+    // anchorThreshold 1 enables the anchor; splitRatio 0.5 → 1 quick + 1 bigger
+    // (rounding behavior with count=2 and one of each candidate).
+    vi.mocked(octokit.issues.listForRepo).mockClear();
+    vi.mocked(vetter.vetIssue).mockClear();
+    const split = await discoverFeatures({
+      octokit,
+      vetter,
+      repoScores: mkScores(["a/b", 4]),
+      count: 2,
+      anchorThreshold: 1,
+      splitRatio: 0.5,
+    });
+    expect(split.anchorRepos).toEqual(["a/b"]);
+    expect(split.quickWins).toHaveLength(1);
+    expect(split.biggerBets).toHaveLength(1);
   });
 
   it("propagates auth and rate-limit errors", async () => {

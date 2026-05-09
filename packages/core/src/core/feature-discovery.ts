@@ -28,19 +28,25 @@ const INTER_REPO_DELAY_MS = 2000;
 /** Minimum viability score for a feature candidate to surface — same as scout search. */
 const MIN_VIABILITY_SCORE = 40;
 
-/** Minimum merged-PR count for a repo to qualify as an anchor. */
+/** Default minimum merged-PR count for a repo to qualify as an anchor. */
 export const ANCHOR_THRESHOLD = 3;
 
+/** Default quick-wins / bigger-bets split ratio (60/40). */
+export const DEFAULT_SPLIT_RATIO = 0.6;
+
 /**
- * Resolve anchor repos: those with mergedPRCount >= ANCHOR_THRESHOLD,
+ * Resolve anchor repos: those with mergedPRCount >= threshold (default 3),
  * sorted by mergedPRCount descending. ScoutState stores repoScores as a
  * Record<string, RepoScore>, so we read its values.
+ *
+ * @param threshold Override minimum merged-PR count (#98).
  */
 export function resolveAnchorRepos(
   repoScores: Record<string, RepoScore>,
+  threshold: number = ANCHOR_THRESHOLD,
 ): string[] {
   return Object.values(repoScores)
-    .filter((rs) => rs.mergedPRCount >= ANCHOR_THRESHOLD)
+    .filter((rs) => rs.mergedPRCount >= threshold)
     .sort((a, b) => b.mergedPRCount - a.mergedPRCount)
     .map((rs) => rs.repo);
 }
@@ -71,13 +77,17 @@ export function classifyHorizon(input: {
 export type FeatureCandidate = IssueCandidate & { horizon: Horizon };
 
 /**
- * Split feature candidates into two buckets respecting a 60/40 target.
- * If either bucket is short, redirect the deficit to the other bucket.
- * Each bucket is sorted by viabilityScore descending.
+ * Split feature candidates into two buckets respecting a configurable
+ * quick-wins / bigger-bets ratio (default 60/40). If either bucket is
+ * short, redirect the deficit to the other bucket. Each bucket is
+ * sorted by viabilityScore descending.
+ *
+ * @param ratio Fraction (0..1) of `count` to allocate to quick wins (#99).
  */
 export function splitByHorizon(
   candidates: FeatureCandidate[],
   count: number,
+  ratio: number = DEFAULT_SPLIT_RATIO,
 ): { quickWins: FeatureCandidate[]; biggerBets: FeatureCandidate[] } {
   const allQuick = candidates
     .filter((c) => c.horizon === "quick-win")
@@ -86,7 +96,7 @@ export function splitByHorizon(
     .filter((c) => c.horizon === "bigger-bet")
     .sort((a, b) => b.viabilityScore - a.viabilityScore);
 
-  const targetQuick = Math.round(count * 0.6);
+  const targetQuick = Math.round(count * ratio);
   const targetBigger = count - targetQuick;
 
   const quickTaken = Math.min(allQuick.length, targetQuick);
@@ -145,6 +155,10 @@ export interface DiscoverFeaturesOptions {
   vetter: IssueVetter;
   repoScores: Record<string, RepoScore>;
   count: number;
+  /** Override default anchor threshold (3 merged PRs). */
+  anchorThreshold?: number;
+  /** Override default split ratio (0.6 = 60% quick wins, 40% bigger bets). */
+  splitRatio?: number;
 }
 
 interface RawIssueItem {
@@ -186,7 +200,7 @@ function isFeatureIssue(item: RawIssueItem): boolean {
 export async function discoverFeatures(
   opts: DiscoverFeaturesOptions,
 ): Promise<FeatureSearchResult> {
-  const anchorRepos = resolveAnchorRepos(opts.repoScores);
+  const anchorRepos = resolveAnchorRepos(opts.repoScores, opts.anchorThreshold);
   if (anchorRepos.length === 0) {
     return {
       quickWins: [],
@@ -249,7 +263,7 @@ export async function discoverFeatures(
     (c) => c.viabilityScore >= MIN_VIABILITY_SCORE,
   );
 
-  const split = splitByHorizon(passing, opts.count);
+  const split = splitByHorizon(passing, opts.count, opts.splitRatio);
   const total = split.quickWins.length + split.biggerBets.length;
   return {
     ...split,
