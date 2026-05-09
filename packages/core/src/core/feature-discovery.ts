@@ -19,6 +19,7 @@ import type { IssueVetter } from "./issue-vetting.js";
 import { errorMessage, getHttpStatusCode, isRateLimitError } from "./errors.js";
 import { warn } from "./logger.js";
 import { sleep } from "./utils.js";
+import { fetchRoadmapIssueRefs } from "./roadmap.js";
 
 const MODULE = "feature-discovery";
 
@@ -264,16 +265,25 @@ export async function discoverFeatures(
   for (let i = 0; i < anchorRepos.length; i++) {
     if (i > 0) await sleep(INTER_REPO_DELAY_MS);
     const [owner, repo] = anchorRepos[i].split("/");
+    // Issues list and roadmap fetch run in parallel — roadmap scraping (#95)
+    // adds at most one extra GET per anchor repo and the result is reused
+    // across every issue in this loop iteration.
     let response;
+    let roadmapRefs: Set<number> = new Set();
     try {
-      response = await opts.octokit.issues.listForRepo({
-        owner,
-        repo,
-        state: "open",
-        sort: "updated",
-        direction: "desc",
-        per_page: 20,
-      });
+      const [listResp, refs] = await Promise.all([
+        opts.octokit.issues.listForRepo({
+          owner,
+          repo,
+          state: "open",
+          sort: "updated",
+          direction: "desc",
+          per_page: 20,
+        }),
+        fetchRoadmapIssueRefs(opts.octokit, owner, repo),
+      ]);
+      response = listResp;
+      roadmapRefs = refs;
     } catch (err: unknown) {
       if (getHttpStatusCode(err) === 401 || isRateLimitError(err)) throw err;
       warn(
@@ -295,6 +305,8 @@ export async function discoverFeatures(
       const wontfixNoContributor = item.created_at
         ? detectWontfixNoContributor({ labels, createdAt: item.created_at })
         : false;
+      const onRoadmap =
+        typeof item.number === "number" && roadmapRefs.has(item.number);
       let candidate;
       try {
         candidate = await opts.vetter.vetIssue(item.html_url, {
@@ -303,6 +315,7 @@ export async function discoverFeatures(
             comments,
             hasMilestone,
             wontfixNoContributor,
+            onRoadmap,
           },
         });
       } catch (err: unknown) {

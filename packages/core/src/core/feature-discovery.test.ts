@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { RepoScore } from "./schemas.js";
 import {
   resolveAnchorRepos,
@@ -10,6 +10,7 @@ import {
   WONTFIX_MIN_AGE_DAYS,
   type FeatureCandidate,
 } from "./feature-discovery.js";
+import { _clearRoadmapCacheForTests } from "./roadmap.js";
 
 const mkScore = (repo: string, mergedPRCount: number): RepoScore => ({
   repo,
@@ -280,6 +281,10 @@ describe("splitByHorizon 60/40 split", () => {
 });
 
 describe("discoverFeatures orchestrator", () => {
+  beforeEach(() => {
+    _clearRoadmapCacheForTests();
+  });
+
   it("returns no-anchors message when repoScores has no qualifying repos", async () => {
     const octokit = { issues: { listForRepo: vi.fn() } } as never;
     const vetter = { vetIssue: vi.fn() } as never;
@@ -391,6 +396,7 @@ describe("discoverFeatures orchestrator", () => {
           comments: 2,
           hasMilestone: false,
           wontfixNoContributor: false,
+          onRoadmap: false,
         },
       },
     );
@@ -402,6 +408,7 @@ describe("discoverFeatures orchestrator", () => {
           comments: 30,
           hasMilestone: true,
           wontfixNoContributor: false,
+          onRoadmap: false,
         },
       },
     );
@@ -553,9 +560,96 @@ describe("discoverFeatures orchestrator", () => {
           comments: 1,
           hasMilestone: false,
           wontfixNoContributor: true,
+          onRoadmap: false,
         },
       },
     );
+  });
+
+  it("forwards onRoadmap signal when an issue number appears in ROADMAP.md", async () => {
+    const md = "Roadmap:\n- ship #7 soon\n";
+    const octokit = {
+      issues: {
+        listForRepo: vi.fn().mockResolvedValue({
+          data: [
+            {
+              html_url: "https://github.com/a/b/issues/7",
+              title: "roadmap-listed feature",
+              labels: [{ name: "enhancement" }],
+              comments: 1,
+              reactions: { total_count: 1 },
+              milestone: null,
+              pull_request: undefined,
+              assignee: null,
+              created_at: "2026-04-01",
+              number: 7,
+            },
+            {
+              html_url: "https://github.com/a/b/issues/8",
+              title: "off-roadmap feature",
+              labels: [{ name: "enhancement" }],
+              comments: 1,
+              reactions: { total_count: 1 },
+              milestone: null,
+              pull_request: undefined,
+              assignee: null,
+              created_at: "2026-04-01",
+              number: 8,
+            },
+          ],
+        }),
+      },
+      repos: {
+        getContent: vi.fn().mockImplementation(async ({ path }) => {
+          if (path === "ROADMAP.md") {
+            return {
+              data: { content: Buffer.from(md, "utf-8").toString("base64") },
+            };
+          }
+          throw Object.assign(new Error("nope"), { status: 404 });
+        }),
+      },
+    } as never;
+    const vetter = {
+      vetIssue: vi.fn().mockImplementation(async (url: string) => ({
+        issue: {
+          url,
+          repo: "a/b",
+          number: 1,
+          title: "t",
+          labels: [],
+          updatedAt: "2026-05-01",
+        },
+        vettingResult: { passedAllChecks: true, checks: {}, notes: [] },
+        projectHealth: {},
+        antiLLMPolicy: {
+          matched: false,
+          matchedKeywords: [],
+          sourceFile: null,
+        },
+        slmTriage: null,
+        recommendation: "approve",
+        reasonsToApprove: [],
+        reasonsToSkip: [],
+        viabilityScore: 80,
+        searchPriority: "merged_pr",
+      })),
+    } as never;
+    await discoverFeatures({
+      octokit,
+      vetter,
+      repoScores: mkScores(["a/b", 4]),
+      count: 5,
+    });
+    const calls = vi.mocked(vetter.vetIssue).mock.calls;
+    const onRoadmap7 = calls.find(
+      (c) => c[0] === "https://github.com/a/b/issues/7",
+    )?.[1]?.featureSignals?.onRoadmap;
+    const onRoadmap8 = calls.find(
+      (c) => c[0] === "https://github.com/a/b/issues/8",
+    )?.[1]?.featureSignals?.onRoadmap;
+    expect(onRoadmap7).toBe(true);
+    expect(onRoadmap8).toBe(false);
   });
 
   it("propagates auth and rate-limit errors", async () => {
