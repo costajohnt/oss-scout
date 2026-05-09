@@ -3,6 +3,8 @@ import {
   ScoutStateSchema,
   ScoutPreferencesSchema,
   RepoScoreSchema,
+  SavedCandidateSchema,
+  HorizonSchema,
 } from "./schemas.js";
 
 describe("ScoutStateSchema", () => {
@@ -219,5 +221,39 @@ describe("RepoScoreSchema", () => {
     });
     expect(score.stargazersCount).toBe(5000);
     expect(score.language).toBe("typescript");
+  });
+});
+
+describe("HorizonSchema", () => {
+  it("accepts quick-win and bigger-bet", () => {
+    expect(HorizonSchema.parse("quick-win")).toBe("quick-win");
+    expect(HorizonSchema.parse("bigger-bet")).toBe("bigger-bet");
+  });
+  it("rejects unknown values", () => {
+    expect(() => HorizonSchema.parse("medium")).toThrow();
+  });
+});
+
+describe("SavedCandidateSchema horizon field", () => {
+  const base = {
+    issueUrl: "https://github.com/foo/bar/issues/1",
+    repo: "foo/bar",
+    number: 1,
+    title: "t",
+    labels: [],
+    recommendation: "approve" as const,
+    viabilityScore: 80,
+    searchPriority: "merged_pr" as const,
+    firstSeenAt: "2026-05-08T00:00:00Z",
+    lastSeenAt: "2026-05-08T00:00:00Z",
+    lastScore: 80,
+  };
+  it("validates without horizon (backwards compat)", () => {
+    expect(() => SavedCandidateSchema.parse(base)).not.toThrow();
+  });
+  it("validates with horizon set", () => {
+    expect(() =>
+      SavedCandidateSchema.parse({ ...base, horizon: "quick-win" }),
+    ).not.toThrow();
   });
 });

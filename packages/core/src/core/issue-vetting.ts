@@ -55,6 +55,18 @@ const MAX_CONCURRENT_VETTING = 3;
 const VETTING_CACHE_TTL_MS = 15 * 60 * 1000;
 
 /**
+ * Feature-mode signals supplied by the caller (orchestrator) — the vetter
+ * does NOT extract these from the GitHub issue itself. When passed, they
+ * plumb through to `calculateViabilityScore` to apply reaction, comment-depth,
+ * and milestone bonuses.
+ */
+export type FeatureSignals = {
+  reactions: number;
+  comments: number;
+  hasMilestone: boolean;
+};
+
+/**
  * Read-only interface for accessing scout state during issue vetting.
  * Implementations may be backed by gist persistence, in-memory state, etc.
  */
@@ -89,11 +101,22 @@ export class IssueVetter {
   /**
    * Vet a specific issue — runs all checks and computes recommendation + viability score.
    * Results are cached for 15 minutes to avoid redundant API calls on repeated searches.
+   *
+   * `opts.featureSignals` are forwarded directly to scoring; the vetter does
+   * not derive them from the fetched issue. Cache key includes a digest of
+   * the signals so the same URL with different signals doesn't return a
+   * stale score.
    */
-  async vetIssue(issueUrl: string): Promise<IssueCandidate> {
+  async vetIssue(
+    issueUrl: string,
+    opts?: { featureSignals?: FeatureSignals },
+  ): Promise<IssueCandidate> {
     // Check vetting cache first — avoids ~6+ API calls per issue
     const cache = getHttpCache();
-    const cacheKey = `vet:${issueUrl}`;
+    const sigKey = opts?.featureSignals
+      ? `:r${opts.featureSignals.reactions}c${opts.featureSignals.comments}m${opts.featureSignals.hasMilestone ? 1 : 0}`
+      : "";
+    const cacheKey = `vet:${issueUrl}${sigKey}`;
     const cached = cache.getIfFresh(cacheKey, VETTING_CACHE_TTL_MS);
     if (
       cached &&
@@ -323,6 +346,7 @@ export class IssueVetter {
       orgHasMergedPRs,
       repoQualityBonus,
       matchesPreferredCategory: matchesCategory,
+      featureSignals: opts?.featureSignals,
     });
 
     const starredRepos = this.stateReader.getStarredRepos();

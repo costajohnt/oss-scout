@@ -193,6 +193,64 @@ program
     },
   );
 
+program
+  .command("features [count]")
+  .description(
+    "Surface feature-scoped opportunities in repos where you have 3+ merged PRs",
+  )
+  .option("--json", "Output as JSON")
+  .action(async (count: string | undefined, options: { json?: boolean }) => {
+    try {
+      const { runFeatures } = await import("./commands/features.js");
+      const maxResults = count ? parseInt(count, 10) : 10;
+      if (isNaN(maxResults) || maxResults < 1 || maxResults > 50) {
+        console.error("Error: count must be an integer between 1 and 50");
+        process.exit(1);
+      }
+      const state = loadLocalState();
+      const result = await runFeatures({ maxResults, state });
+      if (options.json) {
+        console.log(formatJsonSuccess(result));
+      } else {
+        const total = result.quickWins.length + result.biggerBets.length;
+        if (result.message) {
+          console.log(`\n${result.message}\n`);
+        }
+        if (total === 0) return;
+        console.log(
+          `\n🎯 Feature opportunities in your anchor repos (${result.quickWins.length} quick wins + ${result.biggerBets.length} bigger bets)\n`,
+        );
+        console.log(`Anchor repos: ${result.anchorRepos.join(", ")}\n`);
+        if (result.quickWins.length) {
+          console.log(
+            "── Quick wins ─────────────────────────────────────────",
+          );
+          for (const c of result.quickWins) {
+            console.log(
+              `  ${c.issue.repo}#${c.issue.number} [${c.viabilityScore}/100] ${c.issue.title}`,
+            );
+            console.log(`     ${c.issue.url}`);
+          }
+          console.log("");
+        }
+        if (result.biggerBets.length) {
+          console.log(
+            "── Bigger bets ────────────────────────────────────────",
+          );
+          for (const c of result.biggerBets) {
+            console.log(
+              `  ${c.issue.repo}#${c.issue.number} [${c.viabilityScore}/100] ${c.issue.title}`,
+            );
+            console.log(`     ${c.issue.url}`);
+          }
+          console.log("");
+        }
+      }
+    } catch (err) {
+      handleCommandError(err, options);
+    }
+  });
+
 // ── results command ────────────────────────────────────────────────
 
 const resultsCmd = program

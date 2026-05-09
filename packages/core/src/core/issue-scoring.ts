@@ -43,6 +43,16 @@ export interface ViabilityScoreParams {
   repoQualityBonus?: number;
   /** True when the repo matches one of the user's preferred project categories. */
   matchesPreferredCategory?: boolean;
+  /**
+   * Optional feature-mode signals. When present, applies reaction (cap +10),
+   * comment-depth (+5 if >=5), and milestone (+5) bonuses. When absent,
+   * scoring behavior is unchanged.
+   */
+  featureSignals?: {
+    reactions: number;
+    comments: number;
+    hasMilestone: boolean;
+  };
 }
 
 /**
@@ -120,6 +130,14 @@ export function calculateViabilityScore(params: ViabilityScoreParams): number {
   // Penalty for closed-without-merge history with no successful merges (-15)
   if (params.closedWithoutMergeCount > 0 && params.mergedPRCount === 0) {
     score -= 15;
+  }
+
+  // Feature signals: reactions, comment depth, and milestone bonuses
+  if (params.featureSignals) {
+    const fs = params.featureSignals;
+    score += Math.min(Math.floor(fs.reactions / 2), 10);
+    if (fs.comments >= 5) score += 5;
+    if (fs.hasMilestone) score += 5;
   }
 
   // Clamp to 0-100

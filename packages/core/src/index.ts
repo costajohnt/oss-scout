@@ -55,6 +55,7 @@ export type {
   StoredOpenPR,
   SearchStrategy,
   SkippedIssue,
+  Horizon,
 } from "./core/schemas.js";
 
 // Schemas (for consumers who need runtime validation)
@@ -66,6 +67,7 @@ export {
   ProjectCategorySchema,
   SearchStrategySchema,
   SkippedIssueSchema,
+  HorizonSchema,
 } from "./core/schemas.js";
 
 // Utilities
@@ -73,8 +75,27 @@ export { requireGitHubToken, getGitHubToken } from "./core/utils.js";
 
 // Internal classes (for advanced use)
 export { IssueDiscovery } from "./core/issue-discovery.js";
-export { IssueVetter, type ScoutStateReader } from "./core/issue-vetting.js";
+export {
+  IssueVetter,
+  type ScoutStateReader,
+  type FeatureSignals,
+} from "./core/issue-vetting.js";
 export {
   scanForAntiLLMPolicy,
   ANTI_LLM_KEYWORDS,
 } from "./core/anti-llm-policy.js";
+
+// Feature discovery API
+export {
+  discoverFeatures,
+  resolveAnchorRepos,
+  classifyHorizon,
+  splitByHorizon,
+  ANCHOR_THRESHOLD,
+  FEATURE_LABELS,
+  NO_ANCHORS_MESSAGE,
+  NO_RESULTS_MESSAGE,
+  type FeatureCandidate,
+  type FeatureSearchResult,
+  type DiscoverFeaturesOptions,
+} from "./core/feature-discovery.js";

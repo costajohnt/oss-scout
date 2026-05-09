@@ -6,7 +6,12 @@
  */
 
 import { IssueDiscovery } from "./core/issue-discovery.js";
+import { IssueVetter } from "./core/issue-vetting.js";
 import type { ScoutStateReader } from "./core/issue-vetting.js";
+import {
+  discoverFeatures,
+  type FeatureSearchResult,
+} from "./core/feature-discovery.js";
 import { ScoutStateSchema } from "./core/schemas.js";
 import type {
   ScoutState,
@@ -14,6 +19,7 @@ import type {
   RepoScore,
   SavedCandidate,
   SkippedIssue,
+  Horizon,
 } from "./core/schemas.js";
 import type {
   ScoutConfig,
@@ -217,6 +223,29 @@ export class OssScout implements ScoutStateReader {
       this,
     );
     return discovery.vetIssue(issueUrl);
+  }
+
+  /**
+   * `scout features` — surfaces feature-scoped contribution opportunities
+   * in repos where the user has 3+ merged PRs, ranked into separate
+   * "quick wins" and "bigger bets" buckets.
+   */
+  async features(options?: { count?: number }): Promise<FeatureSearchResult> {
+    const count = options?.count ?? 10;
+    const octokit = getOctokit(this.githubToken);
+    const vetter = new IssueVetter(octokit, this);
+    const result = await discoverFeatures({
+      octokit,
+      vetter,
+      repoScores: this.state.repoScores ?? {},
+      count,
+    });
+
+    this.saveResults([...result.quickWins, ...result.biggerBets]);
+    this.state.lastSearchAt = new Date().toISOString();
+    this.dirty = true;
+
+    return result;
   }
 
   // ── Batch Vetting ───────────────────────────────────────────────────
@@ -493,7 +522,11 @@ export class OssScout implements ScoutStateReader {
    * If a candidate already exists, updates score/recommendation/lastSeenAt
    * but preserves firstSeenAt.
    */
-  saveResults(candidates: IssueCandidate[]): void {
+  saveResults(
+    candidates: Array<
+      IssueCandidate | (IssueCandidate & { horizon?: Horizon })
+    >,
+  ): void {
     const now = new Date().toISOString();
     const existing = new Map(
       (this.state.savedResults ?? []).map((r) => [r.issueUrl, r]),
@@ -513,6 +546,7 @@ export class OssScout implements ScoutStateReader {
         firstSeenAt: prev?.firstSeenAt ?? now,
         lastSeenAt: now,
         lastScore: c.viabilityScore,
+        horizon: "horizon" in c ? c.horizon : undefined,
       });
     }
 

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { IssueCandidate, ProjectHealth } from "./types.js";
+import { calculateViabilityScore } from "./issue-scoring.js";
 
 // ── Mocks ──────────────────────────────────────────────────────────
 
@@ -560,6 +561,104 @@ describe("IssueVetter", () => {
           10,
         ),
       ).rejects.toThrow("Bad credentials");
+    });
+  });
+
+  // ── feature signals plumbing ──────────────────────────────────────
+
+  describe("IssueVetter feature signals", () => {
+    /**
+     * Helper: builds a vetter and a `scoreOf` reader. The mocked
+     * `calculateViabilityScore` is rewired to apply the same
+     * featureSignals math as the real implementation so we can verify
+     * the option threads through end-to-end without depending on the
+     * full scoring constants (which Task 2 already covers).
+     */
+    function buildVetterUnderTest() {
+      // Rewire the mock to apply ONLY the featureSignals delta on top of
+      // a fixed base — this isolates the plumbing under test.
+      vi.mocked(calculateViabilityScore).mockImplementation(
+        (params: Parameters<typeof calculateViabilityScore>[0]) => {
+          let score = 50;
+          if (params.featureSignals) {
+            const fs = params.featureSignals;
+            score += Math.min(Math.floor(fs.reactions / 2), 10);
+            if (fs.comments >= 5) score += 5;
+            if (fs.hasMilestone) score += 5;
+          }
+          return score;
+        },
+      );
+
+      // Fresh cache per call so signals are not collapsed into one entry.
+      vi.mocked(getHttpCache).mockReturnValue({
+        getIfFresh: vi.fn(() => null),
+        set: vi.fn(),
+      } as unknown as ReturnType<typeof getHttpCache>);
+
+      const vetter = makeVetter();
+      const scoreOf = (c: IssueCandidate) => c.viabilityScore;
+      return { vetter, scoreOf };
+    }
+
+    it("plumbs featureSignals through to scoring", async () => {
+      const baselineUrl = "https://github.com/foo/bar/issues/100";
+      const { vetter, scoreOf } = buildVetterUnderTest();
+      const baseline = await vetter.vetIssue(baselineUrl);
+      const boosted = await vetter.vetIssue(baselineUrl, {
+        featureSignals: { reactions: 20, comments: 10, hasMilestone: true },
+      });
+      // 10 (reactions cap) + 5 (comments) + 5 (milestone) = 20
+      expect(scoreOf(boosted)).toBe(scoreOf(baseline) + 20);
+    });
+
+    it("forwards featureSignals to calculateViabilityScore", async () => {
+      const { vetter } = buildVetterUnderTest();
+      await vetter.vetIssue("https://github.com/foo/bar/issues/101", {
+        featureSignals: { reactions: 7, comments: 2, hasMilestone: false },
+      });
+      expect(calculateViabilityScore).toHaveBeenCalledWith(
+        expect.objectContaining({
+          featureSignals: { reactions: 7, comments: 2, hasMilestone: false },
+        }),
+      );
+    });
+
+    it("omits featureSignals when caller does not pass them", async () => {
+      const { vetter } = buildVetterUnderTest();
+      await vetter.vetIssue("https://github.com/foo/bar/issues/102");
+      const call = vi.mocked(calculateViabilityScore).mock.calls.at(-1);
+      expect(call?.[0].featureSignals).toBeUndefined();
+    });
+
+    it("uses a distinct cache key per featureSignals combination", async () => {
+      // Pre-seed a cached IssueCandidate keyed under the no-signals key.
+      // If signals were not part of the cache key, the call below would
+      // return that pre-seeded result — and `set` would never run.
+      const sentinel = { issue: {}, viabilityScore: -1 } as IssueCandidate;
+      const getIfFresh = vi.fn((key: string) =>
+        key === "vet:https://github.com/foo/bar/issues/103" ? sentinel : null,
+      );
+      const set = vi.fn();
+      vi.mocked(getHttpCache).mockReturnValue({
+        getIfFresh,
+        set,
+      } as unknown as ReturnType<typeof getHttpCache>);
+
+      const vetter = makeVetter();
+      const result = await vetter.vetIssue(
+        "https://github.com/foo/bar/issues/103",
+        { featureSignals: { reactions: 4, comments: 0, hasMilestone: true } },
+      );
+
+      // Should NOT be the sentinel — different signal key avoided the collision.
+      expect(result).not.toBe(sentinel);
+      expect(set).toHaveBeenCalled();
+      // Confirm the lookup used a signals-suffixed key.
+      expect(getIfFresh).toHaveBeenCalledWith(
+        "vet:https://github.com/foo/bar/issues/103:r4c0m1",
+        expect.any(Number),
+      );
     });
   });
 });
