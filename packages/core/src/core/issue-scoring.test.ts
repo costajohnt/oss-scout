@@ -213,4 +213,72 @@ describe("calculateViabilityScore", () => {
     // 50 + 20 + 12 + 15 + 15 + 10 + 5 + 5 + 15 = 147 → clamped to 100
     expect(score).toBe(100);
   });
+
+  describe("calculateViabilityScore feature signals", () => {
+    const baseFeature: ViabilityScoreParams = {
+      repoScore: null,
+      hasExistingPR: false,
+      isClaimed: false,
+      clearRequirements: false,
+      hasContributionGuidelines: false,
+      issueUpdatedAt: new Date().toISOString(),
+      closedWithoutMergeCount: 0,
+      mergedPRCount: 0,
+      orgHasMergedPRs: false,
+    };
+
+    it("adds nothing when featureSignals is absent", () => {
+      const score = calculateViabilityScore(baseFeature);
+      // base 50 + freshness 15 = 65
+      expect(score).toBe(65);
+    });
+
+    it("adds reactions/2 capped at 10", () => {
+      const score = calculateViabilityScore({
+        ...baseFeature,
+        featureSignals: { reactions: 4, comments: 0, hasMilestone: false },
+      });
+      expect(score).toBe(65 + 2); // 4/2 = 2
+    });
+
+    it("caps reactions bonus at 10", () => {
+      const score = calculateViabilityScore({
+        ...baseFeature,
+        featureSignals: { reactions: 100, comments: 0, hasMilestone: false },
+      });
+      expect(score).toBe(65 + 10);
+    });
+
+    it("adds +5 when comments >= 5", () => {
+      const score = calculateViabilityScore({
+        ...baseFeature,
+        featureSignals: { reactions: 0, comments: 5, hasMilestone: false },
+      });
+      expect(score).toBe(65 + 5);
+    });
+
+    it("adds nothing when comments < 5", () => {
+      const score = calculateViabilityScore({
+        ...baseFeature,
+        featureSignals: { reactions: 0, comments: 4, hasMilestone: false },
+      });
+      expect(score).toBe(65);
+    });
+
+    it("adds +5 when hasMilestone is true", () => {
+      const score = calculateViabilityScore({
+        ...baseFeature,
+        featureSignals: { reactions: 0, comments: 0, hasMilestone: true },
+      });
+      expect(score).toBe(65 + 5);
+    });
+
+    it("combines all feature bonuses", () => {
+      const score = calculateViabilityScore({
+        ...baseFeature,
+        featureSignals: { reactions: 20, comments: 10, hasMilestone: true },
+      });
+      expect(score).toBe(65 + 10 + 5 + 5);
+    });
+  });
 });
