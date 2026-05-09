@@ -5,6 +5,7 @@
 import { createScout } from "../scout.js";
 import { requireGitHubToken } from "../core/utils.js";
 import { saveLocalState } from "../core/local-state.js";
+import { isLinkedPRStalled } from "../core/linked-pr.js";
 import type { ScoutState, SearchStrategy } from "../core/schemas.js";
 
 export interface SearchOutput {
@@ -28,6 +29,19 @@ export interface SearchOutput {
       closedWithoutMergeCount: number;
       isResponsive: boolean;
       lastMergedAt?: string;
+    };
+    /**
+     * Metadata for the first cross-referenced PR linked to this issue, when
+     * one exists. `isStalled` flags open PRs that haven't been updated for
+     * 30+ days — surfaced as revive opportunities (#97). Scoring is
+     * unchanged: the existing -30 viability penalty still applies.
+     */
+    linkedPR?: {
+      number: number;
+      state: "open" | "closed";
+      url: string;
+      updatedAt?: string;
+      isStalled: boolean;
     };
   }>;
   excludedRepos: string[];
@@ -90,6 +104,15 @@ export async function runSearch(
               closedWithoutMergeCount: repoScoreRecord.closedWithoutMergeCount,
               isResponsive: repoScoreRecord.signals?.isResponsive ?? false,
               lastMergedAt: repoScoreRecord.lastMergedAt,
+            }
+          : undefined,
+        linkedPR: c.vettingResult.linkedPR
+          ? {
+              number: c.vettingResult.linkedPR.number,
+              state: c.vettingResult.linkedPR.state,
+              url: c.vettingResult.linkedPR.url,
+              updatedAt: c.vettingResult.linkedPR.updatedAt,
+              isStalled: isLinkedPRStalled(c.vettingResult.linkedPR),
             }
           : undefined,
       };

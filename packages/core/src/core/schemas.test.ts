@@ -298,9 +298,7 @@ describe("LinkedPRSchema", () => {
     expect(parsed.updatedAt).toBe("2026-01-01T00:00:00Z");
   });
   it("rejects non-string updatedAt", () => {
-    expect(() =>
-      LinkedPRSchema.parse({ ...base, updatedAt: 12345 }),
-    ).toThrow();
+    expect(() => LinkedPRSchema.parse({ ...base, updatedAt: 12345 })).toThrow();
   });
 });
 

@@ -239,6 +239,98 @@ describe("runSearch", () => {
     expect(mockCheckpoint).toHaveBeenCalled();
   });
 
+  it("marks linkedPR.isStalled when the linked PR is open and stale (#97)", async () => {
+    const stale = new Date(Date.now() - 45 * 24 * 60 * 60 * 1000).toISOString();
+    const candidate = makeCandidate({
+      vettingResult: {
+        passedAllChecks: false,
+        checks: {
+          noExistingPR: false,
+          notClaimed: true,
+          projectActive: true,
+          clearRequirements: true,
+          contributionGuidelinesFound: true,
+        },
+        notes: [],
+        linkedPR: {
+          number: 99,
+          author: "alice",
+          state: "open",
+          merged: false,
+          url: "https://github.com/test/repo/pull/99",
+          updatedAt: stale,
+        },
+      },
+    });
+    mockSearch.mockResolvedValue({
+      candidates: [candidate],
+      excludedRepos: [],
+      aiPolicyBlocklist: [],
+      strategiesUsed: ["broad"],
+    });
+    mockGetRepoScoreRecord.mockReturnValue(undefined);
+
+    const { runSearch } = await import("./search.js");
+    const result = await runSearch({ maxResults: 5 });
+
+    expect(result.candidates[0].linkedPR).toBeDefined();
+    expect(result.candidates[0].linkedPR!.number).toBe(99);
+    expect(result.candidates[0].linkedPR!.isStalled).toBe(true);
+  });
+
+  it("does not flag a fresh linked PR as stalled (#97)", async () => {
+    const fresh = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString();
+    const candidate = makeCandidate({
+      vettingResult: {
+        passedAllChecks: false,
+        checks: {
+          noExistingPR: false,
+          notClaimed: true,
+          projectActive: true,
+          clearRequirements: true,
+          contributionGuidelinesFound: true,
+        },
+        notes: [],
+        linkedPR: {
+          number: 100,
+          author: "alice",
+          state: "open",
+          merged: false,
+          url: "https://github.com/test/repo/pull/100",
+          updatedAt: fresh,
+        },
+      },
+    });
+    mockSearch.mockResolvedValue({
+      candidates: [candidate],
+      excludedRepos: [],
+      aiPolicyBlocklist: [],
+      strategiesUsed: ["broad"],
+    });
+    mockGetRepoScoreRecord.mockReturnValue(undefined);
+
+    const { runSearch } = await import("./search.js");
+    const result = await runSearch({ maxResults: 5 });
+
+    expect(result.candidates[0].linkedPR!.isStalled).toBe(false);
+  });
+
+  it("omits linkedPR when no PR is linked (#97)", async () => {
+    const candidate = makeCandidate();
+    mockSearch.mockResolvedValue({
+      candidates: [candidate],
+      excludedRepos: [],
+      aiPolicyBlocklist: [],
+      strategiesUsed: ["broad"],
+    });
+    mockGetRepoScoreRecord.mockReturnValue(undefined);
+
+    const { runSearch } = await import("./search.js");
+    const result = await runSearch({ maxResults: 5 });
+
+    expect(result.candidates[0].linkedPR).toBeUndefined();
+  });
+
   it("calls saveResults with candidates", async () => {
     const candidate = makeCandidate();
     mockSearch.mockResolvedValue({

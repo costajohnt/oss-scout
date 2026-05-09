@@ -1,8 +1,5 @@
 import { describe, it, expect } from "vitest";
-import {
-  isLinkedPRStalled,
-  STALLED_PR_THRESHOLD_DAYS,
-} from "./linked-pr.js";
+import { isLinkedPRStalled, STALLED_PR_THRESHOLD_DAYS } from "./linked-pr.js";
 import type { LinkedPR } from "./schemas.js";
 
 const NOW = new Date("2026-05-09T00:00:00Z");

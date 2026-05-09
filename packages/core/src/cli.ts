@@ -171,8 +171,11 @@ program
                 : c.recommendation === "skip"
                   ? "❌"
                   : "⚠️";
+            const stalledTag = c.linkedPR?.isStalled
+              ? " (stalled PR — revive opportunity)"
+              : "";
             console.log(
-              `  ${icon} ${c.issue.repo}#${c.issue.number} [${c.viabilityScore}/100]`,
+              `  ${icon} ${c.issue.repo}#${c.issue.number} [${c.viabilityScore}/100]${stalledTag}`,
             );
             console.log(`     ${c.issue.title}`);
             console.log(`     ${c.issue.url}`);
@@ -263,8 +266,11 @@ program
               "── Quick wins ─────────────────────────────────────────",
             );
             for (const c of result.quickWins) {
+              const stalledTag = c.linkedPR?.isStalled
+                ? " (stalled PR — revive opportunity)"
+                : "";
               console.log(
-                `  ${c.issue.repo}#${c.issue.number} [${c.viabilityScore}/100] ${c.issue.title}`,
+                `  ${c.issue.repo}#${c.issue.number} [${c.viabilityScore}/100] ${c.issue.title}${stalledTag}`,
               );
               console.log(`     ${c.issue.url}`);
             }
@@ -275,8 +281,11 @@ program
               "── Bigger bets ────────────────────────────────────────",
             );
             for (const c of result.biggerBets) {
+              const stalledTag = c.linkedPR?.isStalled
+                ? " (stalled PR — revive opportunity)"
+                : "";
               console.log(
-                `  ${c.issue.repo}#${c.issue.number} [${c.viabilityScore}/100] ${c.issue.title}`,
+                `  ${c.issue.repo}#${c.issue.number} [${c.viabilityScore}/100] ${c.issue.title}${stalledTag}`,
               );
               console.log(`     ${c.issue.url}`);
             }
