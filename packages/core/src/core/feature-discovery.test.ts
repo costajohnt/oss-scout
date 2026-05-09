@@ -1,10 +1,11 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import type { RepoScore } from "./schemas.js";
 import {
   resolveAnchorRepos,
   ANCHOR_THRESHOLD,
   classifyHorizon,
   splitByHorizon,
+  discoverFeatures,
   type FeatureCandidate,
 } from "./feature-discovery.js";
 
@@ -164,5 +165,136 @@ describe("splitByHorizon 60/40 split", () => {
     expect(out.biggerBets.map((c) => c.viabilityScore)).toEqual([
       95, 92, 88, 85,
     ]);
+  });
+});
+
+describe("discoverFeatures orchestrator", () => {
+  it("returns no-anchors message when repoScores has no qualifying repos", async () => {
+    const octokit = { issues: { listForRepo: vi.fn() } } as never;
+    const vetter = { vetIssue: vi.fn() } as never;
+    const result = await discoverFeatures({
+      octokit,
+      vetter,
+      repoScores: mkScores(["a/b", 1]),
+      count: 10,
+    });
+    expect(result.anchorRepos).toEqual([]);
+    expect(result.quickWins).toEqual([]);
+    expect(result.biggerBets).toEqual([]);
+    expect(result.message).toContain("No anchor repos yet");
+    expect(octokit.issues.listForRepo).not.toHaveBeenCalled();
+  });
+
+  it("returns no-results message when anchors exist but no feature issues found", async () => {
+    const octokit = {
+      issues: {
+        listForRepo: vi.fn().mockResolvedValue({ data: [] }),
+      },
+    } as never;
+    const vetter = { vetIssue: vi.fn() } as never;
+    const result = await discoverFeatures({
+      octokit,
+      vetter,
+      repoScores: mkScores(["a/b", 4]),
+      count: 10,
+    });
+    expect(result.anchorRepos).toEqual(["a/b"]);
+    expect(result.quickWins).toEqual([]);
+    expect(result.biggerBets).toEqual([]);
+    expect(result.message).toContain("No open feature opportunities");
+  });
+
+  it("classifies, vets, and splits issues into horizons", async () => {
+    const octokit = {
+      issues: {
+        listForRepo: vi.fn().mockResolvedValue({
+          data: [
+            {
+              html_url: "https://github.com/a/b/issues/1",
+              title: "small enhancement",
+              labels: [{ name: "enhancement" }],
+              updated_at: "2026-05-01",
+              comments: 2,
+              reactions: { total_count: 4 },
+              milestone: null,
+              pull_request: undefined,
+              assignee: null,
+            },
+            {
+              html_url: "https://github.com/a/b/issues/2",
+              title: "big proposal",
+              labels: [{ name: "proposal" }],
+              updated_at: "2026-05-01",
+              comments: 30,
+              reactions: { total_count: 50 },
+              milestone: { number: 1 },
+              pull_request: undefined,
+              assignee: null,
+            },
+          ],
+        }),
+      },
+    } as never;
+    const vetter = {
+      vetIssue: vi.fn().mockImplementation(async (url: string) => ({
+        issue: {
+          url,
+          repo: "a/b",
+          number: 1,
+          title: "t",
+          labels: [],
+          updatedAt: "2026-05-01",
+        },
+        vettingResult: { passedAllChecks: true, checks: {}, notes: [] },
+        projectHealth: {},
+        antiLLMPolicy: {
+          matched: false,
+          matchedKeywords: [],
+          sourceFile: null,
+        },
+        slmTriage: null,
+        recommendation: "approve",
+        reasonsToApprove: [],
+        reasonsToSkip: [],
+        viabilityScore: 80,
+        searchPriority: "merged_pr",
+      })),
+    } as never;
+    const result = await discoverFeatures({
+      octokit,
+      vetter,
+      repoScores: mkScores(["a/b", 4]),
+      count: 10,
+    });
+    expect(result.anchorRepos).toEqual(["a/b"]);
+    expect(result.quickWins).toHaveLength(1);
+    expect(result.biggerBets).toHaveLength(1);
+    expect(result.quickWins[0].horizon).toBe("quick-win");
+    expect(result.biggerBets[0].horizon).toBe("bigger-bet");
+    expect(result.message).toBeNull();
+    expect(vetter.vetIssue).toHaveBeenCalledWith(
+      "https://github.com/a/b/issues/1",
+      { featureSignals: { reactions: 4, comments: 2, hasMilestone: false } },
+    );
+    expect(vetter.vetIssue).toHaveBeenCalledWith(
+      "https://github.com/a/b/issues/2",
+      { featureSignals: { reactions: 50, comments: 30, hasMilestone: true } },
+    );
+  });
+
+  it("propagates auth and rate-limit errors", async () => {
+    const error = Object.assign(new Error("401"), { status: 401 });
+    const octokit = {
+      issues: { listForRepo: vi.fn().mockRejectedValue(error) },
+    } as never;
+    const vetter = { vetIssue: vi.fn() } as never;
+    await expect(
+      discoverFeatures({
+        octokit,
+        vetter,
+        repoScores: mkScores(["a/b", 4]),
+        count: 10,
+      }),
+    ).rejects.toThrow();
   });
 });
