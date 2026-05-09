@@ -67,6 +67,35 @@ export function registerTools(server: McpServer, scout: OssScout): void {
   );
 
   server.tool(
+    "scout-features",
+    "Surface feature-scoped contribution opportunities in repos where you have 3+ merged PRs",
+    {
+      maxResults: z
+        .number()
+        .optional()
+        .describe("Maximum number of results to return (default 10)"),
+    },
+    async ({ maxResults }) => {
+      try {
+        const result = await withTimeout(
+          scout.features({ count: maxResults ?? 10 }),
+        );
+        scout.saveResults([...result.quickWins, ...result.biggerBets]);
+        await scout.checkpoint();
+        return {
+          content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+        };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return {
+          content: [{ type: "text", text: `Error: ${msg}` }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  server.tool(
     "vet",
     "Vet a specific GitHub issue for contribution viability",
     {

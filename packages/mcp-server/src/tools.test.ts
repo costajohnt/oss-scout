@@ -33,6 +33,12 @@ function createMockScout(overrides: Partial<OssScout> = {}): OssScout {
     unskipIssue: vi.fn(),
     clearSkippedIssues: vi.fn(),
     checkpoint: vi.fn().mockResolvedValue(true),
+    features: vi.fn().mockResolvedValue({
+      quickWins: [],
+      biggerBets: [],
+      anchorRepos: [],
+      message: null,
+    }),
     ...overrides,
   } as unknown as OssScout;
 }
@@ -64,8 +70,8 @@ describe("registerTools", () => {
     registerTools(server, scout);
   });
 
-  it("registers all five tools", () => {
-    expect(server.tool).toHaveBeenCalledTimes(5);
+  it("registers all six tools", () => {
+    expect(server.tool).toHaveBeenCalledTimes(6);
 
     const calls = vi.mocked(server.tool).mock.calls;
     const names = calls.map((c) => c[0]);
@@ -74,6 +80,7 @@ describe("registerTools", () => {
     expect(names).toContain("skip");
     expect(names).toContain("config");
     expect(names).toContain("config-set");
+    expect(names).toContain("scout-features");
   });
 
   describe("search tool execution", () => {
@@ -127,6 +134,30 @@ describe("registerTools", () => {
 
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain("API rate limited");
+    });
+  });
+
+  describe("scout-features tool execution", () => {
+    it("returns JSON text content on success", async () => {
+      const featuresResult = {
+        quickWins: [],
+        biggerBets: [],
+        anchorRepos: [],
+        message: "No anchor repos yet",
+      };
+      const local = createMockScout({
+        features: vi.fn().mockResolvedValue(featuresResult),
+      } as Partial<OssScout>);
+      const localServer = new McpServer({ name: "t", version: "0.0.1" });
+      vi.spyOn(localServer, "tool");
+      registerTools(localServer, local);
+      const handler = getToolHandler(localServer, "scout-features");
+      const result = (await handler({ maxResults: 5 }, {})) as {
+        content: Array<{ type: string; text: string }>;
+        isError?: boolean;
+      };
+      expect(result.isError).toBeUndefined();
+      expect(JSON.parse(result.content[0].text)).toMatchObject(featuresResult);
     });
   });
 
