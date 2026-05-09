@@ -137,6 +137,53 @@ export const FEATURE_EXCLUSION_LABELS = new Set([
   "documentation",
 ]);
 
+/**
+ * Labels that signal "the maintainer wants outside contributions". When any
+ * is present, combined with no linked PR and an issue age >= 60 days, the
+ * issue is treated as wontfix-no-contributor (#96).
+ */
+export const WONTFIX_NO_CONTRIBUTOR_LABELS = new Set([
+  "help wanted",
+  "contributions welcome",
+  "up-for-grabs",
+  "bounty",
+  "pinned",
+  "unmaintained",
+]);
+
+/** Minimum days an issue must be open to qualify as wontfix-no-contributor. */
+export const WONTFIX_MIN_AGE_DAYS = 60;
+
+/**
+ * Pure detector for the "wontfix because no contributor stepped up" pattern (#96).
+ *
+ * True when:
+ *   - issue carries any of WONTFIX_NO_CONTRIBUTOR_LABELS, AND
+ *   - issue has been open at least `minAgeDays` days (default 60)
+ *
+ * The orchestrator already filters out assigned issues before reaching the
+ * vetter. Linked-PR cases are deliberately not gated here: the existing
+ * -30 viability penalty for `hasExistingPR` already discounts those, and
+ * checking `hasLinkedPR` would require deferring scoring until after vet,
+ * doubling the work for a marginally cleaner signal.
+ */
+export function detectWontfixNoContributor(input: {
+  labels: string[];
+  createdAt: string;
+  now?: Date;
+  minAgeDays?: number;
+}): boolean {
+  const matched = input.labels.some((l) =>
+    WONTFIX_NO_CONTRIBUTOR_LABELS.has(l.toLowerCase()),
+  );
+  if (!matched) return false;
+  const created = new Date(input.createdAt);
+  if (Number.isNaN(created.getTime())) return false;
+  const now = input.now ?? new Date();
+  const ageDays = (now.getTime() - created.getTime()) / (1000 * 60 * 60 * 24);
+  return ageDays >= (input.minAgeDays ?? WONTFIX_MIN_AGE_DAYS);
+}
+
 export const NO_ANCHORS_MESSAGE =
   "No anchor repos yet (need 3+ merged PRs in a repo). Try `scout search` to build relationships first.";
 
@@ -170,6 +217,8 @@ interface RawIssueItem {
   milestone?: { number?: number } | null;
   pull_request?: unknown;
   assignee?: unknown;
+  created_at?: string;
+  number?: number;
 }
 
 function extractLabels(item: RawIssueItem): string[] {
@@ -243,10 +292,18 @@ export async function discoverFeatures(
       const hasMilestone = !!item.milestone;
       const reactions = item.reactions?.total_count ?? 0;
       const comments = item.comments ?? 0;
+      const wontfixNoContributor = item.created_at
+        ? detectWontfixNoContributor({ labels, createdAt: item.created_at })
+        : false;
       let candidate;
       try {
         candidate = await opts.vetter.vetIssue(item.html_url, {
-          featureSignals: { reactions, comments, hasMilestone },
+          featureSignals: {
+            reactions,
+            comments,
+            hasMilestone,
+            wontfixNoContributor,
+          },
         });
       } catch (err: unknown) {
         if (getHttpStatusCode(err) === 401 || isRateLimitError(err)) throw err;

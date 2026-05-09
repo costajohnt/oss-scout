@@ -58,12 +58,23 @@ const VETTING_CACHE_TTL_MS = 15 * 60 * 1000;
  * Feature-mode signals supplied by the caller (orchestrator) — the vetter
  * does NOT extract these from the GitHub issue itself. When passed, they
  * plumb through to `calculateViabilityScore` to apply reaction, comment-depth,
- * and milestone bonuses.
+ * milestone, roadmap, and wontfix-no-contributor bonuses.
  */
 export type FeatureSignals = {
   reactions: number;
   comments: number;
   hasMilestone: boolean;
+  /**
+   * Issue is referenced from the repo's ROADMAP.md. Strong maintainer-commitment
+   * signal — they've publicly committed to the work in a roadmap doc (#95).
+   */
+  onRoadmap?: boolean;
+  /**
+   * Issue exhibits "wontfix-no-contributor" pattern — labeled help-wanted /
+   * contributions-welcome / up-for-grabs / bounty, no linked PR, open >= 60
+   * days. Maintainer wants it; nobody has stepped up (#96).
+   */
+  wontfixNoContributor?: boolean;
 };
 
 /**
@@ -114,7 +125,7 @@ export class IssueVetter {
     // Check vetting cache first — avoids ~6+ API calls per issue
     const cache = getHttpCache();
     const sigKey = opts?.featureSignals
-      ? `:r${opts.featureSignals.reactions}c${opts.featureSignals.comments}m${opts.featureSignals.hasMilestone ? 1 : 0}`
+      ? `:r${opts.featureSignals.reactions}c${opts.featureSignals.comments}m${opts.featureSignals.hasMilestone ? 1 : 0}o${opts.featureSignals.onRoadmap ? 1 : 0}w${opts.featureSignals.wontfixNoContributor ? 1 : 0}`
       : "";
     const cacheKey = `vet:${issueUrl}${sigKey}`;
     const cached = cache.getIfFresh(cacheKey, VETTING_CACHE_TTL_MS);

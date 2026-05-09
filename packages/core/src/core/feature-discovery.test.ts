@@ -6,6 +6,8 @@ import {
   classifyHorizon,
   splitByHorizon,
   discoverFeatures,
+  detectWontfixNoContributor,
+  WONTFIX_MIN_AGE_DAYS,
   type FeatureCandidate,
 } from "./feature-discovery.js";
 
@@ -58,6 +60,89 @@ describe("resolveAnchorRepos", () => {
   it("defaults to ANCHOR_THRESHOLD when threshold is undefined", () => {
     const out = resolveAnchorRepos(mkScores(["a/b", 2], ["c/d", 3]), undefined);
     expect(out).toEqual(["c/d"]);
+  });
+});
+
+describe("detectWontfixNoContributor", () => {
+  const NOW = new Date("2026-05-09T00:00:00Z");
+  const oldCreated = new Date(
+    NOW.getTime() - (WONTFIX_MIN_AGE_DAYS + 5) * 86400000,
+  ).toISOString();
+  const recentCreated = new Date(
+    NOW.getTime() - 10 * 86400000,
+  ).toISOString();
+
+  it("returns true with help-wanted label and old enough age", () => {
+    expect(
+      detectWontfixNoContributor({
+        labels: ["help wanted"],
+        createdAt: oldCreated,
+        now: NOW,
+      }),
+    ).toBe(true);
+  });
+  it("returns false when no qualifying label is present", () => {
+    expect(
+      detectWontfixNoContributor({
+        labels: ["enhancement"],
+        createdAt: oldCreated,
+        now: NOW,
+      }),
+    ).toBe(false);
+  });
+  it("returns false for an issue younger than 60 days", () => {
+    expect(
+      detectWontfixNoContributor({
+        labels: ["help wanted"],
+        createdAt: recentCreated,
+        now: NOW,
+      }),
+    ).toBe(false);
+  });
+  it("matches case-insensitively", () => {
+    expect(
+      detectWontfixNoContributor({
+        labels: ["Help Wanted"],
+        createdAt: oldCreated,
+        now: NOW,
+      }),
+    ).toBe(true);
+  });
+  it("recognises contributions-welcome, up-for-grabs, bounty, pinned, unmaintained", () => {
+    for (const label of [
+      "contributions welcome",
+      "up-for-grabs",
+      "bounty",
+      "pinned",
+      "unmaintained",
+    ]) {
+      expect(
+        detectWontfixNoContributor({
+          labels: [label],
+          createdAt: oldCreated,
+          now: NOW,
+        }),
+      ).toBe(true);
+    }
+  });
+  it("returns false on unparseable createdAt", () => {
+    expect(
+      detectWontfixNoContributor({
+        labels: ["help wanted"],
+        createdAt: "not-a-date",
+        now: NOW,
+      }),
+    ).toBe(false);
+  });
+  it("respects custom minAgeDays override", () => {
+    expect(
+      detectWontfixNoContributor({
+        labels: ["help wanted"],
+        createdAt: recentCreated,
+        now: NOW,
+        minAgeDays: 5,
+      }),
+    ).toBe(true);
   });
 });
 
@@ -300,11 +385,25 @@ describe("discoverFeatures orchestrator", () => {
     expect(result.message).toBeNull();
     expect(vetter.vetIssue).toHaveBeenCalledWith(
       "https://github.com/a/b/issues/1",
-      { featureSignals: { reactions: 4, comments: 2, hasMilestone: false } },
+      {
+        featureSignals: {
+          reactions: 4,
+          comments: 2,
+          hasMilestone: false,
+          wontfixNoContributor: false,
+        },
+      },
     );
     expect(vetter.vetIssue).toHaveBeenCalledWith(
       "https://github.com/a/b/issues/2",
-      { featureSignals: { reactions: 50, comments: 30, hasMilestone: true } },
+      {
+        featureSignals: {
+          reactions: 50,
+          comments: 30,
+          hasMilestone: true,
+          wontfixNoContributor: false,
+        },
+      },
     );
   });
 
@@ -390,6 +489,73 @@ describe("discoverFeatures orchestrator", () => {
     expect(split.anchorRepos).toEqual(["a/b"]);
     expect(split.quickWins).toHaveLength(1);
     expect(split.biggerBets).toHaveLength(1);
+  });
+
+  it("forwards wontfixNoContributor signal to the vetter when label + age qualify", async () => {
+    const oldCreated = new Date(
+      Date.now() - (WONTFIX_MIN_AGE_DAYS + 30) * 86400000,
+    ).toISOString();
+    const octokit = {
+      issues: {
+        listForRepo: vi.fn().mockResolvedValue({
+          data: [
+            {
+              html_url: "https://github.com/a/b/issues/9",
+              title: "long-open feature ask",
+              labels: [{ name: "enhancement" }, { name: "help wanted" }],
+              comments: 1,
+              reactions: { total_count: 1 },
+              milestone: null,
+              pull_request: undefined,
+              assignee: null,
+              created_at: oldCreated,
+            },
+          ],
+        }),
+      },
+    } as never;
+    const vetter = {
+      vetIssue: vi.fn().mockImplementation(async (url: string) => ({
+        issue: {
+          url,
+          repo: "a/b",
+          number: 9,
+          title: "t",
+          labels: [],
+          updatedAt: "2026-05-01",
+        },
+        vettingResult: { passedAllChecks: true, checks: {}, notes: [] },
+        projectHealth: {},
+        antiLLMPolicy: {
+          matched: false,
+          matchedKeywords: [],
+          sourceFile: null,
+        },
+        slmTriage: null,
+        recommendation: "approve",
+        reasonsToApprove: [],
+        reasonsToSkip: [],
+        viabilityScore: 80,
+        searchPriority: "merged_pr",
+      })),
+    } as never;
+    await discoverFeatures({
+      octokit,
+      vetter,
+      repoScores: mkScores(["a/b", 4]),
+      count: 5,
+    });
+    expect(vetter.vetIssue).toHaveBeenCalledWith(
+      "https://github.com/a/b/issues/9",
+      {
+        featureSignals: {
+          reactions: 1,
+          comments: 1,
+          hasMilestone: false,
+          wontfixNoContributor: true,
+        },
+      },
+    );
   });
 
   it("propagates auth and rate-limit errors", async () => {
