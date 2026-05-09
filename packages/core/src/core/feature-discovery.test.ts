@@ -1,6 +1,10 @@
 import { describe, it, expect } from "vitest";
 import type { RepoScore } from "./schemas.js";
-import { resolveAnchorRepos, ANCHOR_THRESHOLD } from "./feature-discovery.js";
+import {
+  resolveAnchorRepos,
+  ANCHOR_THRESHOLD,
+  classifyHorizon,
+} from "./feature-discovery.js";
 
 const mkScore = (repo: string, mergedPRCount: number): RepoScore => ({
   repo,
@@ -16,8 +20,12 @@ const mkScore = (repo: string, mergedPRCount: number): RepoScore => ({
   },
 });
 
-const mkScores = (...entries: Array<[string, number]>): Record<string, RepoScore> =>
-  Object.fromEntries(entries.map(([repo, count]) => [repo, mkScore(repo, count)]));
+const mkScores = (
+  ...entries: Array<[string, number]>
+): Record<string, RepoScore> =>
+  Object.fromEntries(
+    entries.map(([repo, count]) => [repo, mkScore(repo, count)]),
+  );
 
 describe("resolveAnchorRepos", () => {
   it("returns empty array when no scores meet threshold", () => {
@@ -36,5 +44,43 @@ describe("resolveAnchorRepos", () => {
       mkScores(["a/b", 4], ["c/d", 10], ["e/f", 7]),
     );
     expect(out).toEqual(["c/d", "e/f", "a/b"]);
+  });
+});
+
+describe("classifyHorizon", () => {
+  it("returns bigger-bet when issue has a milestone", () => {
+    expect(classifyHorizon({ hasMilestone: true, labels: [] })).toBe(
+      "bigger-bet",
+    );
+  });
+  it("returns bigger-bet for roadmap label", () => {
+    expect(classifyHorizon({ hasMilestone: false, labels: ["roadmap"] })).toBe(
+      "bigger-bet",
+    );
+  });
+  it("returns bigger-bet for accepted-rfc label", () => {
+    expect(
+      classifyHorizon({ hasMilestone: false, labels: ["accepted-rfc"] }),
+    ).toBe("bigger-bet");
+  });
+  it("returns bigger-bet for proposal label", () => {
+    expect(classifyHorizon({ hasMilestone: false, labels: ["proposal"] })).toBe(
+      "bigger-bet",
+    );
+  });
+  it("returns quick-win for plain enhancement label", () => {
+    expect(
+      classifyHorizon({ hasMilestone: false, labels: ["enhancement"] }),
+    ).toBe("quick-win");
+  });
+  it("returns quick-win when no signals fire", () => {
+    expect(classifyHorizon({ hasMilestone: false, labels: [] })).toBe(
+      "quick-win",
+    );
+  });
+  it("is case-insensitive on label matching", () => {
+    expect(classifyHorizon({ hasMilestone: false, labels: ["Roadmap"] })).toBe(
+      "bigger-bet",
+    );
   });
 });
