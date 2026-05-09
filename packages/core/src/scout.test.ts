@@ -1,7 +1,18 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { createScout, OssScout } from "./scout.js";
 import { ScoutStateSchema } from "./core/schemas.js";
 import type { ScoutState } from "./core/schemas.js";
+
+vi.mock("./core/feature-discovery.js", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("./core/feature-discovery.js")>();
+  return {
+    ...actual,
+    discoverFeatures: vi.fn(),
+  };
+});
+
+import { discoverFeatures } from "./core/feature-discovery.js";
 
 function makeState(overrides: Partial<ScoutState> = {}): ScoutState {
   return ScoutStateSchema.parse({ version: 1, ...overrides });
@@ -292,5 +303,74 @@ describe("OssScout", () => {
       const score = scout.getRepoScoreRecord("good/repo");
       expect(score!.score).toBeGreaterThan(5); // base is 5, merged adds
     });
+  });
+});
+
+describe("OssScout.features", () => {
+  it("delegates to discoverFeatures and persists results with horizon stamped", async () => {
+    const fakeQuick = {
+      issue: {
+        url: "https://github.com/foo/bar/issues/1",
+        repo: "foo/bar",
+        number: 1,
+        title: "qw",
+        labels: ["enhancement"],
+        updatedAt: "2026-05-08",
+      },
+      vettingResult: { passedAllChecks: true, checks: {}, notes: [] },
+      projectHealth: {},
+      antiLLMPolicy: { matched: false, matchedKeywords: [], sourceFile: null },
+      slmTriage: null,
+      recommendation: "approve",
+      reasonsToApprove: [],
+      reasonsToSkip: [],
+      viabilityScore: 80,
+      searchPriority: "merged_pr",
+      horizon: "quick-win" as const,
+    };
+    const fakeBigger = {
+      ...fakeQuick,
+      issue: {
+        ...fakeQuick.issue,
+        url: "https://github.com/foo/bar/issues/2",
+        number: 2,
+      },
+      horizon: "bigger-bet" as const,
+    };
+    vi.mocked(discoverFeatures).mockResolvedValue({
+      quickWins: [fakeQuick],
+      biggerBets: [fakeBigger],
+      anchorRepos: ["foo/bar"],
+      message: null,
+    } as never);
+
+    const state = ScoutStateSchema.parse({
+      version: 1,
+      repoScores: {
+        "foo/bar": {
+          repo: "foo/bar",
+          score: 5,
+          mergedPRCount: 4,
+          closedWithoutMergeCount: 0,
+          avgResponseDays: null,
+          lastEvaluatedAt: "2026-05-08T00:00:00Z",
+          signals: {
+            hasActiveMaintainers: true,
+            isResponsive: true,
+            hasHostileComments: false,
+          },
+        },
+      },
+    });
+    const scout = new OssScout("test-token", state);
+    const result = await scout.features({ count: 10 });
+    expect(result.quickWins).toHaveLength(1);
+    expect(result.biggerBets).toHaveLength(1);
+    expect(scout.getSavedResults().find((r) => r.number === 1)?.horizon).toBe(
+      "quick-win",
+    );
+    expect(scout.getSavedResults().find((r) => r.number === 2)?.horizon).toBe(
+      "bigger-bet",
+    );
   });
 });
