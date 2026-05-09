@@ -152,6 +152,8 @@ export const SkippedIssueSchema = z.object({
 
 // ── Saved candidate schema ─────────────────────────────────────────
 
+export const HorizonSchema = z.enum(["quick-win", "bigger-bet"]);
+
 export const SavedCandidateSchema = z.object({
   issueUrl: z.string(),
   repo: z.string(),
@@ -164,6 +166,7 @@ export const SavedCandidateSchema = z.object({
   firstSeenAt: z.string(),
   lastSeenAt: z.string(),
   lastScore: z.number(),
+  horizon: HorizonSchema.optional(),
 });
 
 // ── Scout preferences schema ────────────────────────────────────────
@@ -247,6 +250,7 @@ export type LinkedPR = z.infer<typeof LinkedPRSchema>;
 export type IssueVettingResult = z.infer<typeof IssueVettingResultSchema>;
 export type TrackedIssue = z.infer<typeof TrackedIssueSchema>;
 export type ScoutPreferences = z.infer<typeof ScoutPreferencesSchema>;
+export type Horizon = z.infer<typeof HorizonSchema>;
 export type SavedCandidate = z.infer<typeof SavedCandidateSchema>;
 export type SkippedIssue = z.infer<typeof SkippedIssueSchema>;
 export type ScoutState = z.infer<typeof ScoutStateSchema>;
