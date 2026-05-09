@@ -177,6 +177,48 @@ describe("ScoutPreferencesSchema", () => {
     });
     expect(prefs.skipBroadWhenSufficientResults).toBe(0);
   });
+
+  it("defaults featuresAnchorThreshold to 3 and featuresSplitRatio to 0.6", () => {
+    const prefs = ScoutPreferencesSchema.parse({});
+    expect(prefs.featuresAnchorThreshold).toBe(3);
+    expect(prefs.featuresSplitRatio).toBe(0.6);
+  });
+
+  it("accepts custom featuresAnchorThreshold and featuresSplitRatio", () => {
+    const prefs = ScoutPreferencesSchema.parse({
+      featuresAnchorThreshold: 5,
+      featuresSplitRatio: 0.4,
+    });
+    expect(prefs.featuresAnchorThreshold).toBe(5);
+    expect(prefs.featuresSplitRatio).toBe(0.4);
+  });
+
+  it("rejects featuresAnchorThreshold below 1", () => {
+    expect(() =>
+      ScoutPreferencesSchema.parse({ featuresAnchorThreshold: 0 }),
+    ).toThrow();
+  });
+
+  it("rejects featuresAnchorThreshold above 50", () => {
+    expect(() =>
+      ScoutPreferencesSchema.parse({ featuresAnchorThreshold: 51 }),
+    ).toThrow();
+  });
+
+  it("rejects non-integer featuresAnchorThreshold", () => {
+    expect(() =>
+      ScoutPreferencesSchema.parse({ featuresAnchorThreshold: 3.5 }),
+    ).toThrow();
+  });
+
+  it("rejects featuresSplitRatio outside 0..1", () => {
+    expect(() =>
+      ScoutPreferencesSchema.parse({ featuresSplitRatio: -0.1 }),
+    ).toThrow();
+    expect(() =>
+      ScoutPreferencesSchema.parse({ featuresSplitRatio: 1.1 }),
+    ).toThrow();
+  });
 });
 
 describe("RepoScoreSchema", () => {

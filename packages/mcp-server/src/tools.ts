@@ -74,11 +74,28 @@ export function registerTools(server: McpServer, scout: OssScout): void {
         .number()
         .optional()
         .describe("Maximum number of results to return (default 10)"),
+      anchorThreshold: z
+        .number()
+        .int()
+        .min(1)
+        .max(50)
+        .optional()
+        .describe("Anchor threshold override (default 3)"),
+      splitRatio: z
+        .number()
+        .min(0)
+        .max(1)
+        .optional()
+        .describe("Quick-wins/bigger-bets split ratio (default 0.6)"),
     },
-    async ({ maxResults }) => {
+    async ({ maxResults, anchorThreshold, splitRatio }) => {
       try {
         const result = await withTimeout(
-          scout.features({ count: maxResults ?? 10 }),
+          scout.features({
+            count: maxResults ?? 10,
+            anchorThreshold,
+            splitRatio,
+          }),
         );
         scout.saveResults([...result.quickWins, ...result.biggerBets]);
         await scout.checkpoint();
@@ -258,6 +275,8 @@ export function registerTools(server: McpServer, scout: OssScout): void {
     "interPhaseDelayMs",
     "broadPhaseDelayMs",
     "skipBroadWhenSufficientResults",
+    "featuresAnchorThreshold",
+    "featuresSplitRatio",
   ]);
   const BOOLEAN_KEYS = new Set(["includeDocIssues"]);
 

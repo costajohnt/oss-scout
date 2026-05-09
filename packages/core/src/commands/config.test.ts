@@ -300,6 +300,46 @@ describe("config command", () => {
       });
     });
 
+    describe("features tunables", () => {
+      it("should set featuresAnchorThreshold as integer", () => {
+        writeState(makeState());
+
+        const result = runConfigSet("featuresAnchorThreshold", "5");
+
+        expect(result.featuresAnchorThreshold).toBe(5);
+        expect(readState().preferences.featuresAnchorThreshold).toBe(5);
+      });
+
+      it("should reject featuresAnchorThreshold above max", () => {
+        writeState(makeState());
+
+        expect(() => runConfigSet("featuresAnchorThreshold", "51")).toThrow();
+      });
+
+      it("should set featuresSplitRatio as float", () => {
+        writeState(makeState());
+
+        const result = runConfigSet("featuresSplitRatio", "0.7");
+
+        expect(result.featuresSplitRatio).toBe(0.7);
+        expect(readState().preferences.featuresSplitRatio).toBe(0.7);
+      });
+
+      it("should reject featuresSplitRatio above 1", () => {
+        writeState(makeState());
+
+        expect(() => runConfigSet("featuresSplitRatio", "1.5")).toThrow();
+      });
+
+      it("should reject non-numeric featuresSplitRatio", () => {
+        writeState(makeState());
+
+        expect(() => runConfigSet("featuresSplitRatio", "abc")).toThrow(
+          "Invalid number",
+        );
+      });
+    });
+
     describe("broad phase settings", () => {
       it("should set broadPhaseDelayMs", () => {
         writeState(makeState());

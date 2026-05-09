@@ -40,6 +40,8 @@ export interface FeaturesOutput {
 interface FeaturesCommandOptions {
   maxResults: number;
   state?: ScoutState;
+  anchorThreshold?: number;
+  splitRatio?: number;
 }
 
 function mapQuickWin(c: FeatureCandidate): FeaturesOutput["quickWins"][number] {
@@ -86,7 +88,11 @@ export async function runFeatures(
       })
     : await createScout({ githubToken: token });
 
-  const result = await scout.features({ count: options.maxResults });
+  const result = await scout.features({
+    count: options.maxResults,
+    anchorThreshold: options.anchorThreshold,
+    splitRatio: options.splitRatio,
+  });
 
   saveLocalState(scout.getState() as ScoutState);
   const persisted = await scout.checkpoint();

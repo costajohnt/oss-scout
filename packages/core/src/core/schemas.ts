@@ -204,6 +204,18 @@ export const ScoutPreferencesSchema = z.object({
    * local network.
    */
   slmTriageHost: z.string().default(""),
+  /**
+   * Minimum merged-PR count for a repo to qualify as an anchor in
+   * `scout features` (#98). Lowering surfaces more anchors at the cost
+   * of weaker prior engagement signal.
+   */
+  featuresAnchorThreshold: z.number().int().min(1).max(50).default(3),
+  /**
+   * Quick-wins / bigger-bets split ratio for `scout features` (#99).
+   * 0.6 means 60% quick wins, 40% bigger bets when both pools are
+   * abundant. Deficits redirect to the other bucket.
+   */
+  featuresSplitRatio: z.number().min(0).max(1).default(0.6),
 });
 
 // ── Root state schema ───────────────────────────────────────────────

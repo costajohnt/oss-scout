@@ -373,4 +373,54 @@ describe("OssScout.features", () => {
       "bigger-bet",
     );
   });
+
+  it("forwards featuresAnchorThreshold + featuresSplitRatio prefs to discoverFeatures", async () => {
+    vi.mocked(discoverFeatures).mockResolvedValue({
+      quickWins: [],
+      biggerBets: [],
+      anchorRepos: [],
+      message: null,
+    } as never);
+    const state = ScoutStateSchema.parse({
+      version: 1,
+      preferences: {
+        featuresAnchorThreshold: 5,
+        featuresSplitRatio: 0.4,
+      },
+    });
+    const scout = new OssScout("test-token", state);
+    await scout.features();
+    expect(discoverFeatures).toHaveBeenCalledWith(
+      expect.objectContaining({
+        anchorThreshold: 5,
+        splitRatio: 0.4,
+        count: 10,
+      }),
+    );
+  });
+
+  it("per-call overrides take precedence over preferences", async () => {
+    vi.mocked(discoverFeatures).mockResolvedValue({
+      quickWins: [],
+      biggerBets: [],
+      anchorRepos: [],
+      message: null,
+    } as never);
+    const state = ScoutStateSchema.parse({
+      version: 1,
+      preferences: {
+        featuresAnchorThreshold: 5,
+        featuresSplitRatio: 0.4,
+      },
+    });
+    const scout = new OssScout("test-token", state);
+    await scout.features({ count: 4, anchorThreshold: 2, splitRatio: 0.75 });
+    expect(discoverFeatures).toHaveBeenCalledWith(
+      expect.objectContaining({
+        anchorThreshold: 2,
+        splitRatio: 0.75,
+        count: 4,
+      }),
+    );
+  });
 });

@@ -227,10 +227,18 @@ export class OssScout implements ScoutStateReader {
 
   /**
    * `scout features` — surfaces feature-scoped contribution opportunities
-   * in repos where the user has 3+ merged PRs, ranked into separate
-   * "quick wins" and "bigger bets" buckets.
+   * in repos where the user has 3+ merged PRs (configurable via
+   * `featuresAnchorThreshold`), ranked into separate "quick wins" and
+   * "bigger bets" buckets (split via `featuresSplitRatio`).
+   *
+   * Per-call `anchorThreshold` and `splitRatio` overrides take precedence
+   * over the persisted preferences.
    */
-  async features(options?: { count?: number }): Promise<FeatureSearchResult> {
+  async features(options?: {
+    count?: number;
+    anchorThreshold?: number;
+    splitRatio?: number;
+  }): Promise<FeatureSearchResult> {
     const count = options?.count ?? 10;
     const octokit = getOctokit(this.githubToken);
     const vetter = new IssueVetter(octokit, this);
@@ -239,6 +247,11 @@ export class OssScout implements ScoutStateReader {
       vetter,
       repoScores: this.state.repoScores ?? {},
       count,
+      anchorThreshold:
+        options?.anchorThreshold ??
+        this.state.preferences.featuresAnchorThreshold,
+      splitRatio:
+        options?.splitRatio ?? this.state.preferences.featuresSplitRatio,
     });
 
     this.saveResults([...result.quickWins, ...result.biggerBets]);
