@@ -199,57 +199,95 @@ program
     "Surface feature-scoped opportunities in repos where you have 3+ merged PRs",
   )
   .option("--json", "Output as JSON")
-  .action(async (count: string | undefined, options: { json?: boolean }) => {
-    try {
-      const { runFeatures } = await import("./commands/features.js");
-      const maxResults = count ? parseInt(count, 10) : 10;
-      if (isNaN(maxResults) || maxResults < 1 || maxResults > 50) {
-        console.error("Error: count must be an integer between 1 and 50");
-        process.exit(1);
-      }
-      const state = loadLocalState();
-      const result = await runFeatures({ maxResults, state });
-      if (options.json) {
-        console.log(formatJsonSuccess(result));
-      } else {
-        const total = result.quickWins.length + result.biggerBets.length;
-        if (result.message) {
-          console.log(`\n${result.message}\n`);
+  .option("--anchor-threshold <n>", "Override featuresAnchorThreshold (1-50)")
+  .option("--split-ratio <r>", "Override featuresSplitRatio (0-1, e.g. 0.6)")
+  .action(
+    async (
+      count: string | undefined,
+      options: {
+        json?: boolean;
+        anchorThreshold?: string;
+        splitRatio?: string;
+      },
+    ) => {
+      try {
+        const { runFeatures } = await import("./commands/features.js");
+        const maxResults = count ? parseInt(count, 10) : 10;
+        if (isNaN(maxResults) || maxResults < 1 || maxResults > 50) {
+          console.error("Error: count must be an integer between 1 and 50");
+          process.exit(1);
         }
-        if (total === 0) return;
-        console.log(
-          `\n🎯 Feature opportunities in your anchor repos (${result.quickWins.length} quick wins + ${result.biggerBets.length} bigger bets)\n`,
-        );
-        console.log(`Anchor repos: ${result.anchorRepos.join(", ")}\n`);
-        if (result.quickWins.length) {
-          console.log(
-            "── Quick wins ─────────────────────────────────────────",
-          );
-          for (const c of result.quickWins) {
-            console.log(
-              `  ${c.issue.repo}#${c.issue.number} [${c.viabilityScore}/100] ${c.issue.title}`,
+        let anchorThreshold: number | undefined;
+        if (options.anchorThreshold !== undefined) {
+          const parsed = parseInt(options.anchorThreshold, 10);
+          if (isNaN(parsed) || parsed < 1 || parsed > 50) {
+            console.error(
+              "Error: --anchor-threshold must be an integer between 1 and 50",
             );
-            console.log(`     ${c.issue.url}`);
+            process.exit(1);
           }
-          console.log("");
+          anchorThreshold = parsed;
         }
-        if (result.biggerBets.length) {
-          console.log(
-            "── Bigger bets ────────────────────────────────────────",
-          );
-          for (const c of result.biggerBets) {
-            console.log(
-              `  ${c.issue.repo}#${c.issue.number} [${c.viabilityScore}/100] ${c.issue.title}`,
+        let splitRatio: number | undefined;
+        if (options.splitRatio !== undefined) {
+          const parsed = Number.parseFloat(options.splitRatio);
+          if (isNaN(parsed) || parsed < 0 || parsed > 1) {
+            console.error(
+              "Error: --split-ratio must be a number between 0 and 1",
             );
-            console.log(`     ${c.issue.url}`);
+            process.exit(1);
           }
-          console.log("");
+          splitRatio = parsed;
         }
+        const state = loadLocalState();
+        const result = await runFeatures({
+          maxResults,
+          state,
+          anchorThreshold,
+          splitRatio,
+        });
+        if (options.json) {
+          console.log(formatJsonSuccess(result));
+        } else {
+          const total = result.quickWins.length + result.biggerBets.length;
+          if (result.message) {
+            console.log(`\n${result.message}\n`);
+          }
+          if (total === 0) return;
+          console.log(
+            `\n🎯 Feature opportunities in your anchor repos (${result.quickWins.length} quick wins + ${result.biggerBets.length} bigger bets)\n`,
+          );
+          console.log(`Anchor repos: ${result.anchorRepos.join(", ")}\n`);
+          if (result.quickWins.length) {
+            console.log(
+              "── Quick wins ─────────────────────────────────────────",
+            );
+            for (const c of result.quickWins) {
+              console.log(
+                `  ${c.issue.repo}#${c.issue.number} [${c.viabilityScore}/100] ${c.issue.title}`,
+              );
+              console.log(`     ${c.issue.url}`);
+            }
+            console.log("");
+          }
+          if (result.biggerBets.length) {
+            console.log(
+              "── Bigger bets ────────────────────────────────────────",
+            );
+            for (const c of result.biggerBets) {
+              console.log(
+                `  ${c.issue.repo}#${c.issue.number} [${c.viabilityScore}/100] ${c.issue.title}`,
+              );
+              console.log(`     ${c.issue.url}`);
+            }
+            console.log("");
+          }
+        }
+      } catch (err) {
+        handleCommandError(err, options);
       }
-    } catch (err) {
-      handleCommandError(err, options);
-    }
-  });
+    },
+  );
 
 // ── results command ────────────────────────────────────────────────
 
