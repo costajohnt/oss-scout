@@ -172,7 +172,7 @@ program
                   ? "❌"
                   : "⚠️";
             const stalledTag = c.linkedPR?.isStalled
-              ? " (stalled PR — revive opportunity)"
+              ? " (stalled PR, revive opportunity)"
               : "";
             console.log(
               `  ${icon} ${c.issue.repo}#${c.issue.number} [${c.viabilityScore}/100]${stalledTag}`,
@@ -267,7 +267,7 @@ program
             );
             for (const c of result.quickWins) {
               const stalledTag = c.linkedPR?.isStalled
-                ? " (stalled PR — revive opportunity)"
+                ? " (stalled PR, revive opportunity)"
                 : "";
               console.log(
                 `  ${c.issue.repo}#${c.issue.number} [${c.viabilityScore}/100] ${c.issue.title}${stalledTag}`,
@@ -282,7 +282,7 @@ program
             );
             for (const c of result.biggerBets) {
               const stalledTag = c.linkedPR?.isStalled
-                ? " (stalled PR — revive opportunity)"
+                ? " (stalled PR, revive opportunity)"
                 : "";
               console.log(
                 `  ${c.issue.repo}#${c.issue.number} [${c.viabilityScore}/100] ${c.issue.title}${stalledTag}`,
