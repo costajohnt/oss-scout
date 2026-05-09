@@ -5,6 +5,7 @@ import {
   RepoScoreSchema,
   SavedCandidateSchema,
   HorizonSchema,
+  LinkedPRSchema,
 } from "./schemas.js";
 
 describe("ScoutStateSchema", () => {
@@ -273,6 +274,33 @@ describe("HorizonSchema", () => {
   });
   it("rejects unknown values", () => {
     expect(() => HorizonSchema.parse("medium")).toThrow();
+  });
+});
+
+describe("LinkedPRSchema", () => {
+  const base = {
+    number: 99,
+    author: "alice",
+    state: "open" as const,
+    merged: false,
+    url: "https://github.com/foo/bar/pull/99",
+  };
+  it("validates without updatedAt (backwards compat)", () => {
+    const parsed = LinkedPRSchema.parse(base);
+    expect(parsed.updatedAt).toBeUndefined();
+    expect(parsed.number).toBe(99);
+  });
+  it("validates with updatedAt populated", () => {
+    const parsed = LinkedPRSchema.parse({
+      ...base,
+      updatedAt: "2026-01-01T00:00:00Z",
+    });
+    expect(parsed.updatedAt).toBe("2026-01-01T00:00:00Z");
+  });
+  it("rejects non-string updatedAt", () => {
+    expect(() =>
+      LinkedPRSchema.parse({ ...base, updatedAt: 12345 }),
+    ).toThrow();
   });
 });
 
