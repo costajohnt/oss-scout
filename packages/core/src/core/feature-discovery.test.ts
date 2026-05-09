@@ -6,7 +6,9 @@ import {
   classifyHorizon,
   splitByHorizon,
   discoverFeatures,
+  discoverFeaturesBroad,
   detectWontfixNoContributor,
+  buildBroadFeatureSearchQuery,
   WONTFIX_MIN_AGE_DAYS,
   type FeatureCandidate,
 } from "./feature-discovery.js";
@@ -69,9 +71,7 @@ describe("detectWontfixNoContributor", () => {
   const oldCreated = new Date(
     NOW.getTime() - (WONTFIX_MIN_AGE_DAYS + 5) * 86400000,
   ).toISOString();
-  const recentCreated = new Date(
-    NOW.getTime() - 10 * 86400000,
-  ).toISOString();
+  const recentCreated = new Date(NOW.getTime() - 10 * 86400000).toISOString();
 
   it("returns true with help-wanted label and old enough age", () => {
     expect(
@@ -666,5 +666,177 @@ describe("discoverFeatures orchestrator", () => {
         count: 10,
       }),
     ).rejects.toThrow();
+  });
+});
+
+describe("buildBroadFeatureSearchQuery", () => {
+  it("emits the base feature-label clause and excludes overlap labels", () => {
+    const q = buildBroadFeatureSearchQuery({});
+    expect(q).toContain("is:issue");
+    expect(q).toContain("is:open");
+    expect(q).toContain("no:assignee");
+    expect(q).toContain('label:"enhancement"');
+    expect(q).toContain('label:"feature"');
+    expect(q).toContain('label:"proposal"');
+    expect(q).toContain("OR");
+    expect(q).toContain('-label:"good first issue"');
+    expect(q).toContain('-label:"bug"');
+    expect(q).toContain('-label:"documentation"');
+  });
+
+  it("adds language filter when languages are provided", () => {
+    const q = buildBroadFeatureSearchQuery({
+      languages: ["typescript", "python"],
+    });
+    expect(q).toContain("language:typescript OR language:python");
+  });
+
+  it("ignores 'any' language preference", () => {
+    const q = buildBroadFeatureSearchQuery({ languages: ["any"] });
+    expect(q).not.toContain("language:any");
+    expect(q).not.toContain("language:");
+  });
+
+  it("includes -repo and -user clauses for excluded repos and orgs", () => {
+    const q = buildBroadFeatureSearchQuery({
+      excludeRepos: ["evil/repo", "bad/code"],
+      excludeOrgs: ["spam-org"],
+    });
+    expect(q).toContain("-repo:evil/repo");
+    expect(q).toContain("-repo:bad/code");
+    expect(q).toContain("-user:spam-org");
+  });
+});
+
+describe("discoverFeaturesBroad", () => {
+  function makeVetter() {
+    return {
+      vetIssue: vi.fn().mockImplementation(async (url: string) => ({
+        issue: {
+          url,
+          repo: "x/y",
+          number: 1,
+          title: "t",
+          labels: [],
+          updatedAt: "2026-05-01",
+        },
+        vettingResult: { passedAllChecks: true, checks: {}, notes: [] },
+        projectHealth: {},
+        antiLLMPolicy: {
+          matched: false,
+          matchedKeywords: [],
+          sourceFile: null,
+        },
+        slmTriage: null,
+        recommendation: "approve",
+        reasonsToApprove: [],
+        reasonsToSkip: [],
+        viabilityScore: 80,
+        searchPriority: "normal",
+      })),
+    } as never;
+  }
+
+  it("uses the Search API with the constructed query", async () => {
+    const search = vi.fn().mockResolvedValue({ data: { items: [] } });
+    const octokit = {
+      search: { issuesAndPullRequests: search },
+    } as never;
+    const result = await discoverFeaturesBroad({
+      octokit,
+      vetter: makeVetter(),
+      count: 10,
+      languages: ["typescript"],
+      excludeRepos: ["foo/bar"],
+    });
+    expect(search).toHaveBeenCalledTimes(1);
+    const call = search.mock.calls[0][0];
+    expect(call.q).toContain("language:typescript");
+    expect(call.q).toContain("-repo:foo/bar");
+    expect(call.sort).toBe("interactions");
+    expect(call.order).toBe("desc");
+    expect(result.anchorRepos).toEqual([]);
+    expect(result.message).toContain("No open feature opportunities");
+  });
+
+  it("vets and classifies broad-mode results", async () => {
+    const octokit = {
+      search: {
+        issuesAndPullRequests: vi.fn().mockResolvedValue({
+          data: {
+            items: [
+              {
+                html_url: "https://github.com/x/y/issues/1",
+                title: "small enhancement",
+                labels: [{ name: "enhancement" }],
+                comments: 1,
+                reactions: { total_count: 1 },
+                milestone: null,
+                pull_request: undefined,
+                assignee: null,
+                created_at: "2026-04-01",
+                number: 1,
+              },
+              {
+                html_url: "https://github.com/x/y/issues/2",
+                title: "big proposal",
+                labels: [{ name: "proposal" }],
+                comments: 1,
+                reactions: { total_count: 1 },
+                milestone: { number: 1 },
+                pull_request: undefined,
+                assignee: null,
+                created_at: "2026-04-01",
+                number: 2,
+              },
+            ],
+          },
+        }),
+      },
+    } as never;
+    const result = await discoverFeaturesBroad({
+      octokit,
+      vetter: makeVetter(),
+      count: 10,
+    });
+    expect(result.quickWins).toHaveLength(1);
+    expect(result.biggerBets).toHaveLength(1);
+    expect(result.anchorRepos).toEqual([]);
+    expect(result.message).toBeNull();
+  });
+
+  it("propagates 401 errors from the Search API", async () => {
+    const octokit = {
+      search: {
+        issuesAndPullRequests: vi
+          .fn()
+          .mockRejectedValue(Object.assign(new Error("401"), { status: 401 })),
+      },
+    } as never;
+    await expect(
+      discoverFeaturesBroad({
+        octokit,
+        vetter: makeVetter(),
+        count: 5,
+      }),
+    ).rejects.toThrow();
+  });
+
+  it("returns no-results message on non-auth Search API failure", async () => {
+    const octokit = {
+      search: {
+        issuesAndPullRequests: vi
+          .fn()
+          .mockRejectedValue(new Error("transient")),
+      },
+    } as never;
+    const result = await discoverFeaturesBroad({
+      octokit,
+      vetter: makeVetter(),
+      count: 5,
+    });
+    expect(result.quickWins).toEqual([]);
+    expect(result.biggerBets).toEqual([]);
+    expect(result.message).toContain("No open feature opportunities");
   });
 });

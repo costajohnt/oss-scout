@@ -204,6 +204,10 @@ program
   .option("--json", "Output as JSON")
   .option("--anchor-threshold <n>", "Override featuresAnchorThreshold (1-50)")
   .option("--split-ratio <r>", "Override featuresSplitRatio (0-1, e.g. 0.6)")
+  .option(
+    "--broad",
+    "Bypass anchor repos; search feature issues across the ecosystem (first-touch mode)",
+  )
   .action(
     async (
       count: string | undefined,
@@ -211,6 +215,7 @@ program
         json?: boolean;
         anchorThreshold?: string;
         splitRatio?: string;
+        broad?: boolean;
       },
     ) => {
       try {
@@ -248,6 +253,7 @@ program
           state,
           anchorThreshold,
           splitRatio,
+          broad: options.broad,
         });
         if (options.json) {
           console.log(formatJsonSuccess(result));
@@ -257,10 +263,15 @@ program
             console.log(`\n${result.message}\n`);
           }
           if (total === 0) return;
+          const headerScope = options.broad
+            ? "across the ecosystem"
+            : "in your anchor repos";
           console.log(
-            `\n🎯 Feature opportunities in your anchor repos (${result.quickWins.length} quick wins + ${result.biggerBets.length} bigger bets)\n`,
+            `\n🎯 Feature opportunities ${headerScope} (${result.quickWins.length} quick wins + ${result.biggerBets.length} bigger bets)\n`,
           );
-          console.log(`Anchor repos: ${result.anchorRepos.join(", ")}\n`);
+          if (!options.broad) {
+            console.log(`Anchor repos: ${result.anchorRepos.join(", ")}\n`);
+          }
           if (result.quickWins.length) {
             console.log(
               "── Quick wins ─────────────────────────────────────────",

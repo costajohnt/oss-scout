@@ -269,7 +269,7 @@ export async function discoverFeatures(
     // adds at most one extra GET per anchor repo and the result is reused
     // across every issue in this loop iteration.
     let response;
-    let roadmapRefs: Set<number> = new Set();
+    let roadmapRefs: Set<number>;
     try {
       const [listResp, refs] = await Promise.all([
         opts.octokit.issues.listForRepo({
@@ -339,5 +339,157 @@ export async function discoverFeatures(
     ...split,
     anchorRepos,
     message: total === 0 ? NO_RESULTS_MESSAGE : null,
+  };
+}
+
+// ── Broad / cross-repo mode (#100) ──────────────────────────────────────
+
+export const NO_BROAD_RESULTS_MESSAGE =
+  "No open feature opportunities matched your filters. Try widening your language preferences in `scout config`.";
+
+export interface DiscoverFeaturesBroadOptions {
+  octokit: Octokit;
+  vetter: IssueVetter;
+  count: number;
+  /** Languages from user preferences ("any" disables the filter). */
+  languages?: string[];
+  excludeRepos?: string[];
+  excludeOrgs?: string[];
+  /** Override default split ratio. */
+  splitRatio?: number;
+  /** Maximum search results to vet (default 30). */
+  maxToVet?: number;
+}
+
+const DEFAULT_BROAD_MAX_TO_VET = 30;
+
+/**
+ * Build a GitHub Search query for cross-repo feature discovery.
+ *
+ * Exported separately from `discoverFeaturesBroad` so the query construction
+ * is independently testable without mocking the Search API.
+ */
+export function buildBroadFeatureSearchQuery(opts: {
+  languages?: string[];
+  excludeRepos?: string[];
+  excludeOrgs?: string[];
+}): string {
+  const parts: string[] = ["is:issue", "is:open", "no:assignee"];
+
+  // Feature labels — any-of via parenthesized OR.
+  const labelClause = FEATURE_LABELS.map((l) => `label:"${l}"`).join(" OR ");
+  parts.push(`(${labelClause})`);
+
+  // Exclude labels that overlap with `scout` territory.
+  for (const excl of FEATURE_EXCLUSION_LABELS) {
+    parts.push(`-label:"${excl}"`);
+  }
+
+  // Languages — skip the filter when "any" is the only preference, since
+  // GitHub Search has no `language:any` operator.
+  const languages = (opts.languages ?? []).filter(
+    (l) => l && l.toLowerCase() !== "any",
+  );
+  if (languages.length > 0) {
+    const langClause = languages.map((l) => `language:${l}`).join(" OR ");
+    parts.push(`(${langClause})`);
+  }
+
+  // User exclusions.
+  for (const repo of opts.excludeRepos ?? []) {
+    parts.push(`-repo:${repo}`);
+  }
+  for (const org of opts.excludeOrgs ?? []) {
+    parts.push(`-user:${org}`);
+  }
+
+  return parts.join(" ");
+}
+
+/**
+ * Orchestrate broad / cross-repo feature discovery (#100). Bypasses anchor
+ * resolution; runs a single GitHub Search API query for feature-labeled
+ * open issues across the entire ecosystem, filtered by the user's language
+ * preferences and excluded repos/orgs.
+ *
+ * Designed for first-touch contributors who haven't yet built repo
+ * relationships and so wouldn't qualify under the default `scout features`
+ * anchor-based path.
+ *
+ * Auth (401) and rate-limit errors propagate; per-issue vet failures
+ * degrade gracefully.
+ */
+export async function discoverFeaturesBroad(
+  opts: DiscoverFeaturesBroadOptions,
+): Promise<FeatureSearchResult> {
+  const query = buildBroadFeatureSearchQuery({
+    languages: opts.languages,
+    excludeRepos: opts.excludeRepos,
+    excludeOrgs: opts.excludeOrgs,
+  });
+  const maxToVet = opts.maxToVet ?? DEFAULT_BROAD_MAX_TO_VET;
+
+  let items: RawIssueItem[];
+  try {
+    const response = await opts.octokit.search.issuesAndPullRequests({
+      q: query,
+      sort: "interactions",
+      order: "desc",
+      per_page: maxToVet,
+    });
+    items = (response.data.items as RawIssueItem[]).filter(
+      (it) => !it.pull_request && !it.assignee && isFeatureIssue(it),
+    );
+  } catch (err: unknown) {
+    if (getHttpStatusCode(err) === 401 || isRateLimitError(err)) throw err;
+    warn(MODULE, `broad feature search failed: ${errorMessage(err)}`);
+    return {
+      quickWins: [],
+      biggerBets: [],
+      anchorRepos: [],
+      message: NO_BROAD_RESULTS_MESSAGE,
+    };
+  }
+
+  const candidates: FeatureCandidate[] = [];
+  for (const item of items) {
+    const labels = extractLabels(item);
+    const hasMilestone = !!item.milestone;
+    const reactions = item.reactions?.total_count ?? 0;
+    const comments = item.comments ?? 0;
+    const wontfixNoContributor = item.created_at
+      ? detectWontfixNoContributor({ labels, createdAt: item.created_at })
+      : false;
+    let candidate;
+    try {
+      candidate = await opts.vetter.vetIssue(item.html_url, {
+        featureSignals: {
+          reactions,
+          comments,
+          hasMilestone,
+          wontfixNoContributor,
+          // Roadmap scraping is per-repo and would require an extra fetch
+          // per unique repo in the broad result set — deliberately skipped
+          // here to keep the broad path cheap. Anchor mode keeps the bonus.
+        },
+      });
+    } catch (err: unknown) {
+      if (getHttpStatusCode(err) === 401 || isRateLimitError(err)) throw err;
+      warn(MODULE, `vet failed for ${item.html_url}: ${errorMessage(err)}`);
+      continue;
+    }
+    const horizon = classifyHorizon({ hasMilestone, labels });
+    candidates.push({ ...candidate, horizon });
+  }
+
+  const passing = candidates.filter(
+    (c) => c.viabilityScore >= MIN_VIABILITY_SCORE,
+  );
+  const split = splitByHorizon(passing, opts.count, opts.splitRatio);
+  const total = split.quickWins.length + split.biggerBets.length;
+  return {
+    ...split,
+    anchorRepos: [],
+    message: total === 0 ? NO_BROAD_RESULTS_MESSAGE : null,
   };
 }

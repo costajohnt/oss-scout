@@ -74,7 +74,8 @@ export function parseRoadmapIssueRefs(
 
   // Full GitHub issue URLs scoped to this repo.
   const ownerRepo = `${owner}/${repo}`.toLowerCase();
-  const urlPattern = /https?:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/issues\/(\d+)/gi;
+  const urlPattern =
+    /https?:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/issues\/(\d+)/gi;
   for (const m of content.matchAll(urlPattern)) {
     if (m[1].toLowerCase() === ownerRepo) {
       const n = Number.parseInt(m[2], 10);
