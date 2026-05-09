@@ -13,6 +13,7 @@
  */
 
 import type { RepoScore, Horizon } from "./schemas.js";
+import type { IssueCandidate } from "./types.js";
 
 /** Minimum merged-PR count for a repo to qualify as an anchor. */
 export const ANCHOR_THRESHOLD = 3;
@@ -51,4 +52,47 @@ export function classifyHorizon(input: {
     if (BIGGER_BET_LABELS.has(label.toLowerCase())) return "bigger-bet";
   }
   return "quick-win";
+}
+
+/** A vetted issue candidate stamped with its horizon classification. */
+export type FeatureCandidate = IssueCandidate & { horizon: Horizon };
+
+/**
+ * Split feature candidates into two buckets respecting a 60/40 target.
+ * If either bucket is short, redirect the deficit to the other bucket.
+ * Each bucket is sorted by viabilityScore descending.
+ */
+export function splitByHorizon(
+  candidates: FeatureCandidate[],
+  count: number,
+): { quickWins: FeatureCandidate[]; biggerBets: FeatureCandidate[] } {
+  const allQuick = candidates
+    .filter((c) => c.horizon === "quick-win")
+    .sort((a, b) => b.viabilityScore - a.viabilityScore);
+  const allBigger = candidates
+    .filter((c) => c.horizon === "bigger-bet")
+    .sort((a, b) => b.viabilityScore - a.viabilityScore);
+
+  const targetQuick = Math.round(count * 0.6);
+  const targetBigger = count - targetQuick;
+
+  const quickTaken = Math.min(allQuick.length, targetQuick);
+  const biggerTaken = Math.min(allBigger.length, targetBigger);
+
+  // Redirect deficits.
+  let quickFinal = quickTaken;
+  let biggerFinal = biggerTaken;
+  const quickDeficit = targetQuick - quickTaken;
+  const biggerDeficit = targetBigger - biggerTaken;
+  if (quickDeficit > 0) {
+    biggerFinal = Math.min(allBigger.length, biggerFinal + quickDeficit);
+  }
+  if (biggerDeficit > 0) {
+    quickFinal = Math.min(allQuick.length, quickFinal + biggerDeficit);
+  }
+
+  return {
+    quickWins: allQuick.slice(0, quickFinal),
+    biggerBets: allBigger.slice(0, biggerFinal),
+  };
 }
