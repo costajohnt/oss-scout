@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { RepoScore } from "./schemas.js";
 import {
   resolveAnchorRepos,
@@ -6,8 +6,13 @@ import {
   classifyHorizon,
   splitByHorizon,
   discoverFeatures,
+  discoverFeaturesBroad,
+  detectWontfixNoContributor,
+  buildBroadFeatureSearchQuery,
+  WONTFIX_MIN_AGE_DAYS,
   type FeatureCandidate,
 } from "./feature-discovery.js";
+import { _clearRoadmapCacheForTests } from "./roadmap.js";
 
 const mkScore = (repo: string, mergedPRCount: number): RepoScore => ({
   repo,
@@ -58,6 +63,87 @@ describe("resolveAnchorRepos", () => {
   it("defaults to ANCHOR_THRESHOLD when threshold is undefined", () => {
     const out = resolveAnchorRepos(mkScores(["a/b", 2], ["c/d", 3]), undefined);
     expect(out).toEqual(["c/d"]);
+  });
+});
+
+describe("detectWontfixNoContributor", () => {
+  const NOW = new Date("2026-05-09T00:00:00Z");
+  const oldCreated = new Date(
+    NOW.getTime() - (WONTFIX_MIN_AGE_DAYS + 5) * 86400000,
+  ).toISOString();
+  const recentCreated = new Date(NOW.getTime() - 10 * 86400000).toISOString();
+
+  it("returns true with help-wanted label and old enough age", () => {
+    expect(
+      detectWontfixNoContributor({
+        labels: ["help wanted"],
+        createdAt: oldCreated,
+        now: NOW,
+      }),
+    ).toBe(true);
+  });
+  it("returns false when no qualifying label is present", () => {
+    expect(
+      detectWontfixNoContributor({
+        labels: ["enhancement"],
+        createdAt: oldCreated,
+        now: NOW,
+      }),
+    ).toBe(false);
+  });
+  it("returns false for an issue younger than 60 days", () => {
+    expect(
+      detectWontfixNoContributor({
+        labels: ["help wanted"],
+        createdAt: recentCreated,
+        now: NOW,
+      }),
+    ).toBe(false);
+  });
+  it("matches case-insensitively", () => {
+    expect(
+      detectWontfixNoContributor({
+        labels: ["Help Wanted"],
+        createdAt: oldCreated,
+        now: NOW,
+      }),
+    ).toBe(true);
+  });
+  it("recognises contributions-welcome, up-for-grabs, bounty, pinned, unmaintained", () => {
+    for (const label of [
+      "contributions welcome",
+      "up-for-grabs",
+      "bounty",
+      "pinned",
+      "unmaintained",
+    ]) {
+      expect(
+        detectWontfixNoContributor({
+          labels: [label],
+          createdAt: oldCreated,
+          now: NOW,
+        }),
+      ).toBe(true);
+    }
+  });
+  it("returns false on unparseable createdAt", () => {
+    expect(
+      detectWontfixNoContributor({
+        labels: ["help wanted"],
+        createdAt: "not-a-date",
+        now: NOW,
+      }),
+    ).toBe(false);
+  });
+  it("respects custom minAgeDays override", () => {
+    expect(
+      detectWontfixNoContributor({
+        labels: ["help wanted"],
+        createdAt: recentCreated,
+        now: NOW,
+        minAgeDays: 5,
+      }),
+    ).toBe(true);
   });
 });
 
@@ -195,6 +281,10 @@ describe("splitByHorizon 60/40 split", () => {
 });
 
 describe("discoverFeatures orchestrator", () => {
+  beforeEach(() => {
+    _clearRoadmapCacheForTests();
+  });
+
   it("returns no-anchors message when repoScores has no qualifying repos", async () => {
     const octokit = { issues: { listForRepo: vi.fn() } } as never;
     const vetter = { vetIssue: vi.fn() } as never;
@@ -300,11 +390,27 @@ describe("discoverFeatures orchestrator", () => {
     expect(result.message).toBeNull();
     expect(vetter.vetIssue).toHaveBeenCalledWith(
       "https://github.com/a/b/issues/1",
-      { featureSignals: { reactions: 4, comments: 2, hasMilestone: false } },
+      {
+        featureSignals: {
+          reactions: 4,
+          comments: 2,
+          hasMilestone: false,
+          wontfixNoContributor: false,
+          onRoadmap: false,
+        },
+      },
     );
     expect(vetter.vetIssue).toHaveBeenCalledWith(
       "https://github.com/a/b/issues/2",
-      { featureSignals: { reactions: 50, comments: 30, hasMilestone: true } },
+      {
+        featureSignals: {
+          reactions: 50,
+          comments: 30,
+          hasMilestone: true,
+          wontfixNoContributor: false,
+          onRoadmap: false,
+        },
+      },
     );
   });
 
@@ -392,6 +498,160 @@ describe("discoverFeatures orchestrator", () => {
     expect(split.biggerBets).toHaveLength(1);
   });
 
+  it("forwards wontfixNoContributor signal to the vetter when label + age qualify", async () => {
+    const oldCreated = new Date(
+      Date.now() - (WONTFIX_MIN_AGE_DAYS + 30) * 86400000,
+    ).toISOString();
+    const octokit = {
+      issues: {
+        listForRepo: vi.fn().mockResolvedValue({
+          data: [
+            {
+              html_url: "https://github.com/a/b/issues/9",
+              title: "long-open feature ask",
+              labels: [{ name: "enhancement" }, { name: "help wanted" }],
+              comments: 1,
+              reactions: { total_count: 1 },
+              milestone: null,
+              pull_request: undefined,
+              assignee: null,
+              created_at: oldCreated,
+            },
+          ],
+        }),
+      },
+    } as never;
+    const vetter = {
+      vetIssue: vi.fn().mockImplementation(async (url: string) => ({
+        issue: {
+          url,
+          repo: "a/b",
+          number: 9,
+          title: "t",
+          labels: [],
+          updatedAt: "2026-05-01",
+        },
+        vettingResult: { passedAllChecks: true, checks: {}, notes: [] },
+        projectHealth: {},
+        antiLLMPolicy: {
+          matched: false,
+          matchedKeywords: [],
+          sourceFile: null,
+        },
+        slmTriage: null,
+        recommendation: "approve",
+        reasonsToApprove: [],
+        reasonsToSkip: [],
+        viabilityScore: 80,
+        searchPriority: "merged_pr",
+      })),
+    } as never;
+    await discoverFeatures({
+      octokit,
+      vetter,
+      repoScores: mkScores(["a/b", 4]),
+      count: 5,
+    });
+    expect(vetter.vetIssue).toHaveBeenCalledWith(
+      "https://github.com/a/b/issues/9",
+      {
+        featureSignals: {
+          reactions: 1,
+          comments: 1,
+          hasMilestone: false,
+          wontfixNoContributor: true,
+          onRoadmap: false,
+        },
+      },
+    );
+  });
+
+  it("forwards onRoadmap signal when an issue number appears in ROADMAP.md", async () => {
+    const md = "Roadmap:\n- ship #7 soon\n";
+    const octokit = {
+      issues: {
+        listForRepo: vi.fn().mockResolvedValue({
+          data: [
+            {
+              html_url: "https://github.com/a/b/issues/7",
+              title: "roadmap-listed feature",
+              labels: [{ name: "enhancement" }],
+              comments: 1,
+              reactions: { total_count: 1 },
+              milestone: null,
+              pull_request: undefined,
+              assignee: null,
+              created_at: "2026-04-01",
+              number: 7,
+            },
+            {
+              html_url: "https://github.com/a/b/issues/8",
+              title: "off-roadmap feature",
+              labels: [{ name: "enhancement" }],
+              comments: 1,
+              reactions: { total_count: 1 },
+              milestone: null,
+              pull_request: undefined,
+              assignee: null,
+              created_at: "2026-04-01",
+              number: 8,
+            },
+          ],
+        }),
+      },
+      repos: {
+        getContent: vi.fn().mockImplementation(async ({ path }) => {
+          if (path === "ROADMAP.md") {
+            return {
+              data: { content: Buffer.from(md, "utf-8").toString("base64") },
+            };
+          }
+          throw Object.assign(new Error("nope"), { status: 404 });
+        }),
+      },
+    } as never;
+    const vetter = {
+      vetIssue: vi.fn().mockImplementation(async (url: string) => ({
+        issue: {
+          url,
+          repo: "a/b",
+          number: 1,
+          title: "t",
+          labels: [],
+          updatedAt: "2026-05-01",
+        },
+        vettingResult: { passedAllChecks: true, checks: {}, notes: [] },
+        projectHealth: {},
+        antiLLMPolicy: {
+          matched: false,
+          matchedKeywords: [],
+          sourceFile: null,
+        },
+        slmTriage: null,
+        recommendation: "approve",
+        reasonsToApprove: [],
+        reasonsToSkip: [],
+        viabilityScore: 80,
+        searchPriority: "merged_pr",
+      })),
+    } as never;
+    await discoverFeatures({
+      octokit,
+      vetter,
+      repoScores: mkScores(["a/b", 4]),
+      count: 5,
+    });
+    const calls = vi.mocked(vetter.vetIssue).mock.calls;
+    const onRoadmap7 = calls.find(
+      (c) => c[0] === "https://github.com/a/b/issues/7",
+    )?.[1]?.featureSignals?.onRoadmap;
+    const onRoadmap8 = calls.find(
+      (c) => c[0] === "https://github.com/a/b/issues/8",
+    )?.[1]?.featureSignals?.onRoadmap;
+    expect(onRoadmap7).toBe(true);
+    expect(onRoadmap8).toBe(false);
+  });
+
   it("propagates auth and rate-limit errors", async () => {
     const error = Object.assign(new Error("401"), { status: 401 });
     const octokit = {
@@ -406,5 +666,177 @@ describe("discoverFeatures orchestrator", () => {
         count: 10,
       }),
     ).rejects.toThrow();
+  });
+});
+
+describe("buildBroadFeatureSearchQuery", () => {
+  it("emits the base feature-label clause and excludes overlap labels", () => {
+    const q = buildBroadFeatureSearchQuery({});
+    expect(q).toContain("is:issue");
+    expect(q).toContain("is:open");
+    expect(q).toContain("no:assignee");
+    expect(q).toContain('label:"enhancement"');
+    expect(q).toContain('label:"feature"');
+    expect(q).toContain('label:"proposal"');
+    expect(q).toContain("OR");
+    expect(q).toContain('-label:"good first issue"');
+    expect(q).toContain('-label:"bug"');
+    expect(q).toContain('-label:"documentation"');
+  });
+
+  it("adds language filter when languages are provided", () => {
+    const q = buildBroadFeatureSearchQuery({
+      languages: ["typescript", "python"],
+    });
+    expect(q).toContain("language:typescript OR language:python");
+  });
+
+  it("ignores 'any' language preference", () => {
+    const q = buildBroadFeatureSearchQuery({ languages: ["any"] });
+    expect(q).not.toContain("language:any");
+    expect(q).not.toContain("language:");
+  });
+
+  it("includes -repo and -user clauses for excluded repos and orgs", () => {
+    const q = buildBroadFeatureSearchQuery({
+      excludeRepos: ["evil/repo", "bad/code"],
+      excludeOrgs: ["spam-org"],
+    });
+    expect(q).toContain("-repo:evil/repo");
+    expect(q).toContain("-repo:bad/code");
+    expect(q).toContain("-user:spam-org");
+  });
+});
+
+describe("discoverFeaturesBroad", () => {
+  function makeVetter() {
+    return {
+      vetIssue: vi.fn().mockImplementation(async (url: string) => ({
+        issue: {
+          url,
+          repo: "x/y",
+          number: 1,
+          title: "t",
+          labels: [],
+          updatedAt: "2026-05-01",
+        },
+        vettingResult: { passedAllChecks: true, checks: {}, notes: [] },
+        projectHealth: {},
+        antiLLMPolicy: {
+          matched: false,
+          matchedKeywords: [],
+          sourceFile: null,
+        },
+        slmTriage: null,
+        recommendation: "approve",
+        reasonsToApprove: [],
+        reasonsToSkip: [],
+        viabilityScore: 80,
+        searchPriority: "normal",
+      })),
+    } as never;
+  }
+
+  it("uses the Search API with the constructed query", async () => {
+    const search = vi.fn().mockResolvedValue({ data: { items: [] } });
+    const octokit = {
+      search: { issuesAndPullRequests: search },
+    } as never;
+    const result = await discoverFeaturesBroad({
+      octokit,
+      vetter: makeVetter(),
+      count: 10,
+      languages: ["typescript"],
+      excludeRepos: ["foo/bar"],
+    });
+    expect(search).toHaveBeenCalledTimes(1);
+    const call = search.mock.calls[0][0];
+    expect(call.q).toContain("language:typescript");
+    expect(call.q).toContain("-repo:foo/bar");
+    expect(call.sort).toBe("interactions");
+    expect(call.order).toBe("desc");
+    expect(result.anchorRepos).toEqual([]);
+    expect(result.message).toContain("No open feature opportunities");
+  });
+
+  it("vets and classifies broad-mode results", async () => {
+    const octokit = {
+      search: {
+        issuesAndPullRequests: vi.fn().mockResolvedValue({
+          data: {
+            items: [
+              {
+                html_url: "https://github.com/x/y/issues/1",
+                title: "small enhancement",
+                labels: [{ name: "enhancement" }],
+                comments: 1,
+                reactions: { total_count: 1 },
+                milestone: null,
+                pull_request: undefined,
+                assignee: null,
+                created_at: "2026-04-01",
+                number: 1,
+              },
+              {
+                html_url: "https://github.com/x/y/issues/2",
+                title: "big proposal",
+                labels: [{ name: "proposal" }],
+                comments: 1,
+                reactions: { total_count: 1 },
+                milestone: { number: 1 },
+                pull_request: undefined,
+                assignee: null,
+                created_at: "2026-04-01",
+                number: 2,
+              },
+            ],
+          },
+        }),
+      },
+    } as never;
+    const result = await discoverFeaturesBroad({
+      octokit,
+      vetter: makeVetter(),
+      count: 10,
+    });
+    expect(result.quickWins).toHaveLength(1);
+    expect(result.biggerBets).toHaveLength(1);
+    expect(result.anchorRepos).toEqual([]);
+    expect(result.message).toBeNull();
+  });
+
+  it("propagates 401 errors from the Search API", async () => {
+    const octokit = {
+      search: {
+        issuesAndPullRequests: vi
+          .fn()
+          .mockRejectedValue(Object.assign(new Error("401"), { status: 401 })),
+      },
+    } as never;
+    await expect(
+      discoverFeaturesBroad({
+        octokit,
+        vetter: makeVetter(),
+        count: 5,
+      }),
+    ).rejects.toThrow();
+  });
+
+  it("returns no-results message on non-auth Search API failure", async () => {
+    const octokit = {
+      search: {
+        issuesAndPullRequests: vi
+          .fn()
+          .mockRejectedValue(new Error("transient")),
+      },
+    } as never;
+    const result = await discoverFeaturesBroad({
+      octokit,
+      vetter: makeVetter(),
+      count: 5,
+    });
+    expect(result.quickWins).toEqual([]);
+    expect(result.biggerBets).toEqual([]);
+    expect(result.message).toContain("No open feature opportunities");
   });
 });

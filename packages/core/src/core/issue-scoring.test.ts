@@ -280,5 +280,63 @@ describe("calculateViabilityScore", () => {
       });
       expect(score).toBe(65 + 10 + 5 + 5);
     });
+
+    it("adds +8 when onRoadmap is true", () => {
+      const score = calculateViabilityScore({
+        ...baseFeature,
+        featureSignals: {
+          reactions: 0,
+          comments: 0,
+          hasMilestone: false,
+          onRoadmap: true,
+        },
+      });
+      expect(score).toBe(65 + 8);
+    });
+
+    it("adds +10 when wontfixNoContributor is true", () => {
+      const score = calculateViabilityScore({
+        ...baseFeature,
+        featureSignals: {
+          reactions: 0,
+          comments: 0,
+          hasMilestone: false,
+          wontfixNoContributor: true,
+        },
+      });
+      expect(score).toBe(65 + 10);
+    });
+
+    it("combines onRoadmap and wontfixNoContributor with other bonuses, clamped at 100", () => {
+      const score = calculateViabilityScore({
+        ...baseFeature,
+        featureSignals: {
+          reactions: 20,
+          comments: 10,
+          hasMilestone: true,
+          onRoadmap: true,
+          wontfixNoContributor: true,
+        },
+      });
+      // raw 65 + 10 + 5 + 5 + 8 + 10 = 103, clamped to 100
+      expect(score).toBe(100);
+    });
+
+    it("clamps total at 100 when all feature bonuses fire", () => {
+      const score = calculateViabilityScore({
+        ...baseFeature,
+        clearRequirements: true,
+        hasContributionGuidelines: true,
+        repoScore: 10,
+        featureSignals: {
+          reactions: 200,
+          comments: 50,
+          hasMilestone: true,
+          onRoadmap: true,
+          wontfixNoContributor: true,
+        },
+      });
+      expect(score).toBe(100);
+    });
   });
 });

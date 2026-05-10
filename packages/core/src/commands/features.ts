@@ -59,6 +59,8 @@ interface FeaturesCommandOptions {
   state?: ScoutState;
   anchorThreshold?: number;
   splitRatio?: number;
+  /** Run the broad / cross-repo path (#100). */
+  broad?: boolean;
 }
 
 function mapLinkedPR(c: FeatureCandidate): OutputLinkedPR | undefined {
@@ -123,6 +125,7 @@ export async function runFeatures(
     count: options.maxResults,
     anchorThreshold: options.anchorThreshold,
     splitRatio: options.splitRatio,
+    broad: options.broad,
   });
 
   saveLocalState(scout.getState() as ScoutState);

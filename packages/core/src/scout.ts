@@ -10,6 +10,7 @@ import { IssueVetter } from "./core/issue-vetting.js";
 import type { ScoutStateReader } from "./core/issue-vetting.js";
 import {
   discoverFeatures,
+  discoverFeaturesBroad,
   type FeatureSearchResult,
 } from "./core/feature-discovery.js";
 import { ScoutStateSchema } from "./core/schemas.js";
@@ -233,26 +234,43 @@ export class OssScout implements ScoutStateReader {
    *
    * Per-call `anchorThreshold` and `splitRatio` overrides take precedence
    * over the persisted preferences.
+   *
+   * When `broad` is true (#100), bypasses anchor resolution and runs a
+   * cross-repo GitHub Search query for first-touch contributors who
+   * haven't yet built repo relationships. Filters by user language
+   * preferences and excluded repos/orgs.
    */
   async features(options?: {
     count?: number;
     anchorThreshold?: number;
     splitRatio?: number;
+    broad?: boolean;
   }): Promise<FeatureSearchResult> {
     const count = options?.count ?? 10;
     const octokit = getOctokit(this.githubToken);
     const vetter = new IssueVetter(octokit, this);
-    const result = await discoverFeatures({
-      octokit,
-      vetter,
-      repoScores: this.state.repoScores ?? {},
-      count,
-      anchorThreshold:
-        options?.anchorThreshold ??
-        this.state.preferences.featuresAnchorThreshold,
-      splitRatio:
-        options?.splitRatio ?? this.state.preferences.featuresSplitRatio,
-    });
+    const result = options?.broad
+      ? await discoverFeaturesBroad({
+          octokit,
+          vetter,
+          count,
+          languages: this.state.preferences.languages,
+          excludeRepos: this.state.preferences.excludeRepos,
+          excludeOrgs: this.state.preferences.excludeOrgs,
+          splitRatio:
+            options?.splitRatio ?? this.state.preferences.featuresSplitRatio,
+        })
+      : await discoverFeatures({
+          octokit,
+          vetter,
+          repoScores: this.state.repoScores ?? {},
+          count,
+          anchorThreshold:
+            options?.anchorThreshold ??
+            this.state.preferences.featuresAnchorThreshold,
+          splitRatio:
+            options?.splitRatio ?? this.state.preferences.featuresSplitRatio,
+        });
 
     this.saveResults([...result.quickWins, ...result.biggerBets]);
     this.state.lastSearchAt = new Date().toISOString();

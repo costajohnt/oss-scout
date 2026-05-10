@@ -19,6 +19,7 @@ import type { IssueVetter } from "./issue-vetting.js";
 import { errorMessage, getHttpStatusCode, isRateLimitError } from "./errors.js";
 import { warn } from "./logger.js";
 import { sleep } from "./utils.js";
+import { fetchRoadmapIssueRefs } from "./roadmap.js";
 
 const MODULE = "feature-discovery";
 
@@ -137,6 +138,53 @@ export const FEATURE_EXCLUSION_LABELS = new Set([
   "documentation",
 ]);
 
+/**
+ * Labels that signal "the maintainer wants outside contributions". When any
+ * is present, combined with no linked PR and an issue age >= 60 days, the
+ * issue is treated as wontfix-no-contributor (#96).
+ */
+export const WONTFIX_NO_CONTRIBUTOR_LABELS = new Set([
+  "help wanted",
+  "contributions welcome",
+  "up-for-grabs",
+  "bounty",
+  "pinned",
+  "unmaintained",
+]);
+
+/** Minimum days an issue must be open to qualify as wontfix-no-contributor. */
+export const WONTFIX_MIN_AGE_DAYS = 60;
+
+/**
+ * Pure detector for the "wontfix because no contributor stepped up" pattern (#96).
+ *
+ * True when:
+ *   - issue carries any of WONTFIX_NO_CONTRIBUTOR_LABELS, AND
+ *   - issue has been open at least `minAgeDays` days (default 60)
+ *
+ * The orchestrator already filters out assigned issues before reaching the
+ * vetter. Linked-PR cases are deliberately not gated here: the existing
+ * -30 viability penalty for `hasExistingPR` already discounts those, and
+ * checking `hasLinkedPR` would require deferring scoring until after vet,
+ * doubling the work for a marginally cleaner signal.
+ */
+export function detectWontfixNoContributor(input: {
+  labels: string[];
+  createdAt: string;
+  now?: Date;
+  minAgeDays?: number;
+}): boolean {
+  const matched = input.labels.some((l) =>
+    WONTFIX_NO_CONTRIBUTOR_LABELS.has(l.toLowerCase()),
+  );
+  if (!matched) return false;
+  const created = new Date(input.createdAt);
+  if (Number.isNaN(created.getTime())) return false;
+  const now = input.now ?? new Date();
+  const ageDays = (now.getTime() - created.getTime()) / (1000 * 60 * 60 * 24);
+  return ageDays >= (input.minAgeDays ?? WONTFIX_MIN_AGE_DAYS);
+}
+
 export const NO_ANCHORS_MESSAGE =
   "No anchor repos yet (need 3+ merged PRs in a repo). Try `scout search` to build relationships first.";
 
@@ -170,6 +218,8 @@ interface RawIssueItem {
   milestone?: { number?: number } | null;
   pull_request?: unknown;
   assignee?: unknown;
+  created_at?: string;
+  number?: number;
 }
 
 function extractLabels(item: RawIssueItem): string[] {
@@ -215,16 +265,25 @@ export async function discoverFeatures(
   for (let i = 0; i < anchorRepos.length; i++) {
     if (i > 0) await sleep(INTER_REPO_DELAY_MS);
     const [owner, repo] = anchorRepos[i].split("/");
+    // Issues list and roadmap fetch run in parallel — roadmap scraping (#95)
+    // adds at most one extra GET per anchor repo and the result is reused
+    // across every issue in this loop iteration.
     let response;
+    let roadmapRefs: Set<number>;
     try {
-      response = await opts.octokit.issues.listForRepo({
-        owner,
-        repo,
-        state: "open",
-        sort: "updated",
-        direction: "desc",
-        per_page: 20,
-      });
+      const [listResp, refs] = await Promise.all([
+        opts.octokit.issues.listForRepo({
+          owner,
+          repo,
+          state: "open",
+          sort: "updated",
+          direction: "desc",
+          per_page: 20,
+        }),
+        fetchRoadmapIssueRefs(opts.octokit, owner, repo),
+      ]);
+      response = listResp;
+      roadmapRefs = refs;
     } catch (err: unknown) {
       if (getHttpStatusCode(err) === 401 || isRateLimitError(err)) throw err;
       warn(
@@ -243,10 +302,21 @@ export async function discoverFeatures(
       const hasMilestone = !!item.milestone;
       const reactions = item.reactions?.total_count ?? 0;
       const comments = item.comments ?? 0;
+      const wontfixNoContributor = item.created_at
+        ? detectWontfixNoContributor({ labels, createdAt: item.created_at })
+        : false;
+      const onRoadmap =
+        typeof item.number === "number" && roadmapRefs.has(item.number);
       let candidate;
       try {
         candidate = await opts.vetter.vetIssue(item.html_url, {
-          featureSignals: { reactions, comments, hasMilestone },
+          featureSignals: {
+            reactions,
+            comments,
+            hasMilestone,
+            wontfixNoContributor,
+            onRoadmap,
+          },
         });
       } catch (err: unknown) {
         if (getHttpStatusCode(err) === 401 || isRateLimitError(err)) throw err;
@@ -269,5 +339,157 @@ export async function discoverFeatures(
     ...split,
     anchorRepos,
     message: total === 0 ? NO_RESULTS_MESSAGE : null,
+  };
+}
+
+// ── Broad / cross-repo mode (#100) ──────────────────────────────────────
+
+export const NO_BROAD_RESULTS_MESSAGE =
+  "No open feature opportunities matched your filters. Try widening your language preferences in `scout config`.";
+
+export interface DiscoverFeaturesBroadOptions {
+  octokit: Octokit;
+  vetter: IssueVetter;
+  count: number;
+  /** Languages from user preferences ("any" disables the filter). */
+  languages?: string[];
+  excludeRepos?: string[];
+  excludeOrgs?: string[];
+  /** Override default split ratio. */
+  splitRatio?: number;
+  /** Maximum search results to vet (default 30). */
+  maxToVet?: number;
+}
+
+const DEFAULT_BROAD_MAX_TO_VET = 30;
+
+/**
+ * Build a GitHub Search query for cross-repo feature discovery.
+ *
+ * Exported separately from `discoverFeaturesBroad` so the query construction
+ * is independently testable without mocking the Search API.
+ */
+export function buildBroadFeatureSearchQuery(opts: {
+  languages?: string[];
+  excludeRepos?: string[];
+  excludeOrgs?: string[];
+}): string {
+  const parts: string[] = ["is:issue", "is:open", "no:assignee"];
+
+  // Feature labels — any-of via parenthesized OR.
+  const labelClause = FEATURE_LABELS.map((l) => `label:"${l}"`).join(" OR ");
+  parts.push(`(${labelClause})`);
+
+  // Exclude labels that overlap with `scout` territory.
+  for (const excl of FEATURE_EXCLUSION_LABELS) {
+    parts.push(`-label:"${excl}"`);
+  }
+
+  // Languages — skip the filter when "any" is the only preference, since
+  // GitHub Search has no `language:any` operator.
+  const languages = (opts.languages ?? []).filter(
+    (l) => l && l.toLowerCase() !== "any",
+  );
+  if (languages.length > 0) {
+    const langClause = languages.map((l) => `language:${l}`).join(" OR ");
+    parts.push(`(${langClause})`);
+  }
+
+  // User exclusions.
+  for (const repo of opts.excludeRepos ?? []) {
+    parts.push(`-repo:${repo}`);
+  }
+  for (const org of opts.excludeOrgs ?? []) {
+    parts.push(`-user:${org}`);
+  }
+
+  return parts.join(" ");
+}
+
+/**
+ * Orchestrate broad / cross-repo feature discovery (#100). Bypasses anchor
+ * resolution; runs a single GitHub Search API query for feature-labeled
+ * open issues across the entire ecosystem, filtered by the user's language
+ * preferences and excluded repos/orgs.
+ *
+ * Designed for first-touch contributors who haven't yet built repo
+ * relationships and so wouldn't qualify under the default `scout features`
+ * anchor-based path.
+ *
+ * Auth (401) and rate-limit errors propagate; per-issue vet failures
+ * degrade gracefully.
+ */
+export async function discoverFeaturesBroad(
+  opts: DiscoverFeaturesBroadOptions,
+): Promise<FeatureSearchResult> {
+  const query = buildBroadFeatureSearchQuery({
+    languages: opts.languages,
+    excludeRepos: opts.excludeRepos,
+    excludeOrgs: opts.excludeOrgs,
+  });
+  const maxToVet = opts.maxToVet ?? DEFAULT_BROAD_MAX_TO_VET;
+
+  let items: RawIssueItem[];
+  try {
+    const response = await opts.octokit.search.issuesAndPullRequests({
+      q: query,
+      sort: "interactions",
+      order: "desc",
+      per_page: maxToVet,
+    });
+    items = (response.data.items as RawIssueItem[]).filter(
+      (it) => !it.pull_request && !it.assignee && isFeatureIssue(it),
+    );
+  } catch (err: unknown) {
+    if (getHttpStatusCode(err) === 401 || isRateLimitError(err)) throw err;
+    warn(MODULE, `broad feature search failed: ${errorMessage(err)}`);
+    return {
+      quickWins: [],
+      biggerBets: [],
+      anchorRepos: [],
+      message: NO_BROAD_RESULTS_MESSAGE,
+    };
+  }
+
+  const candidates: FeatureCandidate[] = [];
+  for (const item of items) {
+    const labels = extractLabels(item);
+    const hasMilestone = !!item.milestone;
+    const reactions = item.reactions?.total_count ?? 0;
+    const comments = item.comments ?? 0;
+    const wontfixNoContributor = item.created_at
+      ? detectWontfixNoContributor({ labels, createdAt: item.created_at })
+      : false;
+    let candidate;
+    try {
+      candidate = await opts.vetter.vetIssue(item.html_url, {
+        featureSignals: {
+          reactions,
+          comments,
+          hasMilestone,
+          wontfixNoContributor,
+          // Roadmap scraping is per-repo and would require an extra fetch
+          // per unique repo in the broad result set — deliberately skipped
+          // here to keep the broad path cheap. Anchor mode keeps the bonus.
+        },
+      });
+    } catch (err: unknown) {
+      if (getHttpStatusCode(err) === 401 || isRateLimitError(err)) throw err;
+      warn(MODULE, `vet failed for ${item.html_url}: ${errorMessage(err)}`);
+      continue;
+    }
+    const horizon = classifyHorizon({ hasMilestone, labels });
+    candidates.push({ ...candidate, horizon });
+  }
+
+  const passing = candidates.filter(
+    (c) => c.viabilityScore >= MIN_VIABILITY_SCORE,
+  );
+  const split = splitByHorizon(passing, opts.count, opts.splitRatio);
+  const total = split.quickWins.length + split.biggerBets.length;
+  return {
+    ...split,
+    anchorRepos: [],
+    message: total === 0 ? NO_BROAD_RESULTS_MESSAGE : null,
   };
 }

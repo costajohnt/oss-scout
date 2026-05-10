@@ -654,9 +654,10 @@ describe("IssueVetter", () => {
       // Should NOT be the sentinel — different signal key avoided the collision.
       expect(result).not.toBe(sentinel);
       expect(set).toHaveBeenCalled();
-      // Confirm the lookup used a signals-suffixed key.
+      // Confirm the lookup used a signals-suffixed key including the new
+      // onRoadmap (`o`) and wontfixNoContributor (`w`) flags.
       expect(getIfFresh).toHaveBeenCalledWith(
-        "vet:https://github.com/foo/bar/issues/103:r4c0m1",
+        "vet:https://github.com/foo/bar/issues/103:r4c0m1o0w0",
         expect.any(Number),
       );
     });
