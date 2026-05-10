@@ -710,7 +710,11 @@ describe("discoverFeatures orchestrator", () => {
         },
         vettingResult: { passedAllChecks: true, checks: {}, notes: [] },
         projectHealth: {},
-        antiLLMPolicy: { matched: false, matchedKeywords: [], sourceFile: null },
+        antiLLMPolicy: {
+          matched: false,
+          matchedKeywords: [],
+          sourceFile: null,
+        },
         slmTriage: null,
         recommendation: "approve",
         reasonsToApprove: [],
