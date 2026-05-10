@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.9.0](https://github.com/costajohnt/oss-scout/compare/core-v0.8.0...core-v0.9.0) (2026-05-10)
+
+
+### Features
+
+* add scout features subcommand ([#92](https://github.com/costajohnt/oss-scout/issues/92)) ([#93](https://github.com/costajohnt/oss-scout/issues/93)) ([d873127](https://github.com/costajohnt/oss-scout/commit/d8731279414ab59bf5c8be56b59eb37767d9fa39))
+* configurable anchor threshold + split ratio for scout features ([#98](https://github.com/costajohnt/oss-scout/issues/98) [#99](https://github.com/costajohnt/oss-scout/issues/99)) ([#101](https://github.com/costajohnt/oss-scout/issues/101)) ([051766a](https://github.com/costajohnt/oss-scout/commit/051766ac3ef2537b7c571fe5398ae946ddd333b5))
+* scout features follow-ups — wontfix detection, roadmap scraping, broad mode ([#95](https://github.com/costajohnt/oss-scout/issues/95) [#96](https://github.com/costajohnt/oss-scout/issues/96) [#100](https://github.com/costajohnt/oss-scout/issues/100)) ([#103](https://github.com/costajohnt/oss-scout/issues/103)) ([7daddc0](https://github.com/costajohnt/oss-scout/commit/7daddc0e9bf61eea9e890ea5360be013aa06923f))
+* stalled-PR annotation in scout + scout features ([#97](https://github.com/costajohnt/oss-scout/issues/97)) ([#102](https://github.com/costajohnt/oss-scout/issues/102)) ([6f243ec](https://github.com/costajohnt/oss-scout/commit/6f243ec49740fcd2bbcad157d4f386a1a41c96d9))
+
+
+### Bug Fixes
+
+* align ROADMAP scraping with intended design ([#95](https://github.com/costajohnt/oss-scout/issues/95)) ([#104](https://github.com/costajohnt/oss-scout/issues/104)) ([e5f7ece](https://github.com/costajohnt/oss-scout/commit/e5f7ece4de160a44765f79fdc66da08da132f2df))
+
 ## [0.8.0](https://github.com/costajohnt/oss-scout/compare/core-v0.7.1...core-v0.8.0) (2026-04-26)
 
 

@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.6.0](https://github.com/costajohnt/oss-scout/compare/mcp-server-v0.5.0...mcp-server-v0.6.0) (2026-05-10)
+
+
+### Features
+
+* add scout features subcommand ([#92](https://github.com/costajohnt/oss-scout/issues/92)) ([#93](https://github.com/costajohnt/oss-scout/issues/93)) ([d873127](https://github.com/costajohnt/oss-scout/commit/d8731279414ab59bf5c8be56b59eb37767d9fa39))
+* configurable anchor threshold + split ratio for scout features ([#98](https://github.com/costajohnt/oss-scout/issues/98) [#99](https://github.com/costajohnt/oss-scout/issues/99)) ([#101](https://github.com/costajohnt/oss-scout/issues/101)) ([051766a](https://github.com/costajohnt/oss-scout/commit/051766ac3ef2537b7c571fe5398ae946ddd333b5))
+
 ## [0.5.0](https://github.com/costajohnt/oss-scout/compare/mcp-server-v0.4.0...mcp-server-v0.5.0) (2026-04-18)
 
 ### Features
