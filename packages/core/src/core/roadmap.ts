@@ -48,12 +48,14 @@ function pruneCache(): void {
  * Parse markdown content for issue number references.
  *
  * Extracts:
- *   - bare `#NNN` references that are not at start-of-line (those are headings)
+ *   - bare `#NNN` references that are not on a markdown heading line
+ *   - `<owner>/<repo>#NNN` cross-repo refs that match the repo we're parsing for
  *   - `https://github.com/<owner>/<repo>/issues/NNN` URLs that match the
  *     repo we're parsing for (URLs to other repos are ignored)
  *
- * The match for in-repo URLs is intentional: scattered references to
- * unrelated repos in a roadmap shouldn't bump scores in those repos.
+ * The match for cross-repo `owner/repo#N` and full URLs is intentional:
+ * scattered references to unrelated repos in a roadmap shouldn't bump
+ * scores in those repos.
  */
 export function parseRoadmapIssueRefs(
   content: string,
@@ -61,23 +63,39 @@ export function parseRoadmapIssueRefs(
   repo: string,
 ): Set<number> {
   const refs = new Set<number>();
+  const ownerRepoLower = `${owner}/${repo}`.toLowerCase();
+
+  // `owner/repo#N` cross-repo style refs — must match the current repo.
+  // We escape regex metachars in case repo names contain `.` or `-`.
+  const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const fullRefPattern = new RegExp(
+    `\\b${escape(owner)}/${escape(repo)}#(\\d+)\\b`,
+    "gi",
+  );
+  for (const m of content.matchAll(fullRefPattern)) {
+    const n = Number.parseInt(m[1], 10);
+    if (n > 0) refs.add(n);
+  }
 
   // Bare `#N` references, scanned line-by-line so we can skip markdown
-  // headings (`# title`, `## section`) — those aren't issue refs.
+  // headings (`# title`, `## section`) — those aren't issue refs. We also
+  // strip out `owner/repo#N` matches first so `#N` in a cross-repo ref to
+  // a different repo doesn't leak in as a bare match.
+  const fullRefStripPattern = /\b[\w.-]+\/[\w.-]+#\d+\b/gi;
   for (const line of content.split("\n")) {
     if (/^\s*#+\s/.test(line)) continue;
-    for (const m of line.matchAll(/(?:^|[^&\w])#(\d+)\b/g)) {
+    const stripped = line.replace(fullRefStripPattern, "");
+    for (const m of stripped.matchAll(/(?:^|[^&\w])#(\d+)\b/g)) {
       const n = Number.parseInt(m[1], 10);
       if (n > 0) refs.add(n);
     }
   }
 
   // Full GitHub issue URLs scoped to this repo.
-  const ownerRepo = `${owner}/${repo}`.toLowerCase();
   const urlPattern =
     /https?:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/issues\/(\d+)/gi;
   for (const m of content.matchAll(urlPattern)) {
-    if (m[1].toLowerCase() === ownerRepo) {
+    if (m[1].toLowerCase() === ownerRepoLower) {
       const n = Number.parseInt(m[2], 10);
       if (n > 0) refs.add(n);
     }
