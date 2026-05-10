@@ -281,7 +281,7 @@ describe("calculateViabilityScore", () => {
       expect(score).toBe(65 + 10 + 5 + 5);
     });
 
-    it("adds +8 when onRoadmap is true", () => {
+    it("does not score onRoadmap (#95: roadmap drives horizon, not score)", () => {
       const score = calculateViabilityScore({
         ...baseFeature,
         featureSignals: {
@@ -291,7 +291,7 @@ describe("calculateViabilityScore", () => {
           onRoadmap: true,
         },
       });
-      expect(score).toBe(65 + 8);
+      expect(score).toBe(65);
     });
 
     it("adds +10 when wontfixNoContributor is true", () => {
@@ -307,7 +307,7 @@ describe("calculateViabilityScore", () => {
       expect(score).toBe(65 + 10);
     });
 
-    it("combines onRoadmap and wontfixNoContributor with other bonuses, clamped at 100", () => {
+    it("combines wontfixNoContributor with other bonuses (onRoadmap excluded from score)", () => {
       const score = calculateViabilityScore({
         ...baseFeature,
         featureSignals: {
@@ -318,8 +318,8 @@ describe("calculateViabilityScore", () => {
           wontfixNoContributor: true,
         },
       });
-      // raw 65 + 10 + 5 + 5 + 8 + 10 = 103, clamped to 100
-      expect(score).toBe(100);
+      // raw 65 + 10 + 5 + 5 + 10 = 95 (onRoadmap contributes 0)
+      expect(score).toBe(95);
     });
 
     it("clamps total at 100 when all feature bonuses fire", () => {
