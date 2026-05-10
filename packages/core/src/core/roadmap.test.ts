@@ -53,6 +53,23 @@ describe("parseRoadmapIssueRefs", () => {
     const md = "#7 #7 #7 https://github.com/a/b/issues/7";
     expect(parseRoadmapIssueRefs(md, "a", "b")).toEqual(new Set([7]));
   });
+
+  it("extracts owner/repo#N cross-repo refs scoped to the current repo", () => {
+    const md = "Track foo/bar#42 and FOO/BAR#43 alongside #44.";
+    expect(parseRoadmapIssueRefs(md, "foo", "bar")).toEqual(
+      new Set([42, 43, 44]),
+    );
+  });
+
+  it("ignores owner/repo#N refs pointing to other repos", () => {
+    const md = "See other/proj#99 for context (out of scope here).";
+    expect(parseRoadmapIssueRefs(md, "foo", "bar")).toEqual(new Set());
+  });
+
+  it("dedupes when the same issue appears as #N, owner/repo#N, and URL", () => {
+    const md = "Track #7, foo/bar#7, and https://github.com/foo/bar/issues/7.";
+    expect(parseRoadmapIssueRefs(md, "foo", "bar")).toEqual(new Set([7]));
+  });
 });
 
 describe("fetchRoadmapIssueRefs", () => {

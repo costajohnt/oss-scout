@@ -105,3 +105,9 @@ export {
   isLinkedPRStalled,
   STALLED_PR_THRESHOLD_DAYS,
 } from "./core/linked-pr.js";
+
+// Roadmap scraping (#95)
+export {
+  fetchRoadmapIssueRefs,
+  parseRoadmapIssueRefs,
+} from "./core/roadmap.js";

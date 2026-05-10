@@ -45,9 +45,12 @@ export interface ViabilityScoreParams {
   matchesPreferredCategory?: boolean;
   /**
    * Optional feature-mode signals. When present, applies reaction (cap +10),
-   * comment-depth (+5 if >=5), milestone (+5), onRoadmap (+8), and
-   * wontfixNoContributor (+10) bonuses. When absent, scoring behavior is
-   * unchanged.
+   * comment-depth (+5 if >=5), milestone (+5), and wontfixNoContributor
+   * (+10) bonuses. When absent, scoring behavior is unchanged.
+   *
+   * Note: `onRoadmap` is forwarded for cache-key uniqueness but does NOT
+   * contribute to the viability score (#95) — roadmap membership influences
+   * horizon classification only, not score.
    */
   featureSignals?: {
     reactions: number;
@@ -135,13 +138,14 @@ export function calculateViabilityScore(params: ViabilityScoreParams): number {
     score -= 15;
   }
 
-  // Feature signals: reactions, comment depth, milestone, roadmap, wontfix-no-contributor
+  // Feature signals: reactions, comment depth, milestone, wontfix-no-contributor.
+  // Note: onRoadmap (#95) is intentionally NOT scored — roadmap membership is
+  // surfaced via the horizon classifier instead.
   if (params.featureSignals) {
     const fs = params.featureSignals;
     score += Math.min(Math.floor(fs.reactions / 2), 10);
     if (fs.comments >= 5) score += 5;
     if (fs.hasMilestone) score += 5;
-    if (fs.onRoadmap) score += 8;
     if (fs.wontfixNoContributor) score += 10;
   }
 

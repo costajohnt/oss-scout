@@ -61,13 +61,16 @@ export const BIGGER_BET_LABELS = new Set([
 
 /**
  * Classify an issue into "quick-win" or "bigger-bet" based on
- * maintainer-commitment signals (milestone presence + label set).
+ * maintainer-commitment signals (milestone presence, label set, ROADMAP.md
+ * membership). Roadmap membership (#95) is treated as an explicit
+ * maintainer commitment and forces the bigger-bet horizon.
  */
 export function classifyHorizon(input: {
   hasMilestone: boolean;
   labels: string[];
+  isOnRoadmap?: boolean;
 }): Horizon {
-  if (input.hasMilestone) return "bigger-bet";
+  if (input.hasMilestone || input.isOnRoadmap) return "bigger-bet";
   for (const label of input.labels) {
     if (BIGGER_BET_LABELS.has(label.toLowerCase())) return "bigger-bet";
   }
@@ -323,7 +326,11 @@ export async function discoverFeatures(
         warn(MODULE, `vet failed for ${item.html_url}: ${errorMessage(err)}`);
         continue;
       }
-      const horizon = classifyHorizon({ hasMilestone, labels });
+      const horizon = classifyHorizon({
+        hasMilestone,
+        labels,
+        isOnRoadmap: onRoadmap,
+      });
       candidates.push({ ...candidate, horizon });
     }
   }

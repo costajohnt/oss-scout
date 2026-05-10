@@ -183,6 +183,15 @@ describe("classifyHorizon", () => {
       "bigger-bet",
     );
   });
+  it("returns bigger-bet when isOnRoadmap is true even without milestone or label", () => {
+    expect(
+      classifyHorizon({
+        hasMilestone: false,
+        labels: ["enhancement"],
+        isOnRoadmap: true,
+      }),
+    ).toBe("bigger-bet");
+  });
 });
 
 const mkCand = (
@@ -635,7 +644,7 @@ describe("discoverFeatures orchestrator", () => {
         searchPriority: "merged_pr",
       })),
     } as never;
-    await discoverFeatures({
+    const result = await discoverFeatures({
       octokit,
       vetter,
       repoScores: mkScores(["a/b", 4]),
@@ -650,6 +659,100 @@ describe("discoverFeatures orchestrator", () => {
     )?.[1]?.featureSignals?.onRoadmap;
     expect(onRoadmap7).toBe(true);
     expect(onRoadmap8).toBe(false);
+
+    // Horizon classification: roadmap-listed issue forces bigger-bet, off-roadmap stays quick-win.
+    const all = [...result.quickWins, ...result.biggerBets];
+    const cand7 = all.find(
+      (c) => c.issue.url === "https://github.com/a/b/issues/7",
+    );
+    const cand8 = all.find(
+      (c) => c.issue.url === "https://github.com/a/b/issues/8",
+    );
+    expect(cand7?.horizon).toBe("bigger-bet");
+    expect(cand8?.horizon).toBe("quick-win");
+  });
+
+  it("does not throw when roadmap fetch returns 404 — issue stays quick-win without other signals", async () => {
+    const octokit = {
+      issues: {
+        listForRepo: vi.fn().mockResolvedValue({
+          data: [
+            {
+              html_url: "https://github.com/a/b/issues/100",
+              title: "feature with no roadmap",
+              labels: [{ name: "enhancement" }],
+              comments: 1,
+              reactions: { total_count: 1 },
+              milestone: null,
+              pull_request: undefined,
+              assignee: null,
+              created_at: "2026-04-01",
+              number: 100,
+            },
+          ],
+        }),
+      },
+      repos: {
+        getContent: vi
+          .fn()
+          .mockRejectedValue(Object.assign(new Error("nf"), { status: 404 })),
+      },
+    } as never;
+    const vetter = {
+      vetIssue: vi.fn().mockImplementation(async (url: string) => ({
+        issue: {
+          url,
+          repo: "a/b",
+          number: 100,
+          title: "t",
+          labels: [],
+          updatedAt: "2026-05-01",
+        },
+        vettingResult: { passedAllChecks: true, checks: {}, notes: [] },
+        projectHealth: {},
+        antiLLMPolicy: {
+          matched: false,
+          matchedKeywords: [],
+          sourceFile: null,
+        },
+        slmTriage: null,
+        recommendation: "approve",
+        reasonsToApprove: [],
+        reasonsToSkip: [],
+        viabilityScore: 80,
+        searchPriority: "merged_pr",
+      })),
+    } as never;
+    const result = await discoverFeatures({
+      octokit,
+      vetter,
+      repoScores: mkScores(["a/b", 4]),
+      count: 5,
+    });
+    const all = [...result.quickWins, ...result.biggerBets];
+    expect(all).toHaveLength(1);
+    expect(all[0].horizon).toBe("quick-win");
+  });
+
+  it("propagates 401 from roadmap fetch", async () => {
+    const auth401 = Object.assign(new Error("unauth"), { status: 401 });
+    const octokit = {
+      issues: {
+        listForRepo: vi.fn().mockResolvedValue({ data: [] }),
+      },
+      repos: {
+        getContent: vi.fn().mockRejectedValue(auth401),
+      },
+    } as never;
+    const vetter = { vetIssue: vi.fn() } as never;
+    await expect(
+      discoverFeatures({
+        octokit,
+        vetter,
+        repoScores: mkScores(["a/b", 4]),
+        count: 5,
+      }),
+    ).rejects.toThrow();
   });
 
   it("propagates auth and rate-limit errors", async () => {
