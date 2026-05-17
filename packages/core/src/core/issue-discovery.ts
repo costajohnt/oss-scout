@@ -49,7 +49,7 @@ import {
   fetchIssuesFromMaintainedRepos,
   filterVetAndScore,
   fetchIssuesFromKnownRepos,
-  searchWithChunkedLabels,
+  searchAcrossLanguagesAndLabels,
 } from "./search-phases.js";
 
 const MODULE = "issue-discovery";
@@ -180,7 +180,8 @@ async function runPhase2(
   scopes: IssueScope[] | undefined,
   labels: string[],
   configLabels: string[],
-  baseQualifiers: string,
+  languages: string[],
+  isAnyLanguage: boolean,
   maxResults: number,
   minStars: number,
   phase0RepoSet: Set<string>,
@@ -220,11 +221,13 @@ async function runPhase2(
 
   for (const { tier, tierLabels } of tierLabelGroups) {
     try {
-      const allItems = await searchWithChunkedLabels(
+      const allItems = await searchAcrossLanguagesAndLabels(
         octokit,
+        languages,
+        isAnyLanguage,
         tierLabels,
-        0,
-        (labelQ) => `${baseQualifiers} ${labelQ}`.replace(/  +/g, " ").trim(),
+        (langQ) =>
+          `is:issue is:open ${langQ} no:assignee`.replace(/  +/g, " ").trim(),
         budgetPerTier * 3,
       );
 
@@ -582,9 +585,6 @@ export class IssueDiscovery {
     const langQuery = isAnyLanguage
       ? ""
       : languages.map((l) => `language:${l}`).join(" ");
-    const baseQualifiers = `is:issue is:open ${langQuery} no:assignee`
-      .replace(/  +/g, " ")
-      .trim();
 
     // Build reusable filter
     const aiBlocklisted = new Set(config.aiPolicyBlocklist);
@@ -717,7 +717,8 @@ export class IssueDiscovery {
           scopes,
           labels,
           config.labels,
-          baseQualifiers,
+          languages,
+          isAnyLanguage,
           remaining,
           minStars,
           phase0RepoSet,
