@@ -9,6 +9,7 @@
 import { describe, it, expect } from "vitest";
 import {
   annotateBoost,
+  applyDiversityRatio,
   LANGUAGE_BOOST,
   REPO_BOOST,
 } from "./personalization.js";
@@ -165,5 +166,102 @@ describe("annotateBoost", () => {
     );
 
     expect(candidates[0].boostScore).toBe(REPO_BOOST + LANGUAGE_BOOST);
+  });
+});
+
+describe("applyDiversityRatio", () => {
+  function boosted(repo: string): IssueCandidate {
+    const c = makeCandidate(repo, "TypeScript");
+    c.boostScore = REPO_BOOST;
+    c.boostReasons = [`repo affinity: ${repo}`];
+    return c;
+  }
+
+  it("collapses to slice(0, maxResults) when ratio is 0", () => {
+    const candidates = [
+      boosted("a/b"),
+      makeCandidate("c/d", "Go"),
+      makeCandidate("e/f", "Python"),
+    ];
+
+    const picks = applyDiversityRatio(candidates, 2, 0);
+
+    expect(picks).toHaveLength(2);
+    expect(picks[0].issue.repo).toBe("a/b");
+    expect(picks[1].issue.repo).toBe("c/d");
+    expect(picks.some((p) => p.diversitySlot)).toBe(false);
+  });
+
+  it("reserves diversity slots for unboosted candidates", () => {
+    const candidates = [
+      boosted("a/b"),
+      boosted("c/d"),
+      boosted("e/f"),
+      boosted("g/h"),
+      makeCandidate("i/j", "Rust"),
+      makeCandidate("k/l", "Elixir"),
+    ];
+
+    // 5 results, 40% diversity -> 2 reserve slots, 3 main slots.
+    const picks = applyDiversityRatio(candidates, 5, 0.4);
+
+    expect(picks).toHaveLength(5);
+    expect(picks.slice(0, 3).every((p) => p.boostScore === REPO_BOOST)).toBe(
+      true,
+    );
+    expect(picks.slice(3).every((p) => p.diversitySlot === true)).toBe(true);
+    expect(picks.slice(3).every((p) => !p.boostScore)).toBe(true);
+    expect(picks[3].issue.repo).toBe("i/j");
+    expect(picks[4].issue.repo).toBe("k/l");
+  });
+
+  it("tops up from main pool when diversity pool is too small", () => {
+    const candidates = [
+      boosted("a/b"),
+      boosted("c/d"),
+      boosted("e/f"),
+      makeCandidate("i/j", "Rust"),
+    ];
+
+    // 4 results, 50% diversity -> 2 reserve, 2 main. Only 1 unboosted
+    // candidate exists, so the second reserve slot falls back to main.
+    const picks = applyDiversityRatio(candidates, 4, 0.5);
+
+    expect(picks).toHaveLength(4);
+    expect(picks[0].issue.repo).toBe("a/b");
+    expect(picks[1].issue.repo).toBe("c/d");
+    expect(picks[2].issue.repo).toBe("i/j");
+    expect(picks[2].diversitySlot).toBe(true);
+    expect(picks[3].issue.repo).toBe("e/f");
+    expect(picks[3].diversitySlot).toBeUndefined();
+  });
+
+  it("clamps ratio above 1 to a full diversity pass", () => {
+    const candidates = [
+      boosted("a/b"),
+      boosted("c/d"),
+      makeCandidate("i/j", "Rust"),
+      makeCandidate("k/l", "Elixir"),
+    ];
+
+    // ratio clamped to 1: reserve all slots for diversity. With 2
+    // unboosted candidates and 4 main, they fill 2 slots first; the
+    // remaining 2 fall back to main pool.
+    const picks = applyDiversityRatio(candidates, 4, 1.5);
+
+    expect(picks).toHaveLength(4);
+    expect(picks[0].issue.repo).toBe("i/j");
+    expect(picks[0].diversitySlot).toBe(true);
+    expect(picks[1].issue.repo).toBe("k/l");
+    expect(picks[1].diversitySlot).toBe(true);
+    expect(picks[2].issue.repo).toBe("a/b");
+    expect(picks[3].issue.repo).toBe("c/d");
+  });
+
+  it("returns empty for maxResults <= 0", () => {
+    const candidates = [boosted("a/b"), makeCandidate("c/d", "Go")];
+
+    expect(applyDiversityRatio(candidates, 0, 0.5)).toEqual([]);
+    expect(applyDiversityRatio(candidates, -1, 0.5)).toEqual([]);
   });
 });

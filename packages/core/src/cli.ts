@@ -116,6 +116,10 @@ program
     "--prefer-repos <list>",
     "Comma-separated `owner/repo` slugs to soft-boost in ranking (#1244). Stronger weight than language match. Does not filter results.",
   )
+  .option(
+    "--diversity-ratio <n>",
+    "Fraction of result slots (0-1) reserved for candidates that matched NEITHER preference list (#1244). Counterweights echo-chamber bias as boosts accumulate. Default 0 (disabled).",
+  )
   .action(
     async (
       count: string | undefined,
@@ -124,6 +128,7 @@ program
         strategy?: string;
         preferLanguages?: string;
         preferRepos?: string;
+        diversityRatio?: string;
       },
     ) => {
       try {
@@ -177,12 +182,24 @@ program
             .filter(Boolean);
           return parts.length > 0 ? parts : undefined;
         };
+        let diversityRatio: number | undefined;
+        if (options.diversityRatio !== undefined) {
+          const parsed = Number(options.diversityRatio);
+          if (!Number.isFinite(parsed) || parsed < 0 || parsed > 1) {
+            console.error(
+              `Error: --diversity-ratio must be a number in [0, 1] (got "${options.diversityRatio}")`,
+            );
+            process.exit(1);
+          }
+          diversityRatio = parsed;
+        }
         const results = await runSearch({
           maxResults,
           state,
           strategies,
           preferLanguages: splitCsv(options.preferLanguages),
           preferRepos: splitCsv(options.preferRepos),
+          diversityRatio,
         });
         if (options.json) {
           console.log(formatJsonSuccess(results));

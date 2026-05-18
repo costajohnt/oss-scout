@@ -202,6 +202,7 @@ export class OssScout implements ScoutStateReader {
       skippedUrls,
       preferLanguages: options?.preferLanguages,
       preferRepos: options?.preferRepos,
+      diversityRatio: options?.diversityRatio,
     });
 
     this.state.lastSearchAt = new Date().toISOString();
