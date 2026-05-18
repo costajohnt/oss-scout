@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.1](https://github.com/costajohnt/oss-scout/compare/core-v0.9.0...core-v0.9.1) (2026-05-18)
+
+
+### Bug Fixes
+
+* **search:** fan out Phase 2 per language when combined with labels ([#105](https://github.com/costajohnt/oss-scout/issues/105)) ([5193fa6](https://github.com/costajohnt/oss-scout/commit/5193fa64061b76f5cd81482e709447c807c86278))
+
 ## [0.9.0](https://github.com/costajohnt/oss-scout/compare/core-v0.8.0...core-v0.9.0) (2026-05-10)
 
 
