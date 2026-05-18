@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.0](https://github.com/costajohnt/oss-scout/compare/core-v0.9.1...core-v0.10.0) (2026-05-18)
+
+
+### Features
+
+* **search:** soft-boost ranking via preferLanguages and preferRepos ([#107](https://github.com/costajohnt/oss-scout/issues/107)) ([1e938a0](https://github.com/costajohnt/oss-scout/commit/1e938a08f51820a2a37df98f28964cb044957738))
+
 ## [0.9.1](https://github.com/costajohnt/oss-scout/compare/core-v0.9.0...core-v0.9.1) (2026-05-18)
 
 
