@@ -964,9 +964,9 @@ describe("searchWithChunkedLabels", () => {
 
 describe("buildLanguageVariants", () => {
   it("returns a single empty variant when isAnyLanguage is true", () => {
-    expect(buildLanguageVariants(["typescript", "python"], true, true)).toEqual([
-      "",
-    ]);
+    expect(buildLanguageVariants(["typescript", "python"], true, true)).toEqual(
+      [""],
+    );
   });
 
   it("returns a single empty variant when languages is empty", () => {
@@ -980,9 +980,9 @@ describe("buildLanguageVariants", () => {
   });
 
   it("combines multi-language into one ANDed clause when no labels are present", () => {
-    expect(buildLanguageVariants(["typescript", "python"], false, false)).toEqual([
-      "language:typescript language:python",
-    ]);
+    expect(
+      buildLanguageVariants(["typescript", "python"], false, false),
+    ).toEqual(["language:typescript language:python"]);
   });
 
   it("fans out per-language when 2+ languages combine with labels", () => {
@@ -1012,8 +1012,9 @@ describe("searchAcrossLanguagesAndLabels", () => {
     );
 
     expect(octokit.search.issuesAndPullRequests).toHaveBeenCalledTimes(1);
-    const call = (octokit.search.issuesAndPullRequests as ReturnType<typeof vi.fn>).mock
-      .calls[0][0];
+    const call = (
+      octokit.search.issuesAndPullRequests as ReturnType<typeof vi.fn>
+    ).mock.calls[0][0];
     expect(call.q).toContain("language:typescript");
   });
 
@@ -1034,8 +1035,9 @@ describe("searchAcrossLanguagesAndLabels", () => {
     );
 
     expect(octokit.search.issuesAndPullRequests).toHaveBeenCalledTimes(3);
-    const calls = (octokit.search.issuesAndPullRequests as ReturnType<typeof vi.fn>)
-      .mock.calls;
+    const calls = (
+      octokit.search.issuesAndPullRequests as ReturnType<typeof vi.fn>
+    ).mock.calls;
     const queries = calls.map((c) => c[0].q);
     expect(queries[0]).toContain("language:typescript");
     expect(queries[0]).not.toContain("language:python");
@@ -1057,8 +1059,9 @@ describe("searchAcrossLanguagesAndLabels", () => {
     );
 
     expect(octokit.search.issuesAndPullRequests).toHaveBeenCalledTimes(1);
-    const call = (octokit.search.issuesAndPullRequests as ReturnType<typeof vi.fn>).mock
-      .calls[0][0];
+    const call = (
+      octokit.search.issuesAndPullRequests as ReturnType<typeof vi.fn>
+    ).mock.calls[0][0];
     expect(call.q).toContain("language:typescript");
     expect(call.q).toContain("language:python");
   });
@@ -1111,8 +1114,9 @@ describe("searchAcrossLanguagesAndLabels", () => {
     );
 
     expect(octokit.search.issuesAndPullRequests).toHaveBeenCalledTimes(1);
-    const call = (octokit.search.issuesAndPullRequests as ReturnType<typeof vi.fn>).mock
-      .calls[0][0];
+    const call = (
+      octokit.search.issuesAndPullRequests as ReturnType<typeof vi.fn>
+    ).mock.calls[0][0];
     expect(call.q).not.toContain("language:");
   });
 });
