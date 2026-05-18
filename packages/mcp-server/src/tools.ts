@@ -46,8 +46,22 @@ export function registerTools(server: McpServer, scout: OssScout): void {
         .describe(
           "Soft-boost ranking for candidates in one of these `owner/repo` slugs. Stronger weight than language match (#1244). Not a filter; only reorders.",
         ),
+      diversityRatio: z
+        .number()
+        .min(0)
+        .max(1)
+        .optional()
+        .describe(
+          "Diversity counterweight (#1244): fraction of result slots reserved for candidates that matched NEITHER preference list. Counters echo-chamber bias when boosts accumulate over time. 0 disables, 1 reserves every slot for diversity. Default 0.",
+        ),
     },
-    async ({ maxResults, strategies, preferLanguages, preferRepos }) => {
+    async ({
+      maxResults,
+      strategies,
+      preferLanguages,
+      preferRepos,
+      diversityRatio,
+    }) => {
       try {
         const parsedStrategies = strategies
           ? strategies
@@ -61,6 +75,7 @@ export function registerTools(server: McpServer, scout: OssScout): void {
             strategies: parsedStrategies,
             preferLanguages,
             preferRepos,
+            diversityRatio,
           }),
         );
 

@@ -51,7 +51,7 @@ import {
   fetchIssuesFromKnownRepos,
   searchAcrossLanguagesAndLabels,
 } from "./search-phases.js";
-import { annotateBoost } from "./personalization.js";
+import { annotateBoost, applyDiversityRatio } from "./personalization.js";
 
 const MODULE = "issue-discovery";
 
@@ -500,6 +500,7 @@ export class IssueDiscovery {
       skippedUrls?: Set<string>;
       preferLanguages?: string[];
       preferRepos?: string[];
+      diversityRatio?: number;
     } = {},
   ): Promise<{
     candidates: IssueCandidate[];
@@ -849,11 +850,21 @@ export class IssueDiscovery {
 
     const capped = applyPerRepoCap(allCandidates, 2);
 
+    // Diversity counterweight (#1244): when `diversityRatio > 0`, reserve
+    // a fraction of the final slots for candidates that matched neither
+    // preference list. No-op when the ratio is 0 or absent — collapses to
+    // the original `slice(0, maxResults)` behavior.
+    const finalPicks = applyDiversityRatio(
+      capped,
+      maxResults,
+      options.diversityRatio ?? 0,
+    );
+
     info(
       MODULE,
-      `Search complete: ${tracker.getTotalCalls()} Search API calls used, ${capped.length} candidates returned`,
+      `Search complete: ${tracker.getTotalCalls()} Search API calls used, ${finalPicks.length} candidates returned`,
     );
-    return { candidates: capped.slice(0, maxResults), strategiesUsed };
+    return { candidates: finalPicks, strategiesUsed };
   }
 
   /**

@@ -102,6 +102,14 @@ export interface IssueCandidate {
    * symmetry with the existing surface.
    */
   boostReasons?: string[];
+  /**
+   * Marks a candidate that filled a reserved diversity slot (#1244).
+   * Populated only when `diversityRatio > 0` was passed AND the
+   * candidate matched no personalization bias. Mutually exclusive with
+   * a non-zero `boostScore` (a candidate cannot be both biased-toward
+   * and a diversity slot in the same result set).
+   */
+  diversitySlot?: boolean;
 }
 
 /** Subset of RepoScore fields that callers may update. */
@@ -219,6 +227,16 @@ export interface SearchOptions {
    * disables the boost.
    */
   preferRepos?: string[];
+  /**
+   * Counterweight against echo-chamber bias as `preferLanguages` /
+   * `preferRepos` boosts accumulate over time (#1244). A value of 0.2
+   * means "reserve roughly 20% of the final slots for candidates that
+   * matched NEITHER preference list," filling them from the same sorted
+   * pool but skipping any candidate carrying a `boostScore`. 0 disables
+   * the counterweight; 1 makes every slot a diversity slot. Range
+   * clamped to [0, 1].
+   */
+  diversityRatio?: number;
 }
 
 /** Result of a search operation. */

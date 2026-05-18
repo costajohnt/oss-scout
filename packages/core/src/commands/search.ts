@@ -51,6 +51,11 @@ export interface SearchOutput {
      */
     boostScore?: number;
     boostReasons?: string[];
+    /**
+     * Marks a candidate that filled a reserved diversity slot (#1244).
+     * Mutually exclusive with a non-zero `boostScore`.
+     */
+    diversitySlot?: boolean;
   }>;
   excludedRepos: string[];
   aiPolicyBlocklist: string[];
@@ -66,6 +71,8 @@ interface SearchCommandOptions {
   preferLanguages?: string[];
   /** Soft sort boost for candidates in these `owner/repo` slugs (#1244). */
   preferRepos?: string[];
+  /** Diversity counterweight: fraction of slots reserved for unboosted candidates (#1244). */
+  diversityRatio?: number;
 }
 
 export async function runSearch(
@@ -84,6 +91,7 @@ export async function runSearch(
     strategies: options.strategies,
     preferLanguages: options.preferLanguages,
     preferRepos: options.preferRepos,
+    diversityRatio: options.diversityRatio,
   });
 
   // Persist results to local state and gist
@@ -131,6 +139,7 @@ export async function runSearch(
           : undefined,
         boostScore: c.boostScore,
         boostReasons: c.boostReasons,
+        diversitySlot: c.diversitySlot,
       };
     }),
     excludedRepos: result.excludedRepos,
