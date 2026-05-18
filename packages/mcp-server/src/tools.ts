@@ -34,8 +34,20 @@ export function registerTools(server: McpServer, scout: OssScout): void {
         .describe(
           "Comma-separated search strategies: merged, starred, broad, maintained, all",
         ),
+      preferLanguages: z
+        .array(z.string())
+        .optional()
+        .describe(
+          "Soft-boost ranking for candidates whose repo language matches one of these (case-insensitive). Personalization tier between recommendation and viabilityScore (#1244). Not a filter; only reorders.",
+        ),
+      preferRepos: z
+        .array(z.string())
+        .optional()
+        .describe(
+          "Soft-boost ranking for candidates in one of these `owner/repo` slugs. Stronger weight than language match (#1244). Not a filter; only reorders.",
+        ),
     },
-    async ({ maxResults, strategies }) => {
+    async ({ maxResults, strategies, preferLanguages, preferRepos }) => {
       try {
         const parsedStrategies = strategies
           ? strategies
@@ -47,6 +59,8 @@ export function registerTools(server: McpServer, scout: OssScout): void {
           scout.search({
             maxResults: maxResults ?? 10,
             strategies: parsedStrategies,
+            preferLanguages,
+            preferRepos,
           }),
         );
 

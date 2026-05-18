@@ -43,6 +43,14 @@ export interface SearchOutput {
       updatedAt?: string;
       isStalled: boolean;
     };
+    /**
+     * Personalization sort-tier signal (#1244). Present only when the
+     * caller passed `preferLanguages` / `preferRepos` *and* this
+     * candidate matched at least one of them. `boostReasons` is the
+     * human-readable explanation (e.g. `"repo affinity: vercel/next.js"`).
+     */
+    boostScore?: number;
+    boostReasons?: string[];
   }>;
   excludedRepos: string[];
   aiPolicyBlocklist: string[];
@@ -54,6 +62,10 @@ interface SearchCommandOptions {
   maxResults: number;
   state?: ScoutState;
   strategies?: SearchStrategy[];
+  /** Soft sort boost for candidates whose repo language matches (#1244). */
+  preferLanguages?: string[];
+  /** Soft sort boost for candidates in these `owner/repo` slugs (#1244). */
+  preferRepos?: string[];
 }
 
 export async function runSearch(
@@ -70,6 +82,8 @@ export async function runSearch(
   const result = await scout.search({
     maxResults: options.maxResults,
     strategies: options.strategies,
+    preferLanguages: options.preferLanguages,
+    preferRepos: options.preferRepos,
   });
 
   // Persist results to local state and gist
@@ -115,6 +129,8 @@ export async function runSearch(
               isStalled: isLinkedPRStalled(c.vettingResult.linkedPR),
             }
           : undefined,
+        boostScore: c.boostScore,
+        boostReasons: c.boostReasons,
       };
     }),
     excludedRepos: result.excludedRepos,
