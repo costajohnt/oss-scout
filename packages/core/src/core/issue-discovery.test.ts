@@ -102,7 +102,7 @@ const mockFetchIssuesFromKnownRepos = vi.fn().mockResolvedValue({
   rateLimitHit: false,
 });
 
-const mockSearchWithChunkedLabels = vi.fn().mockResolvedValue([]);
+const mockSearchAcrossLanguagesAndLabels = vi.fn().mockResolvedValue([]);
 
 const mockFilterVetAndScore = vi.fn().mockResolvedValue({
   candidates: [],
@@ -126,8 +126,8 @@ vi.mock("./search-phases.js", () => ({
   interleaveArrays: vi.fn((arrays: unknown[][]) => arrays.flat()),
   fetchIssuesFromKnownRepos: (...args: unknown[]) =>
     mockFetchIssuesFromKnownRepos(...args),
-  searchWithChunkedLabels: (...args: unknown[]) =>
-    mockSearchWithChunkedLabels(...args),
+  searchAcrossLanguagesAndLabels: (...args: unknown[]) =>
+    mockSearchAcrossLanguagesAndLabels(...args),
   filterVetAndScore: (...args: unknown[]) => mockFilterVetAndScore(...args),
   cachedSearchIssues: (...args: unknown[]) => mockCachedSearchIssues(...args),
   fetchIssuesFromMaintainedRepos: (...args: unknown[]) =>
@@ -254,7 +254,7 @@ describe("IssueDiscovery", () => {
       allReposFailed: false,
       rateLimitHit: false,
     });
-    mockSearchWithChunkedLabels.mockResolvedValue([]);
+    mockSearchAcrossLanguagesAndLabels.mockResolvedValue([]);
     mockFilterVetAndScore.mockResolvedValue({
       candidates: [],
       allVetFailed: false,
@@ -426,7 +426,7 @@ describe("IssueDiscovery", () => {
         repository_url: "https://api.github.com/repos/broad/repo",
         updated_at: "2026-01-01T00:00:00Z",
       };
-      mockSearchWithChunkedLabels.mockResolvedValue([item]);
+      mockSearchAcrossLanguagesAndLabels.mockResolvedValue([item]);
       const c = makeCandidate("broad/repo", "normal");
       mockFilterVetAndScore.mockResolvedValue({
         candidates: [c],
@@ -437,7 +437,7 @@ describe("IssueDiscovery", () => {
       const discovery = makeDiscovery();
       await discovery.searchIssues({ maxResults: 5 });
 
-      expect(mockSearchWithChunkedLabels).toHaveBeenCalled();
+      expect(mockSearchAcrossLanguagesAndLabels).toHaveBeenCalled();
       expect(mockFilterVetAndScore).toHaveBeenCalled();
     });
 
@@ -775,7 +775,7 @@ describe("IssueDiscovery", () => {
         rateLimitHit: false,
       });
       // Phase 2 (broad) returns normal
-      mockSearchWithChunkedLabels.mockResolvedValue([]);
+      mockSearchAcrossLanguagesAndLabels.mockResolvedValue([]);
       mockFilterVetAndScore.mockResolvedValueOnce({
         candidates: [normal],
         allVetFailed: false,
@@ -809,7 +809,7 @@ describe("IssueDiscovery", () => {
           updated_at: "2026-01-01T00:00:00Z",
         },
       ];
-      mockSearchWithChunkedLabels.mockResolvedValue(items);
+      mockSearchAcrossLanguagesAndLabels.mockResolvedValue(items);
 
       const discovery = makeDiscovery({}, { excludeRepos: ["excluded/repo"] });
 
@@ -891,7 +891,7 @@ describe("IssueDiscovery", () => {
       // broad should still be listed in strategiesUsed (strategy was enabled)
       // but searchWithChunkedLabels should NOT have been called (Phase 2 body skipped)
       expect(strategiesUsed).toContain("broad");
-      expect(mockSearchWithChunkedLabels).not.toHaveBeenCalled();
+      expect(mockSearchAcrossLanguagesAndLabels).not.toHaveBeenCalled();
     });
 
     it("applies broadPhaseDelayMs before Phase 2 when previous phases found some results", async () => {
@@ -969,7 +969,7 @@ describe("IssueDiscovery", () => {
       await discovery.searchIssues({ maxResults: 25 });
 
       // Phase 2 should have run (searchWithChunkedLabels called)
-      expect(mockSearchWithChunkedLabels).toHaveBeenCalled();
+      expect(mockSearchAcrossLanguagesAndLabels).toHaveBeenCalled();
     });
   });
 });

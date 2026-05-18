@@ -76,6 +76,8 @@ import {
   cachedSearchIssues,
   fetchIssuesFromMaintainedRepos,
   searchWithChunkedLabels,
+  searchAcrossLanguagesAndLabels,
+  buildLanguageVariants,
   filterVetAndScore,
   fetchIssuesFromKnownRepos,
   searchInRepos,
@@ -957,6 +959,165 @@ describe("searchWithChunkedLabels", () => {
     expect(result).toHaveLength(2); // deduplicated: sharedItem appears once
     expect(result[0].html_url).toBe("https://github.com/a/b/issues/1");
     expect(result[1].html_url).toBe("https://github.com/c/d/issues/2");
+  });
+});
+
+describe("buildLanguageVariants", () => {
+  it("returns a single empty variant when isAnyLanguage is true", () => {
+    expect(buildLanguageVariants(["typescript", "python"], true, true)).toEqual(
+      [""],
+    );
+  });
+
+  it("returns a single empty variant when languages is empty", () => {
+    expect(buildLanguageVariants([], false, true)).toEqual([""]);
+  });
+
+  it("returns a single language qualifier for one language", () => {
+    expect(buildLanguageVariants(["typescript"], false, true)).toEqual([
+      "language:typescript",
+    ]);
+  });
+
+  it("combines multi-language into one ANDed clause when no labels are present", () => {
+    expect(
+      buildLanguageVariants(["typescript", "python"], false, false),
+    ).toEqual(["language:typescript language:python"]);
+  });
+
+  it("fans out per-language when 2+ languages combine with labels", () => {
+    expect(
+      buildLanguageVariants(["typescript", "python", "rust"], false, true),
+    ).toEqual(["language:typescript", "language:python", "language:rust"]);
+  });
+});
+
+describe("searchAcrossLanguagesAndLabels", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockCache.getIfFresh.mockReturnValue(null);
+  });
+
+  it("issues one search call when only one language is configured", async () => {
+    const items = [makeItem("https://github.com/a/b/issues/1", "a/b")];
+    const octokit = makeMockOctokit(items);
+
+    await searchAcrossLanguagesAndLabels(
+      octokit,
+      ["typescript"],
+      false,
+      ["good first issue"],
+      (langQ) => `is:issue is:open ${langQ} no:assignee`,
+      10,
+    );
+
+    expect(octokit.search.issuesAndPullRequests).toHaveBeenCalledTimes(1);
+    const call = (
+      octokit.search.issuesAndPullRequests as ReturnType<typeof vi.fn>
+    ).mock.calls[0][0];
+    expect(call.q).toContain("language:typescript");
+  });
+
+  it("fans out one call per language when 2+ languages combine with labels", async () => {
+    // Regression guard for oss-autopilot#1331: GitHub Search returns 0 results
+    // when multi-`language:` AND combines with a label OR-group. We must issue
+    // one query per language and union the results instead.
+    const items = [makeItem("https://github.com/a/b/issues/1", "a/b")];
+    const octokit = makeMockOctokit(items);
+
+    await searchAcrossLanguagesAndLabels(
+      octokit,
+      ["typescript", "python", "rust"],
+      false,
+      ["good first issue", "help wanted"],
+      (langQ) => `is:issue is:open ${langQ} no:assignee`,
+      10,
+    );
+
+    expect(octokit.search.issuesAndPullRequests).toHaveBeenCalledTimes(3);
+    const calls = (
+      octokit.search.issuesAndPullRequests as ReturnType<typeof vi.fn>
+    ).mock.calls;
+    const queries = calls.map((c) => c[0].q);
+    expect(queries[0]).toContain("language:typescript");
+    expect(queries[0]).not.toContain("language:python");
+    expect(queries[1]).toContain("language:python");
+    expect(queries[2]).toContain("language:rust");
+  });
+
+  it("issues a single combined-language call when 2+ languages have no labels", async () => {
+    const items = [makeItem("https://github.com/a/b/issues/1", "a/b")];
+    const octokit = makeMockOctokit(items);
+
+    await searchAcrossLanguagesAndLabels(
+      octokit,
+      ["typescript", "python"],
+      false,
+      [],
+      (langQ) => `is:issue is:open ${langQ} no:assignee`,
+      10,
+    );
+
+    expect(octokit.search.issuesAndPullRequests).toHaveBeenCalledTimes(1);
+    const call = (
+      octokit.search.issuesAndPullRequests as ReturnType<typeof vi.fn>
+    ).mock.calls[0][0];
+    expect(call.q).toContain("language:typescript");
+    expect(call.q).toContain("language:python");
+  });
+
+  it("deduplicates issues that appear in multiple language results", async () => {
+    const sharedItem = makeItem("https://github.com/a/b/issues/1", "a/b");
+    const uniqueItem = makeItem("https://github.com/c/d/issues/2", "c/d");
+
+    let callCount = 0;
+    const octokit = {
+      search: {
+        issuesAndPullRequests: vi.fn().mockImplementation(() => {
+          callCount++;
+          if (callCount === 1)
+            return { data: { total_count: 1, items: [sharedItem] } };
+          return {
+            data: { total_count: 2, items: [sharedItem, uniqueItem] },
+          };
+        }),
+      },
+    } as unknown as Octokit;
+
+    const result = await searchAcrossLanguagesAndLabels(
+      octokit,
+      ["typescript", "python"],
+      false,
+      ["good first issue"],
+      (langQ) => `is:issue is:open ${langQ} no:assignee`,
+      10,
+    );
+
+    expect(result).toHaveLength(2);
+    expect(result.map((i) => i.html_url)).toEqual([
+      "https://github.com/a/b/issues/1",
+      "https://github.com/c/d/issues/2",
+    ]);
+  });
+
+  it("skips language qualifiers entirely when isAnyLanguage is true", async () => {
+    const items = [makeItem("https://github.com/a/b/issues/1", "a/b")];
+    const octokit = makeMockOctokit(items);
+
+    await searchAcrossLanguagesAndLabels(
+      octokit,
+      ["typescript", "python"],
+      true,
+      ["good first issue"],
+      (langQ) => `is:issue is:open ${langQ} no:assignee`,
+      10,
+    );
+
+    expect(octokit.search.issuesAndPullRequests).toHaveBeenCalledTimes(1);
+    const call = (
+      octokit.search.issuesAndPullRequests as ReturnType<typeof vi.fn>
+    ).mock.calls[0][0];
+    expect(call.q).not.toContain("language:");
   });
 });
 

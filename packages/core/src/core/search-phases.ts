@@ -395,6 +395,78 @@ export async function searchWithChunkedLabels(
 }
 
 /**
+ * Build per-call language qualifier strings, fanning out across languages
+ * when a multi-language + labels combination would trip GitHub Search's
+ * empty-result edge case (multi-`language:` AND with a label OR-group
+ * silently returns 0 — see https://github.com/costajohnt/oss-autopilot/issues/1331).
+ */
+export function buildLanguageVariants(
+  languages: string[],
+  isAnyLanguage: boolean,
+  hasLabels: boolean,
+): string[] {
+  if (isAnyLanguage || languages.length === 0) return [""];
+  if (languages.length === 1) return [`language:${languages[0]}`];
+  if (!hasLabels) return [languages.map((l) => `language:${l}`).join(" ")];
+  return languages.map((l) => `language:${l}`);
+}
+
+/**
+ * Search across languages with label chunking, deduplicating results.
+ *
+ * Fans out one query per language when 2+ languages are paired with labels
+ * (works around a GitHub Search backend edge case where the multi-language
+ * AND combined with a label OR-group returns 0). For each language variant,
+ * delegates to searchWithChunkedLabels to keep within GitHub's 5-operator limit.
+ *
+ * @param octokit         Authenticated Octokit instance
+ * @param languages       Configured languages (used as `language:X` qualifiers)
+ * @param isAnyLanguage   When true, skip language qualifiers entirely
+ * @param labels          Label list passed to searchWithChunkedLabels
+ * @param buildBaseQuery  Builds the query prefix from a language qualifier string;
+ *                        e.g. `(langQ) => `is:issue is:open ${langQ} no:assignee`.trim()`
+ * @param perPage         Results per API call
+ */
+export async function searchAcrossLanguagesAndLabels(
+  octokit: Octokit,
+  languages: string[],
+  isAnyLanguage: boolean,
+  labels: string[],
+  buildBaseQuery: (langQuery: string) => string,
+  perPage: number,
+): Promise<GitHubSearchItem[]> {
+  const langVariants = buildLanguageVariants(
+    languages,
+    isAnyLanguage,
+    labels.length > 0,
+  );
+  const seenUrls = new Set<string>();
+  const allItems: GitHubSearchItem[] = [];
+
+  for (let i = 0; i < langVariants.length; i++) {
+    if (i > 0) await sleep(INTER_QUERY_DELAY_MS);
+    const items = await searchWithChunkedLabels(
+      octokit,
+      labels,
+      0,
+      (labelQ) =>
+        `${buildBaseQuery(langVariants[i])} ${labelQ}`
+          .replace(/  +/g, " ")
+          .trim(),
+      perPage,
+    );
+    for (const item of items) {
+      if (!seenUrls.has(item.html_url)) {
+        seenUrls.add(item.html_url);
+        allItems.push(item);
+      }
+    }
+  }
+
+  return allItems;
+}
+
+/**
  * Shared pipeline: spam-filter, repo-exclusion, vetting, and star-count filter.
  * Used by Phases 2 and 3 to convert raw search results into vetted candidates.
  */
