@@ -51,6 +51,7 @@ import {
   fetchIssuesFromKnownRepos,
   searchAcrossLanguagesAndLabels,
 } from "./search-phases.js";
+import { annotateBoost } from "./personalization.js";
 
 const MODULE = "issue-discovery";
 
@@ -497,6 +498,8 @@ export class IssueDiscovery {
       maxResults?: number;
       strategies?: SearchStrategy[];
       skippedUrls?: Set<string>;
+      preferLanguages?: string[];
+      preferRepos?: string[];
     } = {},
   ): Promise<{
     candidates: IssueCandidate[];
@@ -811,7 +814,12 @@ export class IssueDiscovery {
         `Try again after the rate limit resets for complete results.`;
     }
 
-    // Sort by priority, recommendation, then viability score
+    // Personalization annotation (#1244): tag each candidate with
+    // boostScore + boostReasons before sorting so the new sort tier has
+    // values to read. No-op when neither preference list is supplied.
+    annotateBoost(allCandidates, options.preferLanguages, options.preferRepos);
+
+    // Sort by priority, recommendation, boost (#1244), then viability score
     allCandidates.sort((a, b) => {
       const priorityOrder: Record<SearchPriority, number> = {
         merged_pr: 0,
@@ -827,6 +835,14 @@ export class IssueDiscovery {
         recommendationOrder[a.recommendation] -
         recommendationOrder[b.recommendation];
       if (recDiff !== 0) return recDiff;
+
+      // Personalization tier (#1244): higher boostScore wins. Treats
+      // undefined as 0 so unboosted candidates rank below boosted peers
+      // but stay ordered among themselves by viabilityScore. No-op when
+      // `preferLanguages`/`preferRepos` are absent — all candidates carry
+      // `boostScore: undefined` and the difference collapses to 0.
+      const boostDiff = (b.boostScore ?? 0) - (a.boostScore ?? 0);
+      if (boostDiff !== 0) return boostDiff;
 
       return b.viabilityScore - a.viabilityScore;
     });

@@ -108,10 +108,23 @@ program
     `Search strategies (${CONCRETE_STRATEGIES.join(",")},all)`,
     "all",
   )
+  .option(
+    "--prefer-languages <list>",
+    "Comma-separated languages to soft-boost in ranking (#1244). Candidates whose repo language matches sort above equally-recommended non-matches. Does not filter results.",
+  )
+  .option(
+    "--prefer-repos <list>",
+    "Comma-separated `owner/repo` slugs to soft-boost in ranking (#1244). Stronger weight than language match. Does not filter results.",
+  )
   .action(
     async (
       count: string | undefined,
-      options: { json?: boolean; strategy?: string },
+      options: {
+        json?: boolean;
+        strategy?: string;
+        preferLanguages?: string;
+        preferRepos?: string;
+      },
     ) => {
       try {
         if (!hasLocalState()) {
@@ -156,7 +169,21 @@ program
           strategies.push(parsed.data);
         }
 
-        const results = await runSearch({ maxResults, state, strategies });
+        const splitCsv = (raw: string | undefined): string[] | undefined => {
+          if (!raw) return undefined;
+          const parts = raw
+            .split(",")
+            .map((s) => s.trim())
+            .filter(Boolean);
+          return parts.length > 0 ? parts : undefined;
+        };
+        const results = await runSearch({
+          maxResults,
+          state,
+          strategies,
+          preferLanguages: splitCsv(options.preferLanguages),
+          preferRepos: splitCsv(options.preferRepos),
+        });
         if (options.json) {
           console.log(formatJsonSuccess(results));
         } else {

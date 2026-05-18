@@ -89,6 +89,19 @@ export interface IssueCandidate {
   reasonsToApprove: string[];
   viabilityScore: number;
   searchPriority: SearchPriority;
+  /**
+   * Personalization sort tier (#1244). Populated only when the caller
+   * passes `preferLanguages` / `preferRepos` to `search()` *and* the
+   * candidate matches at least one. Affects sort order between the
+   * `recommendation` tier and `viabilityScore`; never used as a filter.
+   */
+  boostScore?: number;
+  /**
+   * Human-readable reasons the candidate matched personalization bias
+   * (#1244). Mirrors `reasonsToApprove`/`reasonsToSkip` shape for
+   * symmetry with the existing surface.
+   */
+  boostReasons?: string[];
 }
 
 /** Subset of RepoScore fields that callers may update. */
@@ -191,6 +204,21 @@ export type ScoutConfig =
 export interface SearchOptions {
   maxResults?: number;
   strategies?: SearchStrategy[];
+  /**
+   * Per-call personalization bias: candidates whose repo language matches
+   * one of these (case-insensitive) get a soft sort boost above
+   * equally-recommended non-matches (#1244). Does not filter results, does
+   * not change `viabilityScore`. Empty / undefined disables the boost.
+   */
+  preferLanguages?: string[];
+  /**
+   * Per-call personalization bias: candidates in one of these
+   * `owner/repo` slugs get a soft sort boost above equally-recommended
+   * non-matches (#1244). Stronger weight than language match. Does not
+   * filter results, does not change `viabilityScore`. Empty / undefined
+   * disables the boost.
+   */
+  preferRepos?: string[];
 }
 
 /** Result of a search operation. */
