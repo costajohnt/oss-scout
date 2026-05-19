@@ -218,8 +218,17 @@ program
             const stalledTag = c.linkedPR?.isStalled
               ? " (stalled PR, revive opportunity)"
               : "";
+            // Personalization tag (#1244). A candidate is either boosted
+            // (matched a preference) or a diversity slot (matched none and
+            // filled a reserved slot); never both.
+            let personalizationTag = "";
+            if (c.boostScore && c.boostReasons && c.boostReasons.length > 0) {
+              personalizationTag = ` [boosted: ${c.boostReasons.join("; ")}]`;
+            } else if (c.diversitySlot) {
+              personalizationTag = " [diversity slot]";
+            }
             console.log(
-              `  ${icon} ${c.issue.repo}#${c.issue.number} [${c.viabilityScore}/100]${stalledTag}`,
+              `  ${icon} ${c.issue.repo}#${c.issue.number} [${c.viabilityScore}/100]${personalizationTag}${stalledTag}`,
             );
             console.log(`     ${c.issue.title}`);
             console.log(`     ${c.issue.url}`);
