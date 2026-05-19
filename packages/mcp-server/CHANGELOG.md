@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.0](https://github.com/costajohnt/oss-scout/compare/mcp-server-v0.7.0...mcp-server-v0.8.0) (2026-05-18)
+
+
+### Features
+
+* **search:** add diversityRatio counterweight to avoid echo-chamber bias ([#109](https://github.com/costajohnt/oss-scout/issues/109)) ([72376fe](https://github.com/costajohnt/oss-scout/commit/72376fe52003f0d21533ca9bad4d4ddd518f71ab))
+
 ## [0.7.0](https://github.com/costajohnt/oss-scout/compare/mcp-server-v0.6.0...mcp-server-v0.7.0) (2026-05-18)
 
 
