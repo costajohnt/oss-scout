@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.0](https://github.com/costajohnt/oss-scout/compare/core-v0.11.0...core-v0.12.0) (2026-05-19)
+
+
+### Features
+
+* **cli:** surface boost reasons and diversity slot in non-JSON output ([#111](https://github.com/costajohnt/oss-scout/issues/111)) ([6135693](https://github.com/costajohnt/oss-scout/commit/61356934dd5a0de7ba2e60bed054de64981d2991))
+
 ## [0.11.0](https://github.com/costajohnt/oss-scout/compare/core-v0.10.0...core-v0.11.0) (2026-05-18)
 
 
