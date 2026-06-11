@@ -297,7 +297,7 @@ Agents (dispatched automatically by Claude):
 }
 ```
 
-**Tools:** search, scout-features, vet, skip, config, config-set
+**Tools:** search, scout-features, vet, skip, config, config-set, sync
 **Resources:** scout://config, scout://results, scout://scores
 
 ### Scheduled digest (GitHub Action)
@@ -392,6 +392,7 @@ the command, e.g. `oss-scout search --json`, not `oss-scout --json search`).
 Setup:
   setup                         Interactive first-run configuration
   bootstrap                     Import starred repos and PR history from GitHub
+  sync                          Reconcile tracked open PRs (mark merged/closed)
 
 Search:
   search [count]                Search for issues (default: 10)

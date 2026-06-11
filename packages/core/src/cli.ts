@@ -125,6 +125,26 @@ program
   );
 
 program
+  .command("sync")
+  .description(
+    "Reconcile tracked open PRs (mark merged/closed) without a full bootstrap",
+  )
+  .option("--json", "Output as JSON")
+  .action(async (options: { json?: boolean }) =>
+    runAction(options, async () => {
+      const { runSync } = await import("./commands/sync.js");
+      const result = await runSync();
+      if (options.json) {
+        console.log(formatJsonSuccess(result));
+      } else {
+        console.log(
+          `Synced ${result.checked} open PRs: ${result.merged} merged, ${result.closed} closed, ${result.stillOpen} still open${result.errors > 0 ? `, ${result.errors} unchecked` : ""}.`,
+        );
+      }
+    }),
+  );
+
+program
   .command("search [count]")
   .description("Search for contributable issues using multi-strategy discovery")
   .option("--json", "Output as JSON")

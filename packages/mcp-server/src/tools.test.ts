@@ -70,8 +70,8 @@ describe("registerTools", () => {
     registerTools(server, scout);
   });
 
-  it("registers all six tools", () => {
-    expect(server.tool).toHaveBeenCalledTimes(6);
+  it("registers all seven tools", () => {
+    expect(server.tool).toHaveBeenCalledTimes(7);
 
     const calls = vi.mocked(server.tool).mock.calls;
     const names = calls.map((c) => c[0]);
@@ -81,6 +81,7 @@ describe("registerTools", () => {
     expect(names).toContain("config");
     expect(names).toContain("config-set");
     expect(names).toContain("scout-features");
+    expect(names).toContain("sync");
   });
 
   describe("persistence reporting (#113)", () => {
