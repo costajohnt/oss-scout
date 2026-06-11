@@ -1,5 +1,67 @@
 # Changelog
 
+## [1.0.0](https://github.com/costajohnt/oss-scout/compare/core-v0.11.0...core-v1.0.0) (2026-06-11)
+
+
+### ⚠ BREAKING CHANGES
+
+* **types:** tighten exported types for the next major ([#158](https://github.com/costajohnt/oss-scout/issues/158)) (#233)
+
+### Features
+
+* **cli:** surface boost reasons and diversity slot in non-JSON output ([#111](https://github.com/costajohnt/oss-scout/issues/111)) ([6135693](https://github.com/costajohnt/oss-scout/commit/61356934dd5a0de7ba2e60bed054de64981d2991))
+* **config:** persist personalization preferences ([#168](https://github.com/costajohnt/oss-scout/issues/168)) ([#229](https://github.com/costajohnt/oss-scout/issues/229)) ([0d6488c](https://github.com/costajohnt/oss-scout/commit/0d6488c4325c0600f14df8a9e067d62906437465))
+* **core:** logger level control + ScoutStateWriter injectable + export bootstrapScout ([#218](https://github.com/costajohnt/oss-scout/issues/218)) ([fb16f83](https://github.com/costajohnt/oss-scout/commit/fb16f834469218305d2ac6bba1af3afda0906ea7))
+* **results:** add --new-only / --since filtering and --markdown export ([#170](https://github.com/costajohnt/oss-scout/issues/170)) ([#225](https://github.com/costajohnt/oss-scout/issues/225)) ([1f43514](https://github.com/costajohnt/oss-scout/commit/1f435145a4704099721c3070aa261d3c665f3665))
+* **scoring:** populate the hasActiveMaintainers repo signal ([#167](https://github.com/costajohnt/oss-scout/issues/167)) ([#230](https://github.com/costajohnt/oss-scout/issues/230)) ([e38b319](https://github.com/costajohnt/oss-scout/commit/e38b319403061c82e5f2159acccaca621ff8b0e8))
+* sync command to reconcile tracked open PRs ([#164](https://github.com/costajohnt/oss-scout/issues/164)) ([#231](https://github.com/costajohnt/oss-scout/issues/231)) ([e56990b](https://github.com/costajohnt/oss-scout/commit/e56990b87b8b093401bfa8728d8e41253c550823))
+* **vet-list:** claim-watch status deltas ([#165](https://github.com/costajohnt/oss-scout/issues/165)) ([#228](https://github.com/costajohnt/oss-scout/issues/228)) ([4e38ce0](https://github.com/costajohnt/oss-scout/commit/4e38ce0156ead6f52f1de49ab025dd4d136fcc8a))
+* **vetting:** classify the user's own in-flight PR vs competition ([#166](https://github.com/costajohnt/oss-scout/issues/166)) ([#227](https://github.com/costajohnt/oss-scout/issues/227)) ([1584819](https://github.com/costajohnt/oss-scout/commit/15848191ccb31bc055b5ad836d026f245ee27975))
+
+
+### Bug Fixes
+
+* **cli,mcp:** validate issue URLs on skip add ([#182](https://github.com/costajohnt/oss-scout/issues/182)) ([7f7b3e8](https://github.com/costajohnt/oss-scout/commit/7f7b3e881de26c465ebf5ecd5cb2322e86d0b249)), closes [#134](https://github.com/costajohnt/oss-scout/issues/134)
+* **cli:** document the -- escape for dash-prefixed config values ([#200](https://github.com/costajohnt/oss-scout/issues/200)) ([55728e6](https://github.com/costajohnt/oss-scout/commit/55728e6dd622f16f216cc641ae3082724f0b1fcb)), closes [#132](https://github.com/costajohnt/oss-scout/issues/132)
+* **cli:** honor the gist persistence preference in commands ([#213](https://github.com/costajohnt/oss-scout/issues/213)) ([fd3b22b](https://github.com/costajohnt/oss-scout/commit/fd3b22b3045ca22e9838794fc4b78ed74070d9ce)), closes [#115](https://github.com/costajohnt/oss-scout/issues/115)
+* **cli:** honor the JSON contract for hints, validation, and setup ([#199](https://github.com/costajohnt/oss-scout/issues/199)) ([8a8ec5e](https://github.com/costajohnt/oss-scout/commit/8a8ec5eddaf68220b550ab91b2fa9fdfc3f56582)), closes [#131](https://github.com/costajohnt/oss-scout/issues/131)
+* **cli:** let the defaultStrategy preference take effect ([#181](https://github.com/costajohnt/oss-scout/issues/181)) ([34e0c69](https://github.com/costajohnt/oss-scout/commit/34e0c6903ec3e4ffdf68cc5d98c99e35bb5e37be)), closes [#133](https://github.com/costajohnt/oss-scout/issues/133)
+* **core:** bound the CONTRIBUTING-parse regexes against attacker-controlled input ([#205](https://github.com/costajohnt/oss-scout/issues/205)) ([766b5dc](https://github.com/costajohnt/oss-scout/commit/766b5dcabb09c11a71fe159547e12c028d5e3900)), closes [#152](https://github.com/costajohnt/oss-scout/issues/152)
+* **core:** classify abuse-detection 403s as rate-limit errors everywhere ([#191](https://github.com/costajohnt/oss-scout/issues/191)) ([4d45f2d](https://github.com/costajohnt/oss-scout/commit/4d45f2d7ab88add30e7d2d0a62fd315ea34434f0)), closes [#138](https://github.com/costajohnt/oss-scout/issues/138)
+* **core:** clause-based claim detection instead of substring matching ([#183](https://github.com/costajohnt/oss-scout/issues/183)) ([aabe029](https://github.com/costajohnt/oss-scout/commit/aabe029696b63fc39415f01a3dffb03931a11b27)), closes [#126](https://github.com/costajohnt/oss-scout/issues/126)
+* **core:** dedup input URLs in parallel vetting ([#190](https://github.com/costajohnt/oss-scout/issues/190)) ([69334d2](https://github.com/costajohnt/oss-scout/commit/69334d259c03a889fa8436cb272adc025df55f5d)), closes [#129](https://github.com/costajohnt/oss-scout/issues/129)
+* **core:** default createScout to local persistence instead of throwaway state ([#210](https://github.com/costajohnt/oss-scout/issues/210)) ([2b23b12](https://github.com/costajohnt/oss-scout/commit/2b23b12383a31ee1810ce4ea077ad3f2d92c32c6)), closes [#116](https://github.com/costajohnt/oss-scout/issues/116)
+* **core:** detect closed issues during vetting ([#196](https://github.com/costajohnt/oss-scout/issues/196)) ([d3954d2](https://github.com/costajohnt/oss-scout/commit/d3954d28e1168a980d4f4c87a72e91975db84255)), closes [#120](https://github.com/costajohnt/oss-scout/issues/120)
+* **core:** detect truncated gist scans and warn before creating a possible duplicate ([#186](https://github.com/costajohnt/oss-scout/issues/186)) ([539ee4c](https://github.com/costajohnt/oss-scout/commit/539ee4c5195cafab541a6ce10c689edb139bb9a7)), closes [#141](https://github.com/costajohnt/oss-scout/issues/141)
+* **core:** evict stale http-cache entries on every cache-burning entry point ([#178](https://github.com/costajohnt/oss-scout/issues/178)) ([622189f](https://github.com/costajohnt/oss-scout/commit/622189f6becc0199d68c3527633e5a9d93208fcc))
+* **core:** fetch only the newest comment pages in claim detection ([#187](https://github.com/costajohnt/oss-scout/issues/187)) ([d63736d](https://github.com/costajohnt/oss-scout/commit/d63736d3c0b8c2409aef67855358be5d1cd3eda3)), closes [#127](https://github.com/costajohnt/oss-scout/issues/127)
+* **core:** in-flight dedup for per-repo lookups during parallel vetting ([#198](https://github.com/costajohnt/oss-scout/issues/198)) ([2739a32](https://github.com/costajohnt/oss-scout/commit/2739a32acc61c44ecc544103ae6f63cb375c5b04)), closes [#124](https://github.com/costajohnt/oss-scout/issues/124)
+* **core:** make the broad-phase skip threshold satisfiable ([#180](https://github.com/costajohnt/oss-scout/issues/180)) ([4d09550](https://github.com/costajohnt/oss-scout/commit/4d0955013d9df070f4e2f1b2276b0ac079ace874)), closes [#123](https://github.com/costajohnt/oss-scout/issues/123)
+* **core:** never cache vetting results built on inconclusive checks ([#188](https://github.com/costajohnt/oss-scout/issues/188)) ([f26e76d](https://github.com/costajohnt/oss-scout/commit/f26e76d7ee8f1990d53ba5c2532944e0f454f850)), closes [#122](https://github.com/costajohnt/oss-scout/issues/122)
+* **core:** parse GitHub URLs with the URL class instead of unanchored regexes ([#185](https://github.com/costajohnt/oss-scout/issues/185)) ([bc4fa75](https://github.com/costajohnt/oss-scout/commit/bc4fa750c51583c1a41951506cf624f9430fc549)), closes [#135](https://github.com/costajohnt/oss-scout/issues/135)
+* **core:** per-label queries restore any-of semantics in starred search ([#194](https://github.com/costajohnt/oss-scout/issues/194)) ([2f2255c](https://github.com/costajohnt/oss-scout/commit/2f2255ce557fecb175235049cd28462380c11b46)), closes [#118](https://github.com/costajohnt/oss-scout/issues/118)
+* **core:** per-language broad feature queries via the cached search path ([#197](https://github.com/costajohnt/oss-scout/issues/197)) ([f6be7af](https://github.com/costajohnt/oss-scout/commit/f6be7af117f6f8f03b7c1994e7c2d895f7d753d5)), closes [#121](https://github.com/costajohnt/oss-scout/issues/121)
+* **core:** replenish the external search budget when GitHub's window resets ([#195](https://github.com/costajohnt/oss-scout/issues/195)) ([bfbce92](https://github.com/costajohnt/oss-scout/commit/bfbce928d205107dc2611ef6660b02c2b2802f89)), closes [#119](https://github.com/costajohnt/oss-scout/issues/119)
+* **core:** require a word boundary for CLA detection in CONTRIBUTING parsing ([#176](https://github.com/costajohnt/oss-scout/issues/176)) ([c7bf10a](https://github.com/costajohnt/oss-scout/commit/c7bf10aca3cc5550a9c54d6365c01939327a5a32)), closes [#128](https://github.com/costajohnt/oss-scout/issues/128)
+* **core:** round-trip unknown state keys and add a migration entry point ([#193](https://github.com/costajohnt/oss-scout/issues/193)) ([1c52a6e](https://github.com/costajohnt/oss-scout/commit/1c52a6ebec5be95f7aa73e636b0a713f5e76a3bf)), closes [#137](https://github.com/costajohnt/oss-scout/issues/137)
+* **core:** score the real closed-without-merge count in live vetting ([#189](https://github.com/costajohnt/oss-scout/issues/189)) ([739c395](https://github.com/costajohnt/oss-scout/commit/739c395c51ef10a7547ee343a74c5970480480b9)), closes [#125](https://github.com/costajohnt/oss-scout/issues/125)
+* **core:** treat cached falsy bodies as hits and recover from orphaned 304s ([#177](https://github.com/costajohnt/oss-scout/issues/177)) ([0e6c3b0](https://github.com/costajohnt/oss-scout/commit/0e6c3b09ebd9477e8565ff8a15415ce8fcc88791)), closes [#142](https://github.com/costajohnt/oss-scout/issues/142)
+* **core:** trim GITHUB_TOKEN and stop logging the raw gh error object ([#179](https://github.com/costajohnt/oss-scout/issues/179)) ([408af8a](https://github.com/costajohnt/oss-scout/commit/408af8ab6f5fe8e02ebe25e9032f08a93532f021)), closes [#136](https://github.com/costajohnt/oss-scout/issues/136)
+* **core:** truthful strategiesUsed and case-insensitive repo config matching ([#184](https://github.com/costajohnt/oss-scout/issues/184)) ([deec310](https://github.com/costajohnt/oss-scout/commit/deec3108111823433c8385fa1d897ffe3e89f1fa)), closes [#130](https://github.com/costajohnt/oss-scout/issues/130)
+* **core:** unique tmp path for atomic state saves ([#192](https://github.com/costajohnt/oss-scout/issues/192)) ([dada081](https://github.com/costajohnt/oss-scout/commit/dada081d80603ed0ff335fbfc9774c8b90f652ce)), closes [#140](https://github.com/costajohnt/oss-scout/issues/140)
+* **gist:** prevent merge data loss with tombstones and recency tracking ([#214](https://github.com/costajohnt/oss-scout/issues/214)) ([0735c99](https://github.com/costajohnt/oss-scout/commit/0735c99563edc61909d5ab5c549bad10ec14c258))
+* **mcp:** stop the 60s tool timeout firing on every default search ([#206](https://github.com/costajohnt/oss-scout/issues/206)) ([63cdbc1](https://github.com/costajohnt/oss-scout/commit/63cdbc114b296741d7469ebeb3b7f6c7ed5b2e39)), closes [#143](https://github.com/costajohnt/oss-scout/issues/143)
+
+
+### Performance Improvements
+
+* **vetting:** batch issue core fetch via GraphQL with REST fallback ([#169](https://github.com/costajohnt/oss-scout/issues/169)) ([#232](https://github.com/costajohnt/oss-scout/issues/232)) ([48c30c5](https://github.com/costajohnt/oss-scout/commit/48c30c59381243a9e3454f6404ab277190cc2989))
+
+
+### Code Refactoring
+
+* **types:** tighten exported types for the next major ([#158](https://github.com/costajohnt/oss-scout/issues/158)) ([#233](https://github.com/costajohnt/oss-scout/issues/233)) ([ca940b5](https://github.com/costajohnt/oss-scout/commit/ca940b531582e8c1fb38cdb1bd46d8014e0429ee))
+
 ## [0.11.0](https://github.com/costajohnt/oss-scout/compare/core-v0.10.0...core-v0.11.0) (2026-05-18)
 
 

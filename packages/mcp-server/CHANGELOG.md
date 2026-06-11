@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.9.0](https://github.com/costajohnt/oss-scout/compare/mcp-server-v0.8.0...mcp-server-v0.9.0) (2026-06-11)
+
+
+### Features
+
+* sync command to reconcile tracked open PRs ([#164](https://github.com/costajohnt/oss-scout/issues/164)) ([#231](https://github.com/costajohnt/oss-scout/issues/231)) ([e56990b](https://github.com/costajohnt/oss-scout/commit/e56990b87b8b093401bfa8728d8e41253c550823))
+
+
+### Bug Fixes
+
+* **cli,mcp:** validate issue URLs on skip add ([#182](https://github.com/costajohnt/oss-scout/issues/182)) ([7f7b3e8](https://github.com/costajohnt/oss-scout/commit/7f7b3e881de26c465ebf5ecd5cb2322e86d0b249)), closes [#134](https://github.com/costajohnt/oss-scout/issues/134)
+* **mcp:** add shebang to server entry so the published bin runs under npx ([#173](https://github.com/costajohnt/oss-scout/issues/173)) ([f09d4d7](https://github.com/costajohnt/oss-scout/commit/f09d4d72090e3e4fa5ba2b1c32d41e9b72c3e665)), closes [#114](https://github.com/costajohnt/oss-scout/issues/114)
+* **mcp:** make the package import side-effect-free ([#207](https://github.com/costajohnt/oss-scout/issues/207)) ([534cb31](https://github.com/costajohnt/oss-scout/commit/534cb310d225ab66ed31e56bee6a606e1af7ce71)), closes [#148](https://github.com/costajohnt/oss-scout/issues/148)
+* **mcp:** persist server state and report persistence honestly ([#211](https://github.com/costajohnt/oss-scout/issues/211)) ([584e15a](https://github.com/costajohnt/oss-scout/commit/584e15a58cc852ec0f1e040cd9978aea50b5e488)), closes [#113](https://github.com/costajohnt/oss-scout/issues/113)
+* **mcp:** report the real server version and manage versions via release-please ([#174](https://github.com/costajohnt/oss-scout/issues/174)) ([47e7c07](https://github.com/costajohnt/oss-scout/commit/47e7c0716ca595021f7ade1af0664b582726ba4d))
+* **mcp:** stop the 60s tool timeout firing on every default search ([#206](https://github.com/costajohnt/oss-scout/issues/206)) ([63cdbc1](https://github.com/costajohnt/oss-scout/commit/63cdbc114b296741d7469ebeb3b7f6c7ed5b2e39)), closes [#143](https://github.com/costajohnt/oss-scout/issues/143)
+
 ## [0.8.0](https://github.com/costajohnt/oss-scout/compare/mcp-server-v0.7.0...mcp-server-v0.8.0) (2026-05-18)
 
 
