@@ -9,10 +9,26 @@ import {
   discoverFeaturesBroad,
   detectWontfixNoContributor,
   buildBroadFeatureSearchQuery,
+  buildBroadFeatureSearchQueries,
   WONTFIX_MIN_AGE_DAYS,
   type FeatureCandidate,
 } from "./feature-discovery.js";
 import { _clearRoadmapCacheForTests } from "./roadmap.js";
+
+// Broad mode routes through cachedSearchIssues (#121); stub its singletons
+// so tests never touch the real ~/.oss-scout cache or budget pacing.
+vi.mock("./http-cache.js", () => ({
+  getHttpCache: vi.fn(() => ({
+    getIfFresh: vi.fn(() => null),
+    set: vi.fn(),
+  })),
+}));
+vi.mock("./search-budget.js", () => ({
+  getSearchBudgetTracker: vi.fn(() => ({
+    waitForBudget: vi.fn().mockResolvedValue(undefined),
+    recordCall: vi.fn(),
+  })),
+}));
 
 const mkScore = (repo: string, mergedPRCount: number): RepoScore => ({
   repo,
@@ -787,17 +803,25 @@ describe("buildBroadFeatureSearchQuery", () => {
     expect(q).toContain('-label:"documentation"');
   });
 
-  it("adds language filter when languages are provided", () => {
-    const q = buildBroadFeatureSearchQuery({
+  it("fans out one query per language instead of an over-limit OR clause (#121)", () => {
+    const queries = buildBroadFeatureSearchQueries({
       languages: ["typescript", "python"],
     });
-    expect(q).toContain("language:typescript OR language:python");
+    expect(queries).toHaveLength(2);
+    expect(queries[0]).toContain("language:typescript");
+    expect(queries[0]).not.toContain("language:python");
+    expect(queries[1]).toContain("language:python");
+    // The label clause already spends all five OR operators; no query may
+    // add more
+    for (const q of queries) {
+      expect((q.match(/ OR /g) ?? []).length).toBeLessThanOrEqual(5);
+    }
   });
 
   it("ignores 'any' language preference", () => {
-    const q = buildBroadFeatureSearchQuery({ languages: ["any"] });
-    expect(q).not.toContain("language:any");
-    expect(q).not.toContain("language:");
+    const queries = buildBroadFeatureSearchQueries({ languages: ["any"] });
+    expect(queries).toHaveLength(1);
+    expect(queries[0]).not.toContain("language:");
   });
 
   it("includes -repo and -user clauses for excluded repos and orgs", () => {
@@ -905,6 +929,48 @@ describe("discoverFeaturesBroad", () => {
     expect(result.quickWins).toHaveLength(1);
     expect(result.biggerBets).toHaveLength(1);
     expect(result.anchorRepos).toEqual([]);
+    expect(result.message).toBeNull();
+  });
+
+  it("fans out per language and dedups across queries (#121)", async () => {
+    const item = (n: number) => ({
+      html_url: `https://github.com/x/y/issues/${n}`,
+      title: `feature ${n}`,
+      labels: [{ name: "enhancement" }],
+      comments: 1,
+      reactions: { total_count: 1 },
+      milestone: null,
+      pull_request: undefined,
+      assignee: null,
+      created_at: "2026-04-01",
+      number: n,
+    });
+    const search = vi
+      .fn()
+      .mockResolvedValueOnce({ data: { items: [item(1), item(2)] } })
+      .mockResolvedValueOnce({ data: { items: [item(2), item(3)] } });
+    const octokit = { search: { issuesAndPullRequests: search } } as never;
+    const vetter = makeVetter();
+
+    const result = await discoverFeaturesBroad({
+      octokit,
+      vetter,
+      count: 10,
+      languages: ["typescript", "python"],
+    });
+
+    expect(search).toHaveBeenCalledTimes(2);
+    expect(search.mock.calls[0][0].q).toContain("language:typescript");
+    expect(search.mock.calls[1][0].q).toContain("language:python");
+    // Issue 2 appeared in both result sets but is vetted once
+    const vetted = (
+      vetter as unknown as { vetIssue: ReturnType<typeof vi.fn> }
+    ).vetIssue.mock.calls.map((c) => c[0]);
+    expect(vetted).toEqual([
+      "https://github.com/x/y/issues/1",
+      "https://github.com/x/y/issues/2",
+      "https://github.com/x/y/issues/3",
+    ]);
     expect(result.message).toBeNull();
   });
 
