@@ -141,3 +141,32 @@ describe("runSetup", () => {
     expect(prefs.projectCategories).toEqual(["devtools"]);
   });
 });
+
+describe("non-interactive safety (#131)", () => {
+  it("fails fast without an injected rl when stdin is not a TTY", async () => {
+    // Under vitest, process.stdin.isTTY is falsy, which is exactly the
+    // CI/piped context the guard protects
+    await expect(runSetup({ detectUsername: async () => "" })).rejects.toThrow(
+      "interactive",
+    );
+  });
+
+  it("rejects instead of silently exiting when input ends mid-flow", async () => {
+    let closeListener: (() => void) | undefined;
+    const rl = {
+      question: (_q: string, _cb: (a: string) => void) => {
+        // Simulate piped stdin ending before any answer arrives
+        closeListener?.();
+      },
+      close: () => {},
+      on: (event: "close", listener: () => void) => {
+        if (event === "close") closeListener = listener;
+      },
+      off: () => {},
+    };
+
+    await expect(
+      runSetup({ rl, detectUsername: async () => "user" }),
+    ).rejects.toThrow("preferences were not saved");
+  });
+});
