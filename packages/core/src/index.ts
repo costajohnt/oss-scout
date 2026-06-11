@@ -89,12 +89,24 @@ export { IssueDiscovery } from "./core/issue-discovery.js";
 export {
   IssueVetter,
   type ScoutStateReader,
+  type ScoutStateWriter,
   type FeatureSignals,
 } from "./core/issue-vetting.js";
 export {
   scanForAntiLLMPolicy,
   ANTI_LLM_KEYWORDS,
 } from "./core/anti-llm-policy.js";
+
+// Bootstrap (seed state from GitHub) — usable by library/MCP hosts (#156)
+export { bootstrapScout, type BootstrapResult } from "./core/bootstrap.js";
+
+// Log-level control for library hosts (#156)
+export {
+  setLogLevel,
+  getLogLevel,
+  enableDebug,
+  type LogLevel,
+} from "./core/logger.js";
 
 // Feature discovery API
 export {

@@ -7,7 +7,10 @@
 
 import { IssueDiscovery } from "./core/issue-discovery.js";
 import { IssueVetter } from "./core/issue-vetting.js";
-import type { ScoutStateReader } from "./core/issue-vetting.js";
+import type {
+  ScoutStateReader,
+  ScoutStateWriter,
+} from "./core/issue-vetting.js";
 import {
   discoverFeatures,
   discoverFeaturesBroad,
@@ -43,7 +46,7 @@ import type {
 import { getOctokit } from "./core/github.js";
 import type { Octokit } from "@octokit/rest";
 import { loadLocalState, saveLocalState } from "./core/local-state.js";
-import { warn } from "./core/logger.js";
+import { warn, setLogLevel } from "./core/logger.js";
 import { extractRepoFromUrl } from "./core/utils.js";
 import {
   errorMessage,
@@ -133,6 +136,11 @@ function toGistOctokit(octokit: Octokit): GistOctokitLike {
  * ```
  */
 export async function createScout(config: ScoutConfig): Promise<OssScout> {
+  // Apply the host's log-level preference before any bootstrap chatter (#156).
+  if (config.logLevel !== undefined) {
+    setLogLevel(config.logLevel);
+  }
+
   let state: ScoutState;
   let gistStore: GistStateStore | null = null;
 
@@ -174,7 +182,7 @@ export async function createScout(config: ScoutConfig): Promise<OssScout> {
  * Implements ScoutStateReader so the search engine can read state
  * without knowing about the persistence layer.
  */
-export class OssScout implements ScoutStateReader {
+export class OssScout implements ScoutStateReader, ScoutStateWriter {
   private state: ScoutState;
   private dirty = false;
 

@@ -7,7 +7,7 @@ import { getOctokit, checkRateLimit } from "./github.js";
 import { debug, warn } from "./logger.js";
 import { ConfigurationError, errorMessage, rethrowIfFatal } from "./errors.js";
 import { extractRepoFromUrl } from "./utils.js";
-import type { OssScout } from "../scout.js";
+import type { ScoutStateWriter } from "./issue-vetting.js";
 
 const MODULE = "bootstrap";
 
@@ -26,7 +26,7 @@ const SEARCH_MAX_PAGES = 3;
 const PER_PAGE = 100;
 
 export async function bootstrapScout(
-  scout: OssScout,
+  scout: ScoutStateWriter,
   token: string,
 ): Promise<BootstrapResult> {
   const username = scout.getPreferences().githubUsername;

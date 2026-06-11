@@ -10,6 +10,7 @@ import type {
   ScoutState,
   SearchStrategy,
 } from "./schemas.js";
+import type { LogLevel } from "./logger.js";
 
 // Re-export persisted types for convenience
 export type {
@@ -209,6 +210,12 @@ export type ScoutConfig =
       persistence?: "local" | "gist";
       /** Gist ID override (gist mode). Skips gist discovery/creation if provided. */
       gistId?: string;
+      /**
+       * Minimum log level emitted to stderr. Omitted leaves the global level
+       * (default "info"). Hosts that don't want the "[INFO] Phase 0..."
+       * chatter can pass "warn" or "silent" (#156).
+       */
+      logLevel?: LogLevel;
     }
   | {
       /** GitHub token with `repo` read scope. */
@@ -217,6 +224,12 @@ export type ScoutConfig =
       persistence: "provided";
       /** Pre-loaded state. Required when persistence is 'provided'. */
       initialState: ScoutState;
+      /**
+       * Minimum log level emitted to stderr. Omitted leaves the global level
+       * (default "info"). Hosts that don't want the "[INFO] Phase 0..."
+       * chatter can pass "warn" or "silent" (#156).
+       */
+      logLevel?: LogLevel;
     };
 
 /** Options for the search method. */
