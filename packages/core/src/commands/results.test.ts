@@ -99,6 +99,63 @@ describe("results command", () => {
       expect(results[0].repo).toBe("a/b");
       expect(results[1].recommendation).toBe("skip");
     });
+
+    describe("--since / --new-only filtering (#170)", () => {
+      async function seedTwoByAge() {
+        const state = ScoutStateSchema.parse({ version: 1 });
+        state.lastSearchAt = "2026-06-01T00:00:00.000Z";
+        state.savedResults = [
+          makeSavedCandidate({
+            issueUrl: "https://github.com/a/b/issues/1",
+            number: 1,
+            firstSeenAt: "2026-01-01T00:00:00.000Z", // old
+          }),
+          makeSavedCandidate({
+            issueUrl: "https://github.com/a/b/issues/2",
+            number: 2,
+            firstSeenAt: "2026-06-05T00:00:00.000Z", // new (after lastSearchAt)
+          }),
+        ];
+        await setMockState(state);
+      }
+
+      it("--since keeps only results first seen at/after the cutoff", async () => {
+        await seedTwoByAge();
+        const results = await runResults({ since: "2026-05-01" });
+        expect(results.map((r) => r.number)).toEqual([2]);
+      });
+
+      it("--new-only keeps results first seen at/after the last search", async () => {
+        await seedTwoByAge();
+        const results = await runResults({ newOnly: true });
+        expect(results.map((r) => r.number)).toEqual([2]);
+      });
+
+      it("--since is inclusive of a result seen exactly at the cutoff", async () => {
+        const state = ScoutStateSchema.parse({ version: 1 });
+        state.savedResults = [
+          makeSavedCandidate({ firstSeenAt: "2026-05-01T00:00:00.000Z" }),
+        ];
+        await setMockState(state);
+        const results = await runResults({ since: "2026-05-01T00:00:00.000Z" });
+        expect(results).toHaveLength(1);
+      });
+
+      it("--new-only returns all results when no search has run", async () => {
+        const state = ScoutStateSchema.parse({ version: 1 });
+        state.savedResults = [makeSavedCandidate()];
+        await setMockState(state);
+        const results = await runResults({ newOnly: true });
+        expect(results).toHaveLength(1);
+      });
+
+      it("rejects an unparseable --since date", async () => {
+        await seedTwoByAge();
+        await expect(runResults({ since: "not-a-date" })).rejects.toThrow(
+          "Invalid --since date",
+        );
+      });
+    });
   });
 
   describe("runResultsClear", () => {
