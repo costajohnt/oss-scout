@@ -565,3 +565,81 @@ describe("OssScout.features", () => {
     );
   });
 });
+
+describe("OssScout checkpoint + scoring branches (#162)", () => {
+  type GistStoreArg = ConstructorParameters<typeof OssScout>[2];
+
+  it("returns false and keeps the dirty flag when the gist push fails", async () => {
+    const push = vi.fn().mockResolvedValue(false);
+    const gistStore = { push } as unknown as GistStoreArg;
+    const scout = new OssScout(
+      "test-token",
+      ScoutStateSchema.parse({ version: 1 }),
+      gistStore,
+    );
+
+    // Dirty the scout so checkpoint actually attempts a push.
+    scout.updatePreferences({ minStars: 123 });
+
+    expect(await scout.checkpoint()).toBe(false);
+    expect(push).toHaveBeenCalledTimes(1);
+
+    // Still dirty: the next checkpoint must retry the push, not no-op.
+    expect(await scout.checkpoint()).toBe(false);
+    expect(push).toHaveBeenCalledTimes(2);
+  });
+
+  it("returns true without pushing when nothing is dirty", async () => {
+    const push = vi.fn().mockResolvedValue(true);
+    const gistStore = { push } as unknown as GistStoreArg;
+    const scout = new OssScout(
+      "test-token",
+      ScoutStateSchema.parse({ version: 1 }),
+      gistStore,
+    );
+
+    expect(await scout.checkpoint()).toBe(true);
+    expect(push).not.toHaveBeenCalled();
+  });
+
+  describe("updateRepoScore signal branches", () => {
+    function scoreAfter(update: Parameters<OssScout["updateRepoScore"]>[1]) {
+      const scout = new OssScout(
+        "test-token",
+        ScoutStateSchema.parse({ version: 1 }),
+      );
+      scout.updateRepoScore("owner/repo", update);
+      return scout.getRepoScore("owner/repo");
+    }
+
+    it("subtracts 2 for hostile comments", () => {
+      expect(scoreAfter({ signals: { hasHostileComments: true } })).toBe(3);
+    });
+
+    it("adds 1 each for responsive and active maintainers", () => {
+      expect(
+        scoreAfter({
+          signals: { isResponsive: true, hasActiveMaintainers: true },
+        }),
+      ).toBe(7);
+    });
+
+    it("clamps the upper bound at 10", () => {
+      expect(
+        scoreAfter({
+          mergedPRCount: 3,
+          signals: { isResponsive: true, hasActiveMaintainers: true },
+        }),
+      ).toBe(10);
+    });
+
+    it("clamps the lower bound at 1", () => {
+      expect(
+        scoreAfter({
+          closedWithoutMergeCount: 3,
+          signals: { hasHostileComments: true },
+        }),
+      ).toBe(1);
+    });
+  });
+});
