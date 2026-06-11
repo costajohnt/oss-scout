@@ -16,7 +16,7 @@ import type { Octokit } from "@octokit/rest";
 import type { RepoScore, Horizon } from "./schemas.js";
 import type { IssueCandidate } from "./types.js";
 import type { IssueVetter } from "./issue-vetting.js";
-import { errorMessage, getHttpStatusCode, isRateLimitError } from "./errors.js";
+import { errorMessage, rethrowIfFatal } from "./errors.js";
 import { warn } from "./logger.js";
 import { sleep } from "./utils.js";
 import { fetchRoadmapIssueRefs } from "./roadmap.js";
@@ -289,7 +289,7 @@ export async function discoverFeatures(
       response = listResp;
       roadmapRefs = refs;
     } catch (err: unknown) {
-      if (getHttpStatusCode(err) === 401 || isRateLimitError(err)) throw err;
+      rethrowIfFatal(err);
       warn(
         MODULE,
         `failed to list issues for ${anchorRepos[i]}: ${errorMessage(err)}`,
@@ -323,7 +323,7 @@ export async function discoverFeatures(
           },
         });
       } catch (err: unknown) {
-        if (getHttpStatusCode(err) === 401 || isRateLimitError(err)) throw err;
+        rethrowIfFatal(err);
         warn(MODULE, `vet failed for ${item.html_url}: ${errorMessage(err)}`);
         continue;
       }
@@ -484,7 +484,7 @@ export async function discoverFeaturesBroad(
       .filter((it) => !it.pull_request && !it.assignee && isFeatureIssue(it))
       .slice(0, maxToVet);
   } catch (err: unknown) {
-    if (getHttpStatusCode(err) === 401 || isRateLimitError(err)) throw err;
+    rethrowIfFatal(err);
     warn(MODULE, `broad feature search failed: ${errorMessage(err)}`);
     return {
       quickWins: [],
@@ -517,7 +517,7 @@ export async function discoverFeaturesBroad(
         },
       });
     } catch (err: unknown) {
-      if (getHttpStatusCode(err) === 401 || isRateLimitError(err)) throw err;
+      rethrowIfFatal(err);
       warn(MODULE, `vet failed for ${item.html_url}: ${errorMessage(err)}`);
       continue;
     }

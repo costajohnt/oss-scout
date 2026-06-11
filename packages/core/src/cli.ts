@@ -30,6 +30,30 @@ function handleCommandError(err: unknown, options: { json?: boolean }): never {
   process.exit(1);
 }
 
+/**
+ * Run a command body, routing any thrown error through handleCommandError so
+ * every command shares one try/catch epilogue instead of repeating it (#154).
+ */
+async function runAction(
+  options: { json?: boolean },
+  body: () => Promise<void>,
+): Promise<void> {
+  try {
+    await body();
+  } catch (err) {
+    handleCommandError(err, options);
+  }
+}
+
+/** Emoji for a vetting recommendation, shared by the search and vet renderers. */
+function recommendationIcon(
+  recommendation: "approve" | "skip" | "needs_review",
+): string {
+  if (recommendation === "approve") return "✅";
+  if (recommendation === "skip") return "❌";
+  return "⚠️";
+}
+
 const program = new Command();
 
 program
@@ -50,8 +74,8 @@ program
   .command("setup")
   .description("Interactive first-run configuration")
   .option("--json", "Output as JSON")
-  .action(async (options: { json?: boolean }) => {
-    try {
+  .action(async (options: { json?: boolean }) =>
+    runAction(options, async () => {
       const { runSetup } = await import("./commands/setup.js");
       const prefs = await runSetup();
       const state = loadLocalState();
@@ -61,17 +85,15 @@ program
       if (options.json) {
         console.log(formatJsonSuccess(prefs));
       }
-    } catch (err) {
-      handleCommandError(err, options);
-    }
-  });
+    }),
+  );
 
 program
   .command("bootstrap")
   .description("Import starred repos and PR history from GitHub")
   .option("--json", "Output as JSON")
-  .action(async (options: { json?: boolean }) => {
-    try {
+  .action(async (options: { json?: boolean }) =>
+    runAction(options, async () => {
       const { bootstrapScout } = await import("./core/bootstrap.js");
       const { createScout } = await import("./scout.js");
       const { requireGitHubToken } = await import("./core/utils.js");
@@ -99,10 +121,8 @@ program
           console.log(`Scored ${result.reposScoredCount} repositories`);
         }
       }
-    } catch (err) {
-      handleCommandError(err, options);
-    }
-  });
+    }),
+  );
 
 program
   .command("search [count]")
@@ -134,8 +154,8 @@ program
         preferRepos?: string;
         diversityRatio?: string;
       },
-    ) => {
-      try {
+    ) =>
+      runAction(options, async () => {
         if (!hasLocalState() && !options.json) {
           // Human hint only: stdout must stay pure JSON under --json (#131)
           console.log(
@@ -213,12 +233,7 @@ program
             `\nFound ${results.candidates.length} issue candidates:\n`,
           );
           for (const c of results.candidates) {
-            const icon =
-              c.recommendation === "approve"
-                ? "✅"
-                : c.recommendation === "skip"
-                  ? "❌"
-                  : "⚠️";
+            const icon = recommendationIcon(c.recommendation);
             const stalledTag = c.linkedPR?.isStalled
               ? " (stalled PR, revive opportunity)"
               : "";
@@ -247,10 +262,7 @@ program
             console.error(`\n⚠️  ${results.rateLimitWarning}`);
           }
         }
-      } catch (err) {
-        handleCommandError(err, options);
-      }
-    },
+      }),
   );
 
 program
@@ -274,8 +286,8 @@ program
         splitRatio?: string;
         broad?: boolean;
       },
-    ) => {
-      try {
+    ) =>
+      runAction(options, async () => {
         const { runFeatures } = await import("./commands/features.js");
         const maxResults = count ? parseInt(count, 10) : 10;
         if (isNaN(maxResults) || maxResults < 1 || maxResults > 50) {
@@ -359,10 +371,7 @@ program
             console.log("");
           }
         }
-      } catch (err) {
-        handleCommandError(err, options);
-      }
-    },
+      }),
   );
 
 // ── results command ────────────────────────────────────────────────
@@ -375,8 +384,8 @@ resultsCmd
   .command("show", { isDefault: true })
   .description("Display saved search results")
   .option("--json", "Output as JSON")
-  .action(async (options: { json?: boolean }) => {
-    try {
+  .action(async (options: { json?: boolean }) =>
+    runAction(options, async () => {
       const { runResults } = await import("./commands/results.js");
       const results = await runResults(options);
       if (options.json) {
@@ -406,17 +415,15 @@ resultsCmd
         }
         console.log();
       }
-    } catch (err) {
-      handleCommandError(err, options);
-    }
-  });
+    }),
+  );
 
 resultsCmd
   .command("clear")
   .description("Clear all saved results")
   .option("--json", "Output as JSON")
-  .action(async (options: { json?: boolean }) => {
-    try {
+  .action(async (options: { json?: boolean }) =>
+    runAction(options, async () => {
       const { runResultsClear } = await import("./commands/results.js");
       await runResultsClear();
       if (options.json) {
@@ -424,10 +431,8 @@ resultsCmd
       } else {
         console.log("Saved results cleared.");
       }
-    } catch (err) {
-      handleCommandError(err, options);
-    }
-  });
+    }),
+  );
 
 // ── config command ──────────────────────────────────────────────────
 
@@ -435,8 +440,8 @@ const configCmd = program
   .command("config")
   .description("View and update preferences")
   .option("--json", "Output as JSON")
-  .action(async (options: { json?: boolean }) => {
-    try {
+  .action(async (options: { json?: boolean }) =>
+    runAction(options, async () => {
       const { runConfigShow, getConfigData } =
         await import("./commands/config.js");
       if (options.json) {
@@ -444,10 +449,8 @@ const configCmd = program
       } else {
         runConfigShow();
       }
-    } catch (err) {
-      handleCommandError(err, options);
-    }
-  });
+    }),
+  );
 
 configCmd
   .command("set <key> <value>")
@@ -455,8 +458,8 @@ configCmd
     'Update a single preference (e.g. config set minStars 100). For dash-prefixed values like the array-remove form, escape with --: config set excludeRepos -- "-spam/repo"',
   )
   .option("--json", "Output as JSON")
-  .action(async (key: string, value: string, options: { json?: boolean }) => {
-    try {
+  .action(async (key: string, value: string, options: { json?: boolean }) =>
+    runAction(options, async () => {
       const { runConfigSet } = await import("./commands/config.js");
       const updated = runConfigSet(key, value);
       if (options.json) {
@@ -464,17 +467,15 @@ configCmd
       } else {
         console.log(`✅ Updated "${key}" successfully.`);
       }
-    } catch (err) {
-      handleCommandError(err, options);
-    }
-  });
+    }),
+  );
 
 configCmd
   .command("reset")
   .description("Reset all preferences to defaults")
   .option("--json", "Output as JSON")
-  .action(async (options: { json?: boolean }) => {
-    try {
+  .action(async (options: { json?: boolean }) =>
+    runAction(options, async () => {
       const { runConfigReset } = await import("./commands/config.js");
       const defaults = runConfigReset();
       if (options.json) {
@@ -482,10 +483,8 @@ configCmd
       } else {
         console.log("✅ Preferences reset to defaults.");
       }
-    } catch (err) {
-      handleCommandError(err, options);
-    }
-  });
+    }),
+  );
 
 program
   .command("vet-list")
@@ -504,8 +503,8 @@ program
       prune?: boolean;
       concurrency?: number;
       json?: boolean;
-    }) => {
-      try {
+    }) =>
+      runAction(options, async () => {
         if (
           options.concurrency !== undefined &&
           (isNaN(options.concurrency) || options.concurrency < 1)
@@ -557,10 +556,7 @@ program
           }
           console.log();
         }
-      } catch (err) {
-        handleCommandError(err, options);
-      }
-    },
+      }),
   );
 
 // ── skip command ───────────────────────────────────────────────────
@@ -573,8 +569,8 @@ skipCmd
   .command("add <issue-url>")
   .description("Skip an issue by URL")
   .option("--json", "Output as JSON")
-  .action(async (issueUrl: string, options: { json?: boolean }) => {
-    try {
+  .action(async (issueUrl: string, options: { json?: boolean }) =>
+    runAction(options, async () => {
       const { runSkip } = await import("./commands/skip.js");
       const state = loadLocalState();
       const result = await runSkip({ issueUrl, state });
@@ -587,17 +583,15 @@ skipCmd
           console.log(`Skipped: ${issueUrl}`);
         }
       }
-    } catch (err) {
-      handleCommandError(err, options);
-    }
-  });
+    }),
+  );
 
 skipCmd
   .command("list")
   .description("Show all skipped issues")
   .option("--json", "Output as JSON")
-  .action(async (options: { json?: boolean }) => {
-    try {
+  .action(async (options: { json?: boolean }) =>
+    runAction(options, async () => {
       const { runSkipList } = await import("./commands/skip.js");
       const results = runSkipList();
       if (options.json) {
@@ -626,17 +620,15 @@ skipCmd
         }
         console.log();
       }
-    } catch (err) {
-      handleCommandError(err, options);
-    }
-  });
+    }),
+  );
 
 skipCmd
   .command("remove <issue-url>")
   .description("Remove an issue from the skip list (unskip)")
   .option("--json", "Output as JSON")
-  .action(async (issueUrl: string, options: { json?: boolean }) => {
-    try {
+  .action(async (issueUrl: string, options: { json?: boolean }) =>
+    runAction(options, async () => {
       const { runSkipRemove } = await import("./commands/skip.js");
       const result = await runSkipRemove({ issueUrl });
       if (options.json) {
@@ -648,17 +640,15 @@ skipCmd
           console.log("Issue was not in the skip list.");
         }
       }
-    } catch (err) {
-      handleCommandError(err, options);
-    }
-  });
+    }),
+  );
 
 skipCmd
   .command("clear")
   .description("Clear all skipped issues")
   .option("--json", "Output as JSON")
-  .action(async (options: { json?: boolean }) => {
-    try {
+  .action(async (options: { json?: boolean }) =>
+    runAction(options, async () => {
       const { runSkipClear } = await import("./commands/skip.js");
       await runSkipClear();
       if (options.json) {
@@ -666,10 +656,8 @@ skipCmd
       } else {
         console.log("Skip list cleared.");
       }
-    } catch (err) {
-      handleCommandError(err, options);
-    }
-  });
+    }),
+  );
 
 program
   .command("vet <issue-url>")
@@ -677,20 +665,15 @@ program
     "Vet a specific GitHub issue for claimability and project health",
   )
   .option("--json", "Output as JSON")
-  .action(async (issueUrl: string, options: { json?: boolean }) => {
-    try {
+  .action(async (issueUrl: string, options: { json?: boolean }) =>
+    runAction(options, async () => {
       const { runVet } = await import("./commands/vet.js");
       const state = loadLocalState();
       const result = await runVet({ issueUrl, state });
       if (options.json) {
         console.log(formatJsonSuccess(result));
       } else {
-        const icon =
-          result.recommendation === "approve"
-            ? "✅"
-            : result.recommendation === "skip"
-              ? "❌"
-              : "⚠️";
+        const icon = recommendationIcon(result.recommendation);
         console.log(
           `\n${icon} ${result.issue.repo}#${result.issue.number}: ${result.recommendation.toUpperCase()}`,
         );
@@ -712,9 +695,7 @@ program
         );
         console.log(`  CI status: ${result.projectHealth.ciStatus}`);
       }
-    } catch (err) {
-      handleCommandError(err, options);
-    }
-  });
+    }),
+  );
 
 program.parse();

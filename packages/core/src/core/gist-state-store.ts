@@ -16,7 +16,12 @@ import type {
 } from "./schemas.js";
 import { getDataDir } from "./utils.js";
 import { debug, warn } from "./logger.js";
-import { errorMessage, getHttpStatusCode, isRateLimitError } from "./errors.js";
+import {
+  errorMessage,
+  getHttpStatusCode,
+  isRateLimitError,
+  rethrowIfFatal,
+} from "./errors.js";
 
 const MODULE = "gist-state";
 
@@ -144,7 +149,7 @@ export class GistStateStore {
         toWrite = mergeStates(state, remote);
       }
     } catch (err) {
-      if (getHttpStatusCode(err) === 401 || isRateLimitError(err)) throw err;
+      rethrowIfFatal(err);
       warn(
         MODULE,
         `Could not fetch gist before push, writing local snapshot: ${errorMessage(err)}`,
@@ -175,7 +180,7 @@ export class GistStateStore {
       // Both auth and rate-limit propagate per documented strategy.
       // Local cache write already happened above, so the user's work isn't
       // lost — but they need clear feedback that the sync failed.
-      if (getHttpStatusCode(err) === 401 || isRateLimitError(err)) throw err;
+      rethrowIfFatal(err);
       warn(MODULE, `Failed to push: ${errorMessage(err)}`);
       return false;
     }
@@ -194,7 +199,7 @@ export class GistStateStore {
       }
       return state;
     } catch (err) {
-      if (getHttpStatusCode(err) === 401 || isRateLimitError(err)) throw err;
+      rethrowIfFatal(err);
       warn(MODULE, `Failed to pull: ${errorMessage(err)}`);
       return null;
     }

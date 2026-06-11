@@ -60,6 +60,21 @@ export function isRateLimitError(error: unknown): boolean {
   return false;
 }
 
+/**
+ * Re-throw an error if it is one that must always propagate: a 401 (auth) or
+ * any rate-limit condition (429, 403 + rate-limit/abuse). Otherwise return so
+ * the caller can degrade gracefully. Centralizes the guard that was
+ * copy-pasted across ~16 catch blocks (#154).
+ *
+ * Note: catch sites that deliberately treat a rate limit as degradable use a
+ * bare `getHttpStatusCode(err) === 401` check instead and must NOT call this.
+ */
+export function rethrowIfFatal(error: unknown): void {
+  if (getHttpStatusCode(error) === 401 || isRateLimitError(error)) {
+    throw error;
+  }
+}
+
 /** Error codes for JSON output. */
 export type ErrorCode =
   | "AUTH_REQUIRED"
