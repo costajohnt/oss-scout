@@ -116,8 +116,12 @@ export function getGitHubToken(): string | null {
   if (tokenFetchAttempted) return null;
   tokenFetchAttempted = true;
 
-  if (process.env.GITHUB_TOKEN) {
-    cachedGitHubToken = process.env.GITHUB_TOKEN;
+  // Trim: a trailing newline (e.g. GITHUB_TOKEN=$(cat file)) produces a
+  // malformed Authorization header with confusing 401s. A whitespace-only
+  // value falls through to the gh CLI.
+  const envToken = process.env.GITHUB_TOKEN?.trim();
+  if (envToken) {
+    cachedGitHubToken = envToken;
     return cachedGitHubToken;
   }
 
@@ -133,7 +137,9 @@ export function getGitHubToken(): string | null {
       return cachedGitHubToken;
     }
   } catch (err) {
-    debug(MODULE, "gh auth token failed", err);
+    // Log only the message: the raw execFileSync error carries stdout/stderr
+    // buffers that could include a token if gh half-succeeded.
+    debug(MODULE, `gh auth token failed: ${errorMessage(err)}`);
   }
 
   return null;

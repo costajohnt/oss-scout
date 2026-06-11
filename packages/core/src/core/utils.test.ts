@@ -185,6 +185,75 @@ describe("getGitHubToken", () => {
       }
     }
   });
+
+  it("trims whitespace from GITHUB_TOKEN", async () => {
+    vi.resetModules();
+    vi.doMock("child_process", () => ({
+      execFileSync: vi.fn().mockReturnValue(""),
+    }));
+
+    const originalToken = process.env.GITHUB_TOKEN;
+    process.env.GITHUB_TOKEN = "  ghp_padded_token\n";
+    try {
+      const { getGitHubToken } = await import("./utils.js");
+      expect(getGitHubToken()).toBe("ghp_padded_token");
+    } finally {
+      if (originalToken !== undefined) {
+        process.env.GITHUB_TOKEN = originalToken;
+      } else {
+        delete process.env.GITHUB_TOKEN;
+      }
+    }
+  });
+
+  it("falls through to the gh CLI when GITHUB_TOKEN is whitespace-only", async () => {
+    vi.resetModules();
+    vi.doMock("child_process", () => ({
+      execFileSync: vi.fn().mockReturnValue("ghp_from_gh_cli\n"),
+    }));
+
+    const originalToken = process.env.GITHUB_TOKEN;
+    process.env.GITHUB_TOKEN = "   \n";
+    try {
+      const { getGitHubToken } = await import("./utils.js");
+      expect(getGitHubToken()).toBe("ghp_from_gh_cli");
+    } finally {
+      if (originalToken !== undefined) {
+        process.env.GITHUB_TOKEN = originalToken;
+      } else {
+        delete process.env.GITHUB_TOKEN;
+      }
+    }
+  });
+
+  it("does not include the raw error object when gh fails", async () => {
+    vi.resetModules();
+    const stderrCarryingError = Object.assign(new Error("exit 1"), {
+      stdout: "ghp_leaked_token",
+      stderr: "boom",
+    });
+    vi.doMock("child_process", () => ({
+      execFileSync: vi.fn().mockImplementation(() => {
+        throw stderrCarryingError;
+      }),
+    }));
+
+    const originalToken = process.env.GITHUB_TOKEN;
+    delete process.env.GITHUB_TOKEN;
+    try {
+      const { getGitHubToken } = await import("./utils.js");
+      const { debug } = await import("./logger.js");
+      expect(getGitHubToken()).toBeNull();
+      const debugCalls = vi.mocked(debug).mock.calls.flat();
+      expect(JSON.stringify(debugCalls)).not.toContain("ghp_leaked_token");
+    } finally {
+      if (originalToken !== undefined) {
+        process.env.GITHUB_TOKEN = originalToken;
+      } else {
+        delete process.env.GITHUB_TOKEN;
+      }
+    }
+  });
 });
 
 // ── requireGitHubToken ──
