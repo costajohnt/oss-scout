@@ -224,7 +224,7 @@ export async function checkUserMergedPRsInRepo(
   octokit: Octokit,
   owner: string,
   repo: string,
-): Promise<number> {
+): Promise<number | null> {
   const cache = getHttpCache();
   const cacheKey = `merged-prs:${owner}/${repo}`;
 
@@ -259,9 +259,11 @@ export async function checkUserMergedPRsInRepo(
     const errMsg = errorMessage(error);
     warn(
       MODULE,
-      `Could not check merged PRs in ${owner}/${repo}: ${errMsg}. Defaulting to 0.`,
+      `Could not check merged PRs in ${owner}/${repo}: ${errMsg}. Treating as unknown.`,
     );
-    return 0; // Not cached — next call will retry
+    // null (not 0) so callers can tell a transient failure from a real zero
+    // and avoid caching verdicts built on it. Not cached — next call retries.
+    return null;
   }
 }
 

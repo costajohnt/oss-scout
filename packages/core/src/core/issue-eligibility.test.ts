@@ -537,7 +537,7 @@ describe("checkUserMergedPRsInRepo", () => {
     expect(result).toBe(0);
   });
 
-  it("returns 0 on API error (non-fatal, not cached)", async () => {
+  it("returns null on API error (non-fatal, not cached, distinguishable from a real zero)", async () => {
     const octokit = makeMockOctokit({
       search: {
         issuesAndPullRequests: vi
@@ -546,7 +546,7 @@ describe("checkUserMergedPRsInRepo", () => {
       },
     });
     const result = await checkUserMergedPRsInRepo(octokit, "owner", "repo");
-    expect(result).toBe(0);
+    expect(result).toBeNull();
   });
 
   it("propagates 401 auth errors instead of returning 0", async () => {
