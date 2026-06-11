@@ -8,12 +8,12 @@ import { z } from "zod";
 
 // ── Enum schemas ────────────────────────────────────────────────────
 
-export const IssueStatusSchema = z.enum([
-  "candidate",
-  "claimed",
-  "in_progress",
-  "pr_submitted",
-]);
+// Only "candidate" is ever assigned (TrackedIssue.status is hardcoded in
+// issue-vetting). The "claimed" / "in_progress" / "pr_submitted" values were
+// vestigial from the autopilot extraction and never set; TrackedIssue is an
+// in-memory type, not part of persisted ScoutState, so trimming them carries
+// no migration risk (#155).
+export const IssueStatusSchema = z.enum(["candidate"]);
 
 export const ProjectCategorySchema = z.enum([
   "nonprofit",

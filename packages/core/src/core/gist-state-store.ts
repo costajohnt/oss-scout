@@ -186,25 +186,6 @@ export class GistStateStore {
     }
   }
 
-  /**
-   * Pull state from the gist and merge with local state.
-   */
-  async pull(): Promise<ScoutState | null> {
-    if (!this.gistId) return null;
-
-    try {
-      const state = await this.fetchGistState(this.gistId);
-      if (state) {
-        this.writeCache(state);
-      }
-      return state;
-    } catch (err) {
-      rethrowIfFatal(err);
-      warn(MODULE, `Failed to pull: ${errorMessage(err)}`);
-      return null;
-    }
-  }
-
   /** Get the current gist ID (if known). */
   getGistId(): string | null {
     return this.gistId;

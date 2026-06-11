@@ -33,9 +33,6 @@ const GITHUB_MAX_BOOLEAN_OPS = 5;
  * adds additional adaptive delays when needed. */
 const INTER_QUERY_DELAY_MS = 2000;
 
-/** Batch size for repo queries. 3 repos = 2 OR operators, leaving room for labels. */
-const BATCH_SIZE = 3;
-
 /**
  * Chunk labels into groups that fit within the operator budget.
  * N labels require N-1 OR operators, so maxPerChunk = budget + 1.
@@ -100,15 +97,6 @@ export function interleaveArrays<T>(arrays: T[][]): T[] {
     }
   }
   return result;
-}
-
-/** Split repos into batches of the specified size. */
-function batchRepos(repos: string[], batchSize: number): string[][] {
-  const batches: string[][] = [];
-  for (let i = 0; i < repos.length; i += batchSize) {
-    batches.push(repos.slice(i, i + batchSize));
-  }
-  return batches;
 }
 
 // ── Search caching ──
@@ -552,101 +540,4 @@ export async function filterVetAndScore(
   }
 
   return { candidates: starFiltered, allVetFailed, rateLimitHit };
-}
-
-/**
- * Search for issues within specific repos using batched queries.
- *
- * To avoid GitHub's secondary rate limit (30 requests/minute), we batch
- * multiple repos into a single search query using OR syntax:
- *   repo:owner1/repo1 OR repo:owner2/repo2 OR repo:owner3/repo3
- *
- * Labels are chunked separately to stay within GitHub's 5 boolean operator limit.
- * Each batch of repos consumes (batch.length - 1) OR operators, and the remaining
- * budget is used for label OR operators.
- *
- * This reduces API calls from N (one per repo) to ceil(N/BATCH_SIZE) * label_chunks.
- */
-export async function searchInRepos(
-  octokit: Octokit,
-  vetter: IssueVetter,
-  repos: string[],
-  baseQualifiers: string,
-  labels: string[],
-  maxResults: number,
-  priority: SearchPriority,
-  filterFn: (items: GitHubSearchItem[]) => GitHubSearchItem[],
-): Promise<{
-  candidates: IssueCandidate[];
-  allBatchesFailed: boolean;
-  rateLimitHit: boolean;
-}> {
-  const candidates: IssueCandidate[] = [];
-
-  const batches = batchRepos(repos, BATCH_SIZE);
-  let failedBatches = 0;
-  let rateLimitFailures = 0;
-
-  for (let batchIdx = 0; batchIdx < batches.length; batchIdx++) {
-    const batch = batches[batchIdx];
-    if (candidates.length >= maxResults) break;
-
-    // Delay between batches to avoid secondary rate limits
-    if (batchIdx > 0) await sleep(INTER_QUERY_DELAY_MS);
-
-    try {
-      const repoFilter = batch.map((r) => `repo:${r}`).join(" OR ");
-      const repoOps = batch.length - 1;
-      const perPage = Math.min(30, (maxResults - candidates.length) * 3);
-
-      const allItems = await searchWithChunkedLabels(
-        octokit,
-        labels,
-        repoOps,
-        (labelQ) =>
-          `${baseQualifiers} ${labelQ} (${repoFilter})`
-            .replace(/  +/g, " ")
-            .trim(),
-        perPage,
-      );
-
-      if (allItems.length > 0) {
-        const filtered = filterFn(allItems);
-        const remainingNeeded = maxResults - candidates.length;
-        const { candidates: vetted, rateLimitHit: vetRateLimitHit } =
-          await vetter.vetIssuesParallel(
-            filtered.slice(0, remainingNeeded * 2).map((i) => i.html_url),
-            remainingNeeded,
-            priority,
-          );
-        candidates.push(...vetted);
-        if (vetRateLimitHit) rateLimitFailures++;
-      }
-    } catch (error) {
-      if (getHttpStatusCode(error) === 401) throw error;
-      failedBatches++;
-      if (isRateLimitError(error)) {
-        rateLimitFailures++;
-      }
-      const batchReposStr = batch.join(", ");
-      warn(
-        MODULE,
-        `Error searching issues in batch [${batchReposStr}]:`,
-        errorMessage(error),
-      );
-    }
-  }
-
-  const allBatchesFailed =
-    failedBatches === batches.length && batches.length > 0;
-  const rateLimitHit = rateLimitFailures > 0;
-  if (allBatchesFailed) {
-    warn(
-      MODULE,
-      `All ${batches.length} batch(es) failed for ${priority} phase. ` +
-        `This may indicate a systemic issue (rate limit, auth, network).`,
-    );
-  }
-
-  return { candidates, allBatchesFailed, rateLimitHit };
 }
