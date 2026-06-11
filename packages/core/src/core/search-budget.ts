@@ -40,6 +40,9 @@ export class SearchBudgetTracker {
   /** Total calls recorded since init (for diagnostics). */
   private totalCalls: number = 0;
 
+  /** Calls made since the last known quota reset (external accounting). */
+  private callsSinceReset: number = 0;
+
   /**
    * Initialize with pre-flight rate limit data from GitHub.
    */
@@ -48,6 +51,7 @@ export class SearchBudgetTracker {
     this.resetAt = new Date(resetAt).getTime();
     this.callTimestamps = [];
     this.totalCalls = 0;
+    this.callsSinceReset = 0;
     debug(
       MODULE,
       `Initialized: ${remaining} remaining, resets at ${new Date(this.resetAt).toLocaleTimeString()}`,
@@ -60,7 +64,26 @@ export class SearchBudgetTracker {
   recordCall(): void {
     this.callTimestamps.push(Date.now());
     this.totalCalls++;
+    this.callsSinceReset++;
     this.pruneOldTimestamps();
+  }
+
+  /**
+   * Replenish the external budget once GitHub's quota window has reset.
+   * Without this, the pre-flight remaining acted as a never-replenishing
+   * run-lifetime total, throttling long multi-phase runs to ~1 call/min
+   * even though GitHub fully resets every 60 seconds (#119).
+   */
+  private refreshExternalBudget(): void {
+    if (this.resetAt <= 0) return;
+    const now = Date.now();
+    if (now < this.resetAt) return;
+    this.knownRemaining = SEARCH_RATE_LIMIT;
+    this.callsSinceReset = 0;
+    while (this.resetAt <= now) {
+      this.resetAt += SEARCH_WINDOW_MS;
+    }
+    debug(MODULE, "Quota window reset; external search budget replenished");
   }
 
   /**
@@ -86,9 +109,11 @@ export class SearchBudgetTracker {
    * and the pre-flight remaining quota from GitHub.
    */
   private getEffectiveBudget(): number {
-    // Use the stricter of: local window limit vs. pre-flight remaining minus calls made
+    this.refreshExternalBudget();
+    // Use the stricter of: local window limit vs. known remaining quota
+    // minus calls made since the last reset
     const localBudget = EFFECTIVE_BUDGET - this.callTimestamps.length;
-    const externalBudget = this.knownRemaining - this.totalCalls;
+    const externalBudget = this.knownRemaining - this.callsSinceReset;
     return Math.max(0, Math.min(localBudget, externalBudget));
   }
 
@@ -118,7 +143,18 @@ export class SearchBudgetTracker {
       // Wait until the oldest call in the window ages out
       const oldestInWindow = this.callTimestamps[0];
       if (!oldestInWindow) {
-        return; // No calls in window — budget exhausted by external consumption, can't wait it out
+        // No calls in window — the external quota is exhausted. Wait for
+        // GitHub's reset when we know it, otherwise proceed (#119).
+        const untilReset = this.resetAt - Date.now();
+        if (this.resetAt > 0 && untilReset > 0) {
+          debug(
+            MODULE,
+            `External quota exhausted, waiting ${untilReset}ms for reset`,
+          );
+          await sleep(untilReset + 100);
+          continue;
+        }
+        return;
       }
       const waitUntil = oldestInWindow + SEARCH_WINDOW_MS;
       const waitMs = waitUntil - Date.now();
