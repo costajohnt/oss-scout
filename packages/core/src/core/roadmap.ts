@@ -123,6 +123,26 @@ export async function fetchRoadmapIssueRefs(
     return cached.refs;
   }
 
+  // Concurrent feature vets of issues from one repo share a probe (#124)
+  const inflight = roadmapInflight.get(cacheKey);
+  if (inflight) return inflight;
+  const promise = fetchRoadmapIssueRefsUncached(octokit, owner, repo, cacheKey);
+  roadmapInflight.set(cacheKey, promise);
+  try {
+    return await promise;
+  } finally {
+    roadmapInflight.delete(cacheKey);
+  }
+}
+
+const roadmapInflight = new Map<string, Promise<Set<number>>>();
+
+async function fetchRoadmapIssueRefsUncached(
+  octokit: Octokit,
+  owner: string,
+  repo: string,
+  cacheKey: string,
+): Promise<Set<number>> {
   for (const path of ROADMAP_PATHS) {
     try {
       const { data } = await octokit.repos.getContent({ owner, repo, path });

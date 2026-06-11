@@ -302,3 +302,35 @@ describe("fetchContributionGuidelines", () => {
     ).rejects.toThrow("Unauthorized");
   });
 });
+
+describe("fetchContributionGuidelines in-flight dedup (#124)", () => {
+  it("concurrent same-repo callers share one probe round", async () => {
+    const resolvers: Array<(v: unknown) => void> = [];
+    const getContent = vi.fn(
+      () =>
+        new Promise((resolve) => {
+          resolvers.push(resolve);
+        }),
+    );
+    const octokit = { repos: { getContent } } as unknown as Octokit;
+
+    const a = fetchContributionGuidelines(octokit, "dedup-org", "dedup-repo");
+    const b = fetchContributionGuidelines(octokit, "dedup-org", "dedup-repo");
+    // Let the probes register, then resolve every pending path
+    await new Promise((r) => setImmediate(r));
+    for (const resolve of resolvers) {
+      resolve({
+        data: {
+          content: Buffer.from("# Contributing\nUse eslint.").toString(
+            "base64",
+          ),
+        },
+      });
+    }
+
+    const [ga, gb] = await Promise.all([a, b]);
+    expect(getContent).toHaveBeenCalledTimes(4);
+    expect(ga!.linter).toBe("ESLint");
+    expect(gb!.linter).toBe("ESLint");
+  });
+});

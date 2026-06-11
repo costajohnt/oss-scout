@@ -280,6 +280,32 @@ export function getHttpCache(): HttpCache {
  *    cached body without consuming a rate-limit point.
  * 3. On a fresh 200, caches the ETag + body for next time.
  */
+/**
+ * Share one in-flight computation per key: concurrent callers for the same
+ * key await the same promise instead of paying duplicate API calls (#124).
+ * The check-then-register pair runs without an intervening await, so two
+ * concurrent callers cannot both miss. Rejections propagate to every waiter
+ * and are never cached.
+ */
+export async function withInflightDedup<T>(
+  cache: HttpCache,
+  key: string,
+  fn: () => Promise<T>,
+): Promise<T> {
+  const existing = cache.getInflight(key);
+  if (existing) {
+    debug(MODULE, `Dedup hit for ${key}`);
+    return (await existing) as T;
+  }
+  const promise = fn();
+  const cleanup = cache.setInflight(key, promise);
+  try {
+    return await promise;
+  } finally {
+    cleanup();
+  }
+}
+
 export async function cachedRequest<T>(
   cache: HttpCache,
   url: string,
@@ -287,13 +313,6 @@ export async function cachedRequest<T>(
     headers: Record<string, string>,
   ) => Promise<{ data: T; headers?: Record<string, string> }>,
 ): Promise<T> {
-  // --- Deduplication ---
-  const existing = cache.getInflight(url);
-  if (existing) {
-    debug(MODULE, `Dedup hit for ${url}`);
-    return (await existing) as T;
-  }
-
   const doFetch = async (): Promise<T> => {
     const extraHeaders: Record<string, string> = {};
     const cached = cache.get(url);
@@ -332,15 +351,7 @@ export async function cachedRequest<T>(
     }
   };
 
-  const promise = doFetch();
-  const cleanup = cache.setInflight(url, promise);
-
-  try {
-    const result = await promise;
-    return result;
-  } finally {
-    cleanup();
-  }
+  return withInflightDedup(cache, url, doFetch);
 }
 
 /**
@@ -364,9 +375,19 @@ export async function cachedTimeBased<T>(
     return cached.body as T;
   }
 
-  const result = await fetcher();
-  cache.set(key, "", result);
-  return result;
+  // Concurrent same-key callers (parallel vetting hitting one repo) share
+  // a single fetch instead of stampeding the API (#124)
+  return withInflightDedup(cache, key, async () => {
+    // Re-check inside the dedup window: a caller that finished while we
+    // queued may have populated the cache
+    const fresh = cache.getEntryIfFresh(key, maxAgeMs);
+    if (fresh) {
+      return fresh.body as T;
+    }
+    const result = await fetcher();
+    cache.set(key, "", result);
+    return result;
+  });
 }
 
 /**

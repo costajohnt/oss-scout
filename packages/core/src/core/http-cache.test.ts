@@ -3,7 +3,12 @@ import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
 import * as crypto from "crypto";
-import { HttpCache, cachedRequest, cachedTimeBased } from "./http-cache.js";
+import {
+  HttpCache,
+  cachedRequest,
+  cachedTimeBased,
+  withInflightDedup,
+} from "./http-cache.js";
 
 vi.mock("./logger.js", () => ({
   debug: vi.fn(),
@@ -188,5 +193,60 @@ describe("HttpCache", () => {
 
     // The corrupt file should have been deleted
     expect(fs.existsSync(filePath)).toBe(false);
+  });
+});
+
+describe("withInflightDedup (#124)", () => {
+  it("shares one computation between concurrent same-key callers", async () => {
+    const cache = new HttpCache(tmpDir);
+    let resolveFn: (v: string) => void;
+    const fn = vi.fn(
+      () =>
+        new Promise<string>((resolve) => {
+          resolveFn = resolve;
+        }),
+    );
+
+    const a = withInflightDedup(cache, "stampede-key", fn);
+    const b = withInflightDedup(cache, "stampede-key", fn);
+    resolveFn!("shared");
+
+    expect(await a).toBe("shared");
+    expect(await b).toBe("shared");
+    expect(fn).toHaveBeenCalledTimes(1);
+  });
+
+  it("propagates a rejection to every waiter and clears the slot", async () => {
+    const cache = new HttpCache(tmpDir);
+    const fn = vi.fn().mockRejectedValue(new Error("boom"));
+
+    const a = withInflightDedup(cache, "reject-key", fn);
+    const b = withInflightDedup(cache, "reject-key", fn);
+    await expect(a).rejects.toThrow("boom");
+    await expect(b).rejects.toThrow("boom");
+    expect(fn).toHaveBeenCalledTimes(1);
+
+    // Slot cleared: the next call retries
+    const ok = vi.fn().mockResolvedValue(42);
+    await expect(withInflightDedup(cache, "reject-key", ok)).resolves.toBe(42);
+  });
+
+  it("cachedTimeBased dedups a concurrent same-key stampede", async () => {
+    const cache = new HttpCache(tmpDir);
+    let resolveFn: (v: { ok: boolean }) => void;
+    const fetcher = vi.fn(
+      () =>
+        new Promise<{ ok: boolean }>((resolve) => {
+          resolveFn = resolve;
+        }),
+    );
+
+    const a = cachedTimeBased(cache, "tb-stampede", 60_000, fetcher);
+    const b = cachedTimeBased(cache, "tb-stampede", 60_000, fetcher);
+    resolveFn!({ ok: true });
+
+    expect(await a).toEqual({ ok: true });
+    expect(await b).toEqual({ ok: true });
+    expect(fetcher).toHaveBeenCalledTimes(1);
   });
 });

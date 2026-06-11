@@ -10,7 +10,7 @@ import { Octokit } from "@octokit/rest";
 import { paginateAll } from "./pagination.js";
 import { errorMessage, getHttpStatusCode, isRateLimitError } from "./errors.js";
 import { warn } from "./logger.js";
-import { getHttpCache } from "./http-cache.js";
+import { getHttpCache, withInflightDedup } from "./http-cache.js";
 import { getSearchBudgetTracker } from "./search-budget.js";
 import type { CheckResult, LinkedPR } from "./types.js";
 
@@ -228,43 +228,49 @@ export async function checkUserMergedPRsInRepo(
   const cache = getHttpCache();
   const cacheKey = `merged-prs:${owner}/${repo}`;
 
-  // Manual cache check — do not use cachedTimeBased because we must NOT cache
-  // error-path fallback values (a transient failure returning 0 would poison the
-  // cache for 15 minutes, hiding that the user has merged PRs in the repo).
-  const cached = cache.getIfFresh(cacheKey, MERGED_PR_CACHE_TTL_MS);
-  if (cached != null && typeof cached === "number") {
-    return cached;
-  }
+  // In-flight dedup: parallel vetting frequently hits several issues from
+  // one repo at once, and each used to pay a separate Search API call
+  // before the first populated the cache (#124).
+  return withInflightDedup(cache, cacheKey, async () => {
+    // Manual cache check — do not use cachedTimeBased because we must NOT
+    // cache error-path fallback values (a transient failure returning 0
+    // would poison the cache for 15 minutes, hiding that the user has
+    // merged PRs in the repo).
+    const cached = cache.getIfFresh(cacheKey, MERGED_PR_CACHE_TTL_MS);
+    if (cached != null && typeof cached === "number") {
+      return cached;
+    }
 
-  try {
-    const tracker = getSearchBudgetTracker();
-    await tracker.waitForBudget();
     try {
-      // Use @me to search as the authenticated user
-      const { data } = await octokit.search.issuesAndPullRequests({
-        q: `repo:${owner}/${repo} is:pr is:merged author:@me`,
-        per_page: 1, // We only need total_count
-      });
-      // Only cache successful results
-      cache.set(cacheKey, "", data.total_count);
-      return data.total_count;
-    } finally {
-      // Always record the call — failed requests still consume GitHub rate limit points
-      tracker.recordCall();
+      const tracker = getSearchBudgetTracker();
+      await tracker.waitForBudget();
+      try {
+        // Use @me to search as the authenticated user
+        const { data } = await octokit.search.issuesAndPullRequests({
+          q: `repo:${owner}/${repo} is:pr is:merged author:@me`,
+          per_page: 1, // We only need total_count
+        });
+        // Only cache successful results
+        cache.set(cacheKey, "", data.total_count);
+        return data.total_count;
+      } finally {
+        // Always record the call — failed requests still consume GitHub rate limit points
+        tracker.recordCall();
+      }
+    } catch (error) {
+      if (getHttpStatusCode(error) === 401 || isRateLimitError(error)) {
+        throw error;
+      }
+      const errMsg = errorMessage(error);
+      warn(
+        MODULE,
+        `Could not check merged PRs in ${owner}/${repo}: ${errMsg}. Treating as unknown.`,
+      );
+      // null (not 0) so callers can tell a transient failure from a real zero
+      // and avoid caching verdicts built on it. Not cached — next call retries.
+      return null;
     }
-  } catch (error) {
-    if (getHttpStatusCode(error) === 401 || isRateLimitError(error)) {
-      throw error;
-    }
-    const errMsg = errorMessage(error);
-    warn(
-      MODULE,
-      `Could not check merged PRs in ${owner}/${repo}: ${errMsg}. Treating as unknown.`,
-    );
-    // null (not 0) so callers can tell a transient failure from a real zero
-    // and avoid caching verdicts built on it. Not cached — next call retries.
-    return null;
-  }
+  });
 }
 
 /**

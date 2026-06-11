@@ -163,6 +163,30 @@ export async function fetchContributionGuidelines(
     return cached.guidelines;
   }
 
+  // Concurrent vets of issues from one repo share a single probe (#124)
+  const inflight = guidelinesInflight.get(cacheKey);
+  if (inflight) return inflight;
+  const promise = fetchContributionGuidelinesUncached(octokit, owner, repo);
+  guidelinesInflight.set(cacheKey, promise);
+  try {
+    return await promise;
+  } finally {
+    guidelinesInflight.delete(cacheKey);
+  }
+}
+
+const guidelinesInflight = new Map<
+  string,
+  Promise<ContributionGuidelines | undefined>
+>();
+
+async function fetchContributionGuidelinesUncached(
+  octokit: Octokit,
+  owner: string,
+  repo: string,
+): Promise<ContributionGuidelines | undefined> {
+  const cacheKey = `${owner}/${repo}`;
+
   const filesToCheck = [
     "CONTRIBUTING.md",
     ".github/CONTRIBUTING.md",

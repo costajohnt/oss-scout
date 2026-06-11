@@ -20,6 +20,10 @@ vi.mock("./http-cache.js", () => ({
     getIfFresh: vi.fn(() => null),
     set: vi.fn(),
   })),
+  // Passthrough: dedup behavior itself is covered in http-cache.test.ts
+  withInflightDedup: vi.fn(
+    async (_cache: unknown, _key: string, fn: () => Promise<unknown>) => fn(),
+  ),
 }));
 
 vi.mock("./pagination.js", () => ({
