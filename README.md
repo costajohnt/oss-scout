@@ -380,6 +380,9 @@ Search:
 
 Results:
   results                       Show saved search results
+    --markdown                  Render as a markdown table (for digests)
+    --new-only                  Only results first seen since the last search
+    --since <date>              Only results first seen at/after this date
   results clear                 Clear saved results
 
 Skip:

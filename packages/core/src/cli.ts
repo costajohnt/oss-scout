@@ -384,13 +384,29 @@ resultsCmd
   .command("show", { isDefault: true })
   .description("Display saved search results")
   .option("--json", "Output as JSON")
-  .action(async (options: { json?: boolean }) =>
-    runAction(options, async () => {
-      const { runResults } = await import("./commands/results.js");
-      const results = await runResults(options);
-      if (options.json) {
-        console.log(formatJsonSuccess(results));
-      } else {
+  .option("--markdown", "Output as a markdown table (for digests)")
+  .option("--new-only", "Only results first seen during/after the last search")
+  .option("--since <date>", "Only results first seen at/after this date")
+  .action(
+    async (options: {
+      json?: boolean;
+      markdown?: boolean;
+      newOnly?: boolean;
+      since?: string;
+    }) =>
+      runAction(options, async () => {
+        const { runResults } = await import("./commands/results.js");
+        const results = await runResults(options);
+        if (options.json) {
+          console.log(formatJsonSuccess(results));
+          return;
+        }
+        if (options.markdown) {
+          const { formatResultsMarkdown } =
+            await import("./formatters/markdown.js");
+          console.log(formatResultsMarkdown(results));
+          return;
+        }
         if (results.length === 0) {
           console.log(
             "\nNo saved results. Run `oss-scout search` to find issues.\n",
@@ -414,8 +430,7 @@ resultsCmd
           console.log(`  ${score}    ${repo}  ${issue}  ${rec}  ${title}`);
         }
         console.log();
-      }
-    }),
+      }),
   );
 
 resultsCmd
