@@ -24,7 +24,7 @@ const GIST_DESCRIPTION = "oss-scout-state";
 const GIST_FILENAME = "state.json";
 const GIST_ID_FILE = "gist-id";
 const CACHE_FILE = "state-cache.json";
-const SEARCH_MAX_PAGES = 5;
+const SEARCH_MAX_PAGES = 10;
 
 /** Minimal Octokit interface for gist operations — keeps the class testable. */
 export interface GistOctokitLike {
@@ -219,23 +219,32 @@ export class GistStateStore {
     }
 
     // 2. Search user's gists
-    const foundId = await this.searchForGist();
-    if (foundId) {
-      debug(MODULE, `Found gist via search: ${foundId}`);
-      this.saveGistId(foundId);
-      this.gistId = foundId;
-      const state = await this.fetchGistState(foundId);
+    const search = await this.searchForGist();
+    if (search.id) {
+      debug(MODULE, `Found gist via search: ${search.id}`);
+      this.saveGistId(search.id);
+      this.gistId = search.id;
+      const state = await this.fetchGistState(search.id);
       if (state) {
         this.writeCache(state);
-        return { gistId: foundId, state, created: false };
+        return { gistId: search.id, state, created: false };
       }
       // Gist exists but content failed validation — fall back to cache
       // to avoid overwriting the user's data by creating a new gist.
       warn(
         MODULE,
-        `Found existing gist ${foundId} but content failed validation. Using local cache to avoid data loss.`,
+        `Found existing gist ${search.id} but content failed validation. Using local cache to avoid data loss.`,
       );
       return this.bootstrapFromCache("unknown");
+    }
+    if (!search.exhaustive) {
+      // The account has more gists than we scanned; an existing state gist
+      // may sit beyond the scan window, and creating a new one would fork
+      // state across machines.
+      warn(
+        MODULE,
+        `Scanned the first ${SEARCH_MAX_PAGES * 100} gists without finding an oss-scout state gist, but the account has more. Creating a new state gist; if one already exists, copy its id into the gist-id file in the oss-scout data directory to avoid a duplicate.`,
+      );
     }
 
     // 3. Create new gist
@@ -290,19 +299,30 @@ export class GistStateStore {
     }
   }
 
-  private async searchForGist(): Promise<string | null> {
+  /**
+   * Scan the user's gists for the state gist. `exhaustive: false` means the
+   * page cap was hit while pages were still full, so the account may hold
+   * the state gist beyond the scan window.
+   */
+  private async searchForGist(): Promise<{
+    id: string | null;
+    exhaustive: boolean;
+  }> {
     for (let page = 1; page <= SEARCH_MAX_PAGES; page++) {
       const { data: gists } = await this.octokit.gists.list({
         per_page: 100,
         page,
       });
 
-      if (gists.length === 0) break;
+      if (gists.length === 0) return { id: null, exhaustive: true };
 
       const match = gists.find((g) => g.description === GIST_DESCRIPTION);
-      if (match) return match.id;
+      if (match) return { id: match.id, exhaustive: true };
+
+      // A short page means we have seen every gist
+      if (gists.length < 100) return { id: null, exhaustive: true };
     }
-    return null;
+    return { id: null, exhaustive: false };
   }
 
   private async createGist(state: ScoutState): Promise<string> {
