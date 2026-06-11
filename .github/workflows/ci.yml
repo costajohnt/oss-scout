@@ -25,6 +25,12 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      # Build first so @oss-scout/mcp's typecheck, tests, and bundle resolve
+      # @oss-scout/core through its published dist/ (the artifact consumers
+      # actually get), not a stale or missing build (#149).
+      - name: Build
+        run: pnpm -r run build
+
       - name: Lint
         run: pnpm run lint
 
@@ -32,13 +38,13 @@ jobs:
         run: pnpm run format:check
 
       - name: Typecheck
-        run: pnpm --filter @oss-scout/core run typecheck
+        run: pnpm -r run typecheck
 
       - name: Test with coverage
-        run: pnpm --filter @oss-scout/core run test:coverage
+        run: pnpm -r run test:coverage
 
       - name: Bundle
-        run: pnpm --filter @oss-scout/core run bundle
+        run: pnpm -r run bundle
 
   # Advisory-only: a new transitive advisory should not block unrelated PRs.
   # Failures surface as a red job here without failing required checks.
