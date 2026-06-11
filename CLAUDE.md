@@ -10,7 +10,7 @@ oss-scout is a standalone tool for finding open source issues personalized to yo
 
 1. **`packages/core`** (`@oss-scout/core`) — Library + CLI. Multi-strategy search engine, issue vetting, viability scoring, and the `OssScout` public API class.
 
-2. **`packages/mcp-server`** (`@oss-scout/mcp`) — MCP server exposing search, scout-features, vet, skip, config, and config-set tools plus scout:// resources.
+2. **`packages/mcp-server`** (`@oss-scout/mcp`) — MCP server exposing search, scout-features, vet, skip, config, config-set, and sync tools plus scout:// resources.
 
 ### Key Design Decisions
 
@@ -26,12 +26,13 @@ oss-scout is a standalone tool for finding open source issues personalized to yo
 packages/core/src/
 ├── index.ts              # Public API exports
 ├── scout.ts              # OssScout class + createScout() factory
-├── cli.ts                # Commander CLI (9 top-level commands)
+├── cli.ts                # Commander CLI (10 top-level commands)
 ├── commands/             # CLI subcommands
 │   ├── setup.ts          # Interactive first-run configuration
 │   ├── config.ts         # View/update preferences
 │   ├── search.ts         # Multi-strategy search with result persistence
 │   ├── features.ts       # Feature opportunities in anchor repos
+│   ├── sync.ts           # Reconcile tracked open PRs (merged/closed)
 │   ├── vet.ts            # Single issue vetting
 │   ├── vet-list.ts       # Batch re-vetting of saved results
 │   ├── skip.ts           # Manage the skip list
@@ -72,7 +73,7 @@ packages/core/src/
 
 packages/mcp-server/src/
 ├── index.ts              # MCP server entry point (stdio transport)
-├── tools.ts              # 6 tools: search, scout-features, vet, skip, config, config-set
+├── tools.ts              # 7 tools: search, scout-features, vet, skip, config, config-set, sync
 ├── resources.ts          # 3 resources: scout://config, results, scores
 └── tools.test.ts         # Tool registration tests
 

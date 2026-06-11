@@ -35,6 +35,7 @@ import type {
   RepoScoreUpdate,
   ProjectCategory,
   ProjectHealth,
+  SyncResult,
   VetListOptions,
   VetListResult,
   VetListEntry,
@@ -48,11 +49,12 @@ import { getOctokit } from "./core/github.js";
 import type { Octokit } from "@octokit/rest";
 import { loadLocalState, saveLocalState } from "./core/local-state.js";
 import { warn, setLogLevel } from "./core/logger.js";
-import { extractRepoFromUrl } from "./core/utils.js";
+import { extractRepoFromUrl, parseGitHubUrl } from "./core/utils.js";
 import {
   errorMessage,
   getHttpStatusCode,
   isRateLimitError,
+  rethrowIfFatal,
 } from "./core/errors.js";
 import { getHttpCache } from "./core/http-cache.js";
 
@@ -627,6 +629,78 @@ export class OssScout implements ScoutStateReader, ScoutStateWriter {
       { url: pr.url, title: pr.title, openedAt: pr.openedAt },
     ];
     this.dirty = true;
+  }
+
+  /**
+   * Reconcile tracked open PRs against their current GitHub state (#164).
+   *
+   * `state.openPRs` was append-only — nothing transitioned an open PR to
+   * merged/closed, so getReposWithOpenPRs() over-reported forever once a PR
+   * merged. This checks each open PR, records merges/closures (which updates
+   * the repo score), prunes resolved entries, and checkpoints. Cheaper than a
+   * full bootstrap, so a host can call it on daily startup. Transient errors
+   * leave the entry in place; auth/rate-limit failures propagate.
+   */
+  async syncOpenPRs(): Promise<SyncResult> {
+    const octokit = getOctokit(this.githubToken);
+    const open = this.state.openPRs ?? [];
+    const result: SyncResult = {
+      checked: open.length,
+      merged: 0,
+      closed: 0,
+      stillOpen: 0,
+      errors: 0,
+    };
+    const remaining: typeof open = [];
+
+    for (const pr of open) {
+      const parsed = parseGitHubUrl(pr.url);
+      if (!parsed || parsed.type !== "pull") {
+        remaining.push(pr);
+        result.errors++;
+        continue;
+      }
+      const repoFullName = `${parsed.owner}/${parsed.repo}`;
+      try {
+        const { data } = await octokit.pulls.get({
+          owner: parsed.owner,
+          repo: parsed.repo,
+          pull_number: parsed.number,
+        });
+        if (data.merged) {
+          this.recordMergedPR({
+            url: pr.url,
+            title: pr.title,
+            mergedAt: data.merged_at ?? new Date().toISOString(),
+            repo: repoFullName,
+          });
+          result.merged++;
+        } else if (data.state === "closed") {
+          this.recordClosedPR({
+            url: pr.url,
+            title: pr.title,
+            closedAt: data.closed_at ?? new Date().toISOString(),
+            repo: repoFullName,
+          });
+          result.closed++;
+        } else {
+          remaining.push(pr);
+          result.stillOpen++;
+        }
+      } catch (err) {
+        // Auth/rate-limit aborts the whole sync; a transient/404 leaves the
+        // entry untouched so a later sync can retry rather than losing it.
+        rethrowIfFatal(err);
+        warn("scout", `sync: could not check ${pr.url}: ${errorMessage(err)}`);
+        remaining.push(pr);
+        result.errors++;
+      }
+    }
+
+    this.state.openPRs = remaining;
+    this.dirty = true;
+    await this.checkpoint();
+    return result;
   }
 
   /**

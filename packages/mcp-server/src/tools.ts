@@ -192,6 +192,25 @@ export function registerTools(server: McpServer, scout: OssScout): void {
   );
 
   server.tool(
+    "sync",
+    "Reconcile tracked open PRs against GitHub — mark merged/closed and recompute repo scores. Cheap; good for a daily startup call.",
+    async () => {
+      try {
+        const result = await withTimeout(scout.syncOpenPRs());
+        return {
+          content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+        };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return {
+          content: [{ type: "text", text: `Error: ${msg}` }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  server.tool(
     "skip",
     "Skip, unskip, list, or clear skipped issues. Skipped issues are excluded from future searches and auto-expire after 90 days.",
     {

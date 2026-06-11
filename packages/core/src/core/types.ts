@@ -188,7 +188,20 @@ export interface VetListSummary {
   errors: number;
 }
 
-/** Result of a batch vet-list operation. */
+/** Result of reconciling tracked open PRs against their current GitHub state (#164). */
+export interface SyncResult {
+  /** Open PRs checked. */
+  checked: number;
+  /** Transitioned to merged. */
+  merged: number;
+  /** Transitioned to closed-without-merge. */
+  closed: number;
+  /** Still open (kept). */
+  stillOpen: number;
+  /** Could not be checked (parse failure or transient API error). */
+  errors: number;
+}
+
 /** A saved result whose availability status changed since the last vet-list (#165). */
 export interface VetStatusTransition {
   issueUrl: string;
@@ -198,6 +211,7 @@ export interface VetStatusTransition {
   to: VetListEntry["status"];
 }
 
+/** Result of a batch vet-list operation. */
 export interface VetListResult {
   results: VetListEntry[];
   summary: VetListSummary;

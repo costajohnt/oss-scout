@@ -37,6 +37,7 @@ export type {
   VetListResult,
   VetListEntry,
   VetListSummary,
+  SyncResult,
 } from "./core/types.js";
 
 export type {
