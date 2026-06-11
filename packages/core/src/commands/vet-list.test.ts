@@ -221,6 +221,25 @@ describe("vetList", () => {
     await expect(scout.vetList()).rejects.toThrow("rate limit");
   });
 
+  it("classifies closed-but-200 issues via issueState (#120)", async () => {
+    const { OssScout } = await import("../scout.js");
+    const state = ScoutStateSchema.parse({ version: 1 });
+    state.savedResults = [makeSavedCandidate()];
+    const scout = new OssScout("fake-token", state);
+
+    // GitHub returns 200 for closed issues; only issueState reveals it
+    vi.spyOn(scout, "vetIssue").mockResolvedValue({
+      ...makeIssueCandidate({ recommendation: "skip" }),
+      issueState: "closed" as const,
+    });
+
+    const result = await scout.vetList({ prune: true });
+    expect(result.results[0].status).toBe("closed");
+    expect(result.summary.closed).toBe(1);
+    expect(result.prunedCount).toBe(1);
+    expect(scout.getSavedResults()).toHaveLength(0);
+  });
+
   it("classifies closed issues from 410 (gone) errors", async () => {
     const { OssScout } = await import("../scout.js");
     const state = ScoutStateSchema.parse({ version: 1 });

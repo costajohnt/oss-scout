@@ -395,6 +395,10 @@ export class OssScout implements ScoutStateReader {
   }
 
   private classifyVetResult(candidate: IssueCandidate): VetListEntry["status"] {
+    // Closed wins over everything: GitHub returns 200 for closed issues, so
+    // the 404/410 catch path alone never saw them (#120). Candidates cached
+    // by older versions lack issueState and read as open.
+    if (candidate.issueState === "closed") return "closed";
     const checks = candidate.vettingResult.checks;
     if (!checks.noExistingPR) return "has_pr";
     if (!checks.notClaimed) return "claimed";

@@ -79,6 +79,13 @@ export interface SLMTriageSummary {
 /** A fully vetted issue candidate with scoring. */
 export interface IssueCandidate {
   issue: TrackedIssue;
+  /**
+   * GitHub issue state at vet time (#120). GitHub answers 200 for closed
+   * issues, so without this vet-list classified them still_available and
+   * --prune kept them. Optional: cached candidates from older versions
+   * lack it and read as open.
+   */
+  issueState?: "open" | "closed";
   vettingResult: IssueVettingResult;
   projectHealth: ProjectHealth;
   antiLLMPolicy: AntiLLMPolicyResult;

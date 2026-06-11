@@ -285,6 +285,34 @@ describe("IssueVetter", () => {
       expect(result.recommendation).toBe("approve");
       expect(result.vettingResult.passedAllChecks).toBe(true);
       expect(result.viabilityScore).toBeGreaterThan(0);
+      expect(result.issueState).toBe("open");
+    });
+
+    it("marks a closed issue as skip with issueState closed (#120)", async () => {
+      const octokit = makeMockOctokit();
+      (
+        octokit as unknown as {
+          issues: { get: ReturnType<typeof vi.fn> };
+        }
+      ).issues.get.mockResolvedValueOnce({
+        data: {
+          id: 123,
+          html_url: "https://github.com/owner/repo/issues/1",
+          title: "Already fixed",
+          body: "done",
+          state: "closed",
+          comments: 0,
+          labels: [],
+          created_at: "2026-01-01T00:00:00Z",
+          updated_at: "2026-03-01T00:00:00Z",
+        },
+      });
+      const vetter = new IssueVetter(octokit, makeStubStateReader());
+
+      const result = await vetter.vetIssue(VALID_ISSUE_URL);
+      expect(result.issueState).toBe("closed");
+      expect(result.recommendation).toBe("skip");
+      expect(result.reasonsToSkip).toContain("Issue is closed");
     });
 
     it("recommends skip when an existing PR is found", async () => {
