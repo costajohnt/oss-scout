@@ -126,14 +126,34 @@ export class GistStateStore {
    * Push state to the gist. Also writes to local cache as fallback.
    */
   async push(state: ScoutState): Promise<boolean> {
-    this.writeCache(state);
-
     if (!this.gistId) {
       warn(MODULE, "No gist ID — cannot push");
+      this.writeCache(state);
       return false;
     }
 
-    const json = JSON.stringify(state, null, 2);
+    // Fetch the current gist and merge before writing, so a concurrent push
+    // from another machine is not blindly clobbered (#117). The deletion
+    // tombstones in mergeStates keep removals from resurfacing. A fetch
+    // failure (not auth/rate-limit, which propagate) degrades to writing the
+    // local snapshot, the prior best-effort behavior.
+    let toWrite = state;
+    try {
+      const remote = await this.fetchGistState(this.gistId);
+      if (remote) {
+        toWrite = mergeStates(state, remote);
+      }
+    } catch (err) {
+      if (getHttpStatusCode(err) === 401 || isRateLimitError(err)) throw err;
+      warn(
+        MODULE,
+        `Could not fetch gist before push, writing local snapshot: ${errorMessage(err)}`,
+      );
+    }
+
+    this.writeCache(toWrite);
+
+    const json = JSON.stringify(toWrite, null, 2);
     if (json.length > 900000) {
       warn(
         MODULE,
@@ -193,9 +213,10 @@ export class GistStateStore {
     if (cachedId) {
       debug(MODULE, `Trying cached gist ID: ${cachedId}`);
       try {
-        const state = await this.fetchGistState(cachedId);
-        if (state) {
+        const fetched = await this.fetchGistState(cachedId);
+        if (fetched) {
           this.gistId = cachedId;
+          const state = this.mergeCacheInto(fetched);
           this.writeCache(state);
           return { gistId: cachedId, state, created: false };
         }
@@ -217,8 +238,9 @@ export class GistStateStore {
       debug(MODULE, `Found gist via search: ${search.id}`);
       this.saveGistId(search.id);
       this.gistId = search.id;
-      const state = await this.fetchGistState(search.id);
-      if (state) {
+      const fetched = await this.fetchGistState(search.id);
+      if (fetched) {
+        const state = this.mergeCacheInto(fetched);
         this.writeCache(state);
         return { gistId: search.id, state, created: false };
       }
@@ -348,6 +370,18 @@ export class GistStateStore {
     fs.writeFileSync(getGistIdPath(), id + "\n", { mode: 0o600 });
   }
 
+  /**
+   * Merge the local state-cache into a freshly fetched gist state before it
+   * overwrites the cache (#117). Without this, a prior failed push left its
+   * only copy of the user's changes in state-cache.json, which the next
+   * successful bootstrap silently clobbered. Tombstone-aware mergeStates
+   * keeps both sides' real changes.
+   */
+  private mergeCacheInto(fetched: ScoutState): ScoutState {
+    const cached = this.readCache();
+    return cached ? mergeStates(cached, fetched) : fetched;
+  }
+
   private readCache(): ScoutState | null {
     try {
       const raw = fs.readFileSync(getCachePath(), "utf-8");
@@ -384,12 +418,93 @@ export class GistStateStore {
  * - unknown top-level keys (from a newer binary, #137): carried over via
  *   spreads, remote wins on conflicts to mirror the preferences rule
  */
+/** Retain tombstones this long so a slow-to-sync machine still honors them. */
+const TOMBSTONE_TTL_MS = 90 * 24 * 60 * 60 * 1000;
+
+type Tombstone = { url: string; removedAt: string };
+
+/**
+ * Merge tombstones from both sides (newest removedAt per URL wins) and drop
+ * any older than the TTL so the list cannot grow without bound (#117).
+ */
+function mergeTombstones(local: Tombstone[], remote: Tombstone[]): Tombstone[] {
+  const cutoff = Date.now() - TOMBSTONE_TTL_MS;
+  const byUrl = new Map<string, Tombstone>();
+  for (const t of [...local, ...remote]) {
+    const existing = byUrl.get(t.url);
+    if (!existing || t.removedAt > existing.removedAt) byUrl.set(t.url, t);
+  }
+  return [...byUrl.values()].filter((t) => {
+    const ts = new Date(t.removedAt).getTime();
+    return !Number.isFinite(ts) || ts >= cutoff;
+  });
+}
+
+/**
+ * Drop merged items that a tombstone deleted, unless the item was re-added
+ * after the deletion (item timestamp newer than the tombstone) (#117).
+ */
+function applyTombstones<T>(
+  items: T[],
+  tombstones: Tombstone[],
+  urlOf: (item: T) => string,
+  touchedAtOf: (item: T) => string,
+): T[] {
+  if (tombstones.length === 0) return items;
+  const byUrl = new Map(tombstones.map((t) => [t.url, t.removedAt]));
+  return items.filter((item) => {
+    const removedAt = byUrl.get(urlOf(item));
+    if (removedAt === undefined) return true;
+    // Keep only if re-added strictly after the deletion
+    return touchedAtOf(item) > removedAt;
+  });
+}
+
 export function mergeStates(local: ScoutState, remote: ScoutState): ScoutState {
+  const tombstones = mergeTombstones(
+    local.tombstones ?? [],
+    remote.tombstones ?? [],
+  );
+  const savedResults = applyTombstones(
+    mergeSavedResults(local.savedResults ?? [], remote.savedResults ?? []),
+    tombstones,
+    (r) => r.issueUrl,
+    (r) => r.lastSeenAt,
+  );
+  const skippedIssues = applyTombstones(
+    mergeSkippedIssues(local.skippedIssues ?? [], remote.skippedIssues ?? []),
+    tombstones,
+    (s) => s.url,
+    (s) => s.skippedAt,
+  );
+  // A skipped URL must never linger in saved results (skipIssue's own
+  // invariant). Enforce it after the merge so a remote copy can't resurrect
+  // a now-skipped result into the saved list (#117).
+  const skippedUrls = new Set(skippedIssues.map((s) => s.url));
+  const savedResultsFinal = savedResults.filter(
+    (r) => !skippedUrls.has(r.issueUrl),
+  );
+
+  // Preferences: keep the side with the fresher preferencesUpdatedAt instead
+  // of always taking remote, which silently reverted a local edit (#117).
+  const localPrefsTs = local.preferencesUpdatedAt;
+  const remotePrefsTs = remote.preferencesUpdatedAt;
+  const localPrefsWin =
+    localPrefsTs !== undefined &&
+    (remotePrefsTs === undefined || localPrefsTs > remotePrefsTs);
+  const preferences = localPrefsWin ? local.preferences : remote.preferences;
+  const preferencesUpdatedAt = pickFresherTimestamp(
+    localPrefsTs,
+    remotePrefsTs,
+  );
+
   return {
     ...local,
     ...remote,
     version: 1,
-    preferences: remote.preferences,
+    preferences,
+    preferencesUpdatedAt,
+    tombstones,
     repoScores: mergeRepoScores(local.repoScores, remote.repoScores),
     starredRepos: mergeStarredRepos(local, remote),
     starredReposLastFetched: pickFresherTimestamp(
@@ -399,14 +514,8 @@ export function mergeStates(local: ScoutState, remote: ScoutState): ScoutState {
     mergedPRs: unionByUrl(local.mergedPRs, remote.mergedPRs),
     closedPRs: unionByUrl(local.closedPRs, remote.closedPRs),
     openPRs: unionByUrl(local.openPRs ?? [], remote.openPRs ?? []),
-    savedResults: mergeSavedResults(
-      local.savedResults ?? [],
-      remote.savedResults ?? [],
-    ),
-    skippedIssues: mergeSkippedIssues(
-      local.skippedIssues ?? [],
-      remote.skippedIssues ?? [],
-    ),
+    savedResults: savedResultsFinal,
+    skippedIssues,
     lastSearchAt: pickFresherTimestamp(local.lastSearchAt, remote.lastSearchAt),
     lastRunAt:
       pickFresherTimestamp(local.lastRunAt, remote.lastRunAt) ??

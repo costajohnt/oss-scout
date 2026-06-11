@@ -253,6 +253,29 @@ export const ScoutStateSchema = z.looseObject({
   savedResults: z.array(SavedCandidateSchema).default([]),
   skippedIssues: z.array(SkippedIssueSchema).default([]),
 
+  /**
+   * Deletion tombstones (#117). Without these, the gist union-merge would
+   * resurrect any saved result or skipped issue removed on one machine the
+   * next time it merged against another machine's copy that still had it.
+   * A tombstone suppresses an item across a merge until the item is
+   * re-added with a newer timestamp. Pruned after 90 days.
+   */
+  tombstones: z
+    .array(
+      z.looseObject({
+        url: z.string(),
+        removedAt: z.string(),
+      }),
+    )
+    .default([]),
+
+  /**
+   * When preferences were last changed (#117). The gist merge previously
+   * always took the remote preferences, silently reverting a local edit;
+   * the side with the fresher timestamp now wins.
+   */
+  preferencesUpdatedAt: z.string().optional(),
+
   lastSearchAt: z.string().optional(),
   lastRunAt: z.string().default(() => new Date().toISOString()),
 
