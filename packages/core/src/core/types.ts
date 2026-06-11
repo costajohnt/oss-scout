@@ -199,17 +199,21 @@ export interface VetListResult {
 /** Configuration for creating an OssScout instance. */
 export type ScoutConfig =
   | {
-      /** GitHub token with `repo` read scope. Add `gist` scope for persistence. */
+      /** GitHub token with `repo` read scope. Add `gist` scope for gist persistence. */
       githubToken: string;
-      /** Use gist-backed persistence (default for standalone CLI). */
-      persistence?: "gist";
-      /** Gist ID override. Skips gist discovery/creation if provided. */
+      /**
+       * State storage. Omitted defaults to `"local"`: load and persist
+       * `~/.oss-scout/state.json`, no network on construct. `"gist"` syncs
+       * via a private GitHub gist (needs the `gist` token scope).
+       */
+      persistence?: "local" | "gist";
+      /** Gist ID override (gist mode). Skips gist discovery/creation if provided. */
       gistId?: string;
     }
   | {
       /** GitHub token with `repo` read scope. */
       githubToken: string;
-      /** Caller provides state directly. */
+      /** Caller provides and owns state directly (embedding hosts). */
       persistence: "provided";
       /** Pre-loaded state. Required when persistence is 'provided'. */
       initialState: ScoutState;
