@@ -99,11 +99,59 @@ describe("SearchBudgetTracker", () => {
     expect(tracker.canAfford(1)).toBe(false);
   });
 
-  it("waitForBudget returns immediately when external budget exhausted but no local timestamps", async () => {
-    // Edge case: init with 0 remaining but no local calls.
-    // Should return immediately (no timestamps to wait on) rather than looping forever.
-    tracker.init(0, new Date(Date.now() + 60000).toISOString());
-    await tracker.waitForBudget(); // should not hang
+  it("waitForBudget waits for the quota reset when external budget exhausted with no local timestamps", async () => {
+    const { sleep } = await import("./utils.js");
+    const realNow = Date.now();
+    tracker.init(0, new Date(realNow + 5_000).toISOString());
+
+    // Sleep advances the clock past the reset; the loop then replenishes
+    // and returns instead of proceeding into a guaranteed 403 (#119)
+    vi.mocked(sleep).mockImplementation(async () => {
+      vi.spyOn(Date, "now").mockReturnValue(realNow + 6_000);
+    });
+
+    await tracker.waitForBudget();
+    expect(sleep).toHaveBeenCalled();
+    expect(tracker.canAfford(1)).toBe(true);
+    vi.restoreAllMocks();
+  });
+
+  it("waitForBudget returns immediately when external budget exhausted and no reset is known", async () => {
+    const { sleep } = await import("./utils.js");
+    vi.mocked(sleep).mockClear();
+    // No init: resetAt is unknown (0). Simulate external exhaustion by
+    // filling the local window instead is not possible without timestamps,
+    // so construct the unknown-reset path directly via init with epoch 0.
+    tracker.init(0, new Date(0).toISOString());
+    await tracker.waitForBudget(); // must not hang
+  });
+
+  describe("external budget replenishment (#119)", () => {
+    it("replenishes once resetAt passes and keeps the diagnostics counter", () => {
+      const realNow = Date.now();
+      tracker.init(1, new Date(realNow + 30_000).toISOString());
+      tracker.recordCall();
+      expect(tracker.canAfford(1)).toBe(false); // external quota spent
+
+      vi.spyOn(Date, "now").mockReturnValue(realNow + 31_000);
+      expect(tracker.canAfford(1)).toBe(true); // window reset, replenished
+      expect(tracker.getTotalCalls()).toBe(1); // diagnostics untouched
+      vi.restoreAllMocks();
+    });
+
+    it("replenishes repeatedly across multiple windows", () => {
+      const realNow = Date.now();
+      tracker.init(1, new Date(realNow + 10_000).toISOString());
+      tracker.recordCall();
+      expect(tracker.canAfford(1)).toBe(false);
+
+      // Two windows later: resetAt advances past now, budget available again
+      vi.spyOn(Date, "now").mockReturnValue(realNow + 140_000);
+      expect(tracker.canAfford(1)).toBe(true);
+      tracker.recordCall();
+      expect(tracker.canAfford(1)).toBe(true); // 30 - 1 external remains
+      vi.restoreAllMocks();
+    });
   });
 });
 
