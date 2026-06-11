@@ -3,105 +3,9 @@
  */
 
 import { loadLocalState, saveLocalState } from "../core/local-state.js";
-import {
-  ScoutPreferencesSchema,
-  IssueScopeSchema,
-  ProjectCategorySchema,
-  PersistenceModeSchema,
-  SearchStrategySchema,
-} from "../core/schemas.js";
+import { ScoutPreferencesSchema } from "../core/schemas.js";
 import type { ScoutPreferences } from "../core/schemas.js";
-import { ValidationError } from "../core/errors.js";
-
-type FieldConfig =
-  | { type: "array" | "number" | "float" | "boolean" | "string" }
-  | { type: "enum" | "enum-array"; validValues: readonly string[] };
-
-const FIELD_CONFIGS: Record<string, FieldConfig> = {
-  languages: { type: "array" },
-  labels: { type: "array" },
-  excludeRepos: { type: "array" },
-  excludeOrgs: { type: "array" },
-  aiPolicyBlocklist: { type: "array" },
-  minStars: { type: "number" },
-  maxIssueAgeDays: { type: "number" },
-  minRepoScoreThreshold: { type: "number" },
-  interPhaseDelayMs: { type: "number" },
-  includeDocIssues: { type: "boolean" },
-  scope: { type: "enum-array", validValues: IssueScopeSchema.options },
-  projectCategories: {
-    type: "enum-array",
-    validValues: ProjectCategorySchema.options,
-  },
-  persistence: { type: "enum", validValues: PersistenceModeSchema.options },
-  defaultStrategy: {
-    type: "enum-array",
-    validValues: SearchStrategySchema.options,
-  },
-  githubUsername: { type: "string" },
-  broadPhaseDelayMs: { type: "number" },
-  skipBroadWhenSufficientResults: { type: "number" },
-  featuresAnchorThreshold: { type: "number" },
-  featuresSplitRatio: { type: "float" },
-};
-
-function parseBoolean(value: string): boolean {
-  const lower = value.toLowerCase();
-  if (lower === "true" || lower === "yes") return true;
-  if (lower === "false" || lower === "no") return false;
-  throw new ValidationError(
-    `Invalid boolean value: "${value}". Use true/false or yes/no.`,
-  );
-}
-
-function parseNumber(value: string, key: string): number {
-  const num = parseInt(value, 10);
-  if (isNaN(num)) {
-    throw new ValidationError(`Invalid number for "${key}": "${value}"`);
-  }
-  return num;
-}
-
-function parseFloat(value: string, key: string): number {
-  const num = Number.parseFloat(value);
-  if (isNaN(num)) {
-    throw new ValidationError(`Invalid number for "${key}": "${value}"`);
-  }
-  return num;
-}
-
-function parseArrayValue(value: string): string[] {
-  return value
-    .split(",")
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0);
-}
-
-/**
- * Apply an array update: plain set, +append, or -remove.
- *
- * The -remove form starts with a dash, which commander rejects as an
- * unknown option unless escaped: `config set excludeRepos -- "-spam/repo"`.
- * Documented in the CLI help and README (#132). Full pass-through parsing
- * was evaluated and rejected: it breaks `config set k v --json` (trailing
- * flag becomes a third operand) and, via the required program-level
- * positional mode, `search 5 --debug`.
- */
-function updateArray(current: string[], value: string): string[] {
-  if (value.startsWith("+")) {
-    const toAdd = parseArrayValue(value.slice(1));
-    const merged = [...current];
-    for (const item of toAdd) {
-      if (!merged.includes(item)) merged.push(item);
-    }
-    return merged;
-  }
-  if (value.startsWith("-")) {
-    const toRemove = new Set(parseArrayValue(value.slice(1)));
-    return current.filter((item) => !toRemove.has(item));
-  }
-  return parseArrayValue(value);
-}
+import { applyPreferenceField } from "../core/preference-fields.js";
 
 function formatArray(arr: string[]): string {
   return arr.length > 0 ? arr.join(", ") : "(none)";
@@ -148,6 +52,12 @@ export function runConfigShow(): void {
   console.log(
     `  skipBroadWhenSufficientResults: ${prefs.skipBroadWhenSufficientResults}`,
   );
+  console.log(
+    `  slmTriageModel:       ${prefs.slmTriageModel || "(disabled)"}`,
+  );
+  console.log(
+    `  slmTriageHost:        ${prefs.slmTriageHost || "(default 127.0.0.1:11434)"}`,
+  );
   console.log(`  featuresAnchorThreshold: ${prefs.featuresAnchorThreshold}`);
   console.log(`  featuresSplitRatio:    ${prefs.featuresSplitRatio}`);
   console.log();
@@ -165,75 +75,8 @@ export function getConfigData(): ScoutPreferences {
  * Update a single preference by key.
  */
 export function runConfigSet(key: string, value: string): ScoutPreferences {
-  const field = FIELD_CONFIGS[key];
-  if (!field) {
-    throw new ValidationError(
-      `Unknown config key: "${key}". Valid keys: ${Object.keys(FIELD_CONFIGS).sort().join(", ")}`,
-    );
-  }
-
   const state = loadLocalState();
-  const prefs = { ...state.preferences };
-
-  switch (field.type) {
-    case "string":
-      (prefs as Record<string, unknown>)[key] = value;
-      break;
-
-    case "boolean":
-      (prefs as Record<string, unknown>)[key] = parseBoolean(value);
-      break;
-
-    case "number":
-      (prefs as Record<string, unknown>)[key] = parseNumber(value, key);
-      break;
-
-    case "float":
-      (prefs as Record<string, unknown>)[key] = parseFloat(value, key);
-      break;
-
-    case "array": {
-      const current =
-        ((prefs as Record<string, unknown>)[key] as string[] | undefined) ?? [];
-      (prefs as Record<string, unknown>)[key] = updateArray(current, value);
-      break;
-    }
-
-    case "enum": {
-      const validValues = field.validValues;
-      if (!validValues.includes(value)) {
-        throw new ValidationError(
-          `Invalid value for "${key}": "${value}". Valid: ${validValues.join(", ")}`,
-        );
-      }
-      (prefs as Record<string, unknown>)[key] = value;
-      break;
-    }
-
-    case "enum-array": {
-      const current =
-        ((prefs as Record<string, unknown>)[key] as string[] | undefined) ?? [];
-      const updated = updateArray(current, value);
-      const validValues = field.validValues;
-      const invalid = updated.filter((s) => !validValues.includes(s));
-      if (invalid.length > 0) {
-        throw new ValidationError(
-          `Invalid value(s) for "${key}": ${invalid.join(", ")}. Valid: ${validValues.join(", ")}`,
-        );
-      }
-      // For 'scope', empty array means undefined (all scopes)
-      if (key === "scope") {
-        (prefs as Record<string, unknown>)[key] =
-          updated.length > 0 ? updated : undefined;
-      } else {
-        (prefs as Record<string, unknown>)[key] = updated;
-      }
-      break;
-    }
-  }
-
-  // Validate the full preferences object
-  const validated = ScoutPreferencesSchema.parse(prefs);
+  const validated = applyPreferenceField(state.preferences, key, value);
   state.preferences = validated;
   state.preferencesUpdatedAt = new Date().toISOString(); // #117 merge recency
   saveLocalState(state);

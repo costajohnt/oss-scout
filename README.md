@@ -239,6 +239,8 @@ oss-scout config reset                               # reset to defaults
 | `aiPolicyBlocklist` | string[] | matplotlib/matplotlib | Repos with anti-AI policies |
 | `projectCategories` | enum[] | [] | Topic filter: devtools, web-frameworks, etc. |
 | `persistence` | enum | local | State storage: local or gist |
+| `slmTriageModel` | string | (disabled) | Ollama model id for local SLM pre-triage during vetting (e.g. `gemma4:e4b`); empty disables it |
+| `slmTriageHost` | string | (127.0.0.1:11434) | Override the Ollama HTTP host when it runs on another machine |
 
 ## Install Options
 

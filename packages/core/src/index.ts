@@ -70,6 +70,17 @@ export {
   HorizonSchema,
 } from "./core/schemas.js";
 
+// Preference-field metadata + parsing (shared by the CLI and the MCP server)
+export {
+  applyPreferenceField,
+  FIELD_CONFIGS,
+  PREFERENCE_KEYS,
+  SORTED_PREFERENCE_KEYS,
+  assertFieldConfigsCover,
+  updateArray,
+  type FieldConfig,
+} from "./core/preference-fields.js";
+
 // Utilities
 export { requireGitHubToken, getGitHubToken } from "./core/utils.js";
 
