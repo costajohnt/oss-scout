@@ -833,7 +833,7 @@ describe("fetchIssuesFromKnownRepos", () => {
     expect(result.rateLimitHit).toBe(true);
   });
 
-  it("passes labels as comma-joined string to listForRepo", async () => {
+  it("queries once per label (any-of semantics, not the AND comma-join) (#118)", async () => {
     const octokit = makeMockOctokitWithRest([]);
     const vetter = makeMockVetter([]);
 
@@ -847,20 +847,62 @@ describe("fetchIssuesFromKnownRepos", () => {
       (items) => items,
     );
 
-    expect(
-      (
-        octokit as unknown as {
-          issues: { listForRepo: ReturnType<typeof vi.fn> };
-        }
-      ).issues.listForRepo,
-    ).toHaveBeenCalledWith(
-      expect.objectContaining({
-        owner: "owner",
-        repo: "repo",
-        state: "open",
-        labels: "good first issue,help wanted",
-      }),
+    const listForRepo = (
+      octokit as unknown as {
+        issues: { listForRepo: ReturnType<typeof vi.fn> };
+      }
+    ).issues.listForRepo;
+    expect(listForRepo).toHaveBeenCalledTimes(2);
+    expect(listForRepo).toHaveBeenCalledWith(
+      expect.objectContaining({ labels: "good first issue" }),
     );
+    expect(listForRepo).toHaveBeenCalledWith(
+      expect.objectContaining({ labels: "help wanted" }),
+    );
+  });
+
+  it("merges per-label results and dedups issues carrying multiple labels (#118)", async () => {
+    const issueA = {
+      html_url: "https://github.com/owner/repo/issues/1",
+      title: "A",
+      updated_at: "2026-01-01T00:00:00Z",
+      labels: [{ name: "good first issue" }, { name: "help wanted" }],
+    };
+    const issueB = {
+      html_url: "https://github.com/owner/repo/issues/2",
+      title: "B",
+      updated_at: "2026-01-01T00:00:00Z",
+      labels: [{ name: "help wanted" }],
+    };
+    const listForRepo = vi
+      .fn()
+      .mockResolvedValueOnce({ data: [issueA] })
+      .mockResolvedValueOnce({ data: [issueA, issueB] });
+    const octokit = {
+      issues: { listForRepo },
+    } as unknown as Octokit;
+    const seen: string[] = [];
+    const vetter = {
+      vetIssuesParallel: vi.fn(async (urls: string[]) => {
+        seen.push(...urls);
+        return { candidates: [], allFailed: false, rateLimitHit: false };
+      }),
+    } as unknown as IssueVetter;
+
+    await fetchIssuesFromKnownRepos(
+      octokit,
+      vetter,
+      ["owner/repo"],
+      ["good first issue", "help wanted"],
+      10,
+      "starred",
+      (items) => items,
+    );
+
+    expect(seen).toEqual([
+      "https://github.com/owner/repo/issues/1",
+      "https://github.com/owner/repo/issues/2",
+    ]);
   });
 
   it("omits labels param when labels array is empty", async () => {

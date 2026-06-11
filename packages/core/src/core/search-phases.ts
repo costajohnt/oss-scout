@@ -282,18 +282,35 @@ export async function fetchIssuesFromKnownRepos(
     const [owner, repo] = repoFullName.split("/");
 
     try {
-      const response = await octokit.issues.listForRepo({
-        owner,
-        repo,
-        state: "open",
-        sort: "created",
-        direction: "desc",
-        per_page: 5,
-        ...(labels.length > 0 ? { labels: labels.join(",") } : {}),
-      });
+      // One query per label: the REST `labels` parameter is AND semantics
+      // (issues carrying ALL listed labels), so a comma-joined list like
+      // "good first issue,help wanted" returned ~nothing (#118). Querying
+      // per label and merging restores the intended any-of behavior.
+      const labelFilters: Array<string | undefined> =
+        labels.length > 0 ? labels : [undefined];
+      const seenUrls = new Set<string>();
+      const rawIssues: Awaited<
+        ReturnType<typeof octokit.issues.listForRepo>
+      >["data"] = [];
+      for (const label of labelFilters) {
+        const response = await octokit.issues.listForRepo({
+          owner,
+          repo,
+          state: "open",
+          sort: "created",
+          direction: "desc",
+          per_page: 5,
+          ...(label !== undefined ? { labels: label } : {}),
+        });
+        for (const issue of response.data) {
+          if (seenUrls.has(issue.html_url)) continue;
+          seenUrls.add(issue.html_url);
+          rawIssues.push(issue);
+        }
+      }
 
       // Filter out pull requests (REST issues endpoint returns both) and assigned issues
-      const issuesOnly = response.data.filter(
+      const issuesOnly = rawIssues.filter(
         (item) => !("pull_request" in item) && !item.assignee,
       );
 
