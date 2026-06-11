@@ -10,7 +10,7 @@ oss-scout is a standalone tool for finding open source issues personalized to yo
 
 1. **`packages/core`** (`@oss-scout/core`) — Library + CLI. Multi-strategy search engine, issue vetting, viability scoring, and the `OssScout` public API class.
 
-2. **`packages/mcp-server`** (`@oss-scout/mcp`) — MCP server exposing search, vet, config tools and scout:// resources.
+2. **`packages/mcp-server`** (`@oss-scout/mcp`) — MCP server exposing search, scout-features, vet, skip, config, and config-set tools plus scout:// resources.
 
 ### Key Design Decisions
 
@@ -26,23 +26,34 @@ oss-scout is a standalone tool for finding open source issues personalized to yo
 packages/core/src/
 ├── index.ts              # Public API exports
 ├── scout.ts              # OssScout class + createScout() factory
-├── cli.ts                # Commander CLI (10 commands)
+├── cli.ts                # Commander CLI (9 top-level commands)
 ├── commands/             # CLI subcommands
 │   ├── setup.ts          # Interactive first-run configuration
-│   ├── config.ts         # View/update preferences (strategy map pattern)
+│   ├── config.ts         # View/update preferences
 │   ├── search.ts         # Multi-strategy search with result persistence
+│   ├── features.ts       # Feature opportunities in anchor repos
 │   ├── vet.ts            # Single issue vetting
 │   ├── vet-list.ts       # Batch re-vetting of saved results
+│   ├── skip.ts           # Manage the skip list
 │   ├── results.ts        # View/clear saved search results
+│   ├── command-scout.ts  # Build a scout honoring the persistence preference
+│   ├── with-scout.ts     # Shared create/persist scaffolding for commands
 │   └── validation.ts     # URL validation helpers
 ├── core/                 # Domain logic
 │   ├── schemas.ts        # Zod schemas for ScoutState, ScoutPreferences
 │   ├── types.ts          # Ephemeral types, config interfaces
 │   ├── issue-discovery.ts # 4 extracted phase functions + orchestrator
-│   ├── issue-vetting.ts  # Parallel vetting pipeline + ScoutStateReader
+│   ├── issue-vetting.ts  # Parallel vetting pipeline + ScoutStateReader/Writer
 │   ├── issue-eligibility.ts # PR existence, claim detection, requirements
 │   ├── issue-scoring.ts  # Viability scoring (pure functions, 0-100)
 │   ├── issue-filtering.ts # Spam detection, doc-only filtering
+│   ├── anti-llm-policy.ts # Detect repos with anti-AI contribution policies
+│   ├── feature-discovery.ts # `scout features` anchor + broad discovery
+│   ├── personalization.ts # preferLanguages/preferRepos sort boosts + diversity
+│   ├── linked-pr.ts      # Stalled linked-PR detection (revive opportunities)
+│   ├── roadmap.ts        # ROADMAP.md issue-reference scraping
+│   ├── slm-triage.ts     # Optional Ollama SLM pre-triage during vetting
+│   ├── preference-fields.ts # Shared config-set field map (CLI + MCP)
 │   ├── search-phases.ts  # Search helpers, caching, batched search
 │   ├── search-budget.ts  # Rate limit management (30 req/min sliding window)
 │   ├── repo-health.ts    # Project health checks, CONTRIBUTING.md parsing
@@ -61,7 +72,7 @@ packages/core/src/
 
 packages/mcp-server/src/
 ├── index.ts              # MCP server entry point (stdio transport)
-├── tools.ts              # 4 tools: search, vet, config, config-set
+├── tools.ts              # 6 tools: search, scout-features, vet, skip, config, config-set
 ├── resources.ts          # 3 resources: scout://config, results, scores
 └── tools.test.ts         # Tool registration tests
 
@@ -76,7 +87,7 @@ Plugin (repo root):
 
 ```bash
 pnpm install              # Install all workspace dependencies
-pnpm test                 # Run all tests (331 tests, 22 files)
+pnpm test                 # Run all tests (~900 tests across 44 files)
 pnpm run bundle           # Rebuild CLI bundle
 pnpm run lint             # ESLint
 pnpm run format:check     # Prettier check
