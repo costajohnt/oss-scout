@@ -20,7 +20,7 @@ import { errorMessage, getHttpStatusCode } from "./errors.js";
 const MODULE = "http-cache";
 
 /** Shape of a single cache entry on disk. */
-interface CacheEntry {
+export interface CacheEntry {
   etag: string;
   url: string;
   body: unknown;
@@ -68,11 +68,20 @@ export class HttpCache {
    * (e.g., caching aggregated results from paginated API calls).
    */
   getIfFresh(key: string, maxAgeMs: number): unknown | null {
+    return this.getEntryIfFresh(key, maxAgeMs)?.body ?? null;
+  }
+
+  /**
+   * Like {@link getIfFresh}, but returns the whole entry so callers can
+   * distinguish "no fresh entry" (null) from a legitimately cached falsy
+   * body (`0`, `""`, `false`, `null`).
+   */
+  getEntryIfFresh(key: string, maxAgeMs: number): CacheEntry | null {
     const entry = this.get(key);
     if (!entry) return null;
     const age = Date.now() - new Date(entry.cachedAt).getTime();
     if (!Number.isFinite(age) || age < 0 || age > maxAgeMs) return null;
-    return entry.body;
+    return entry;
   }
 
   /**
@@ -308,6 +317,16 @@ export async function cachedRequest<T>(
           debug(MODULE, `304 cache hit for ${url}`);
           return freshCached.body as T;
         }
+        // The entry that supplied If-None-Match vanished mid-flight (e.g. a
+        // concurrent process deleted it). Refetch unconditionally; without
+        // the conditional header the server cannot answer 304 again.
+        debug(MODULE, `304 but cache entry vanished for ${url}, refetching`);
+        const response = await fetcher({});
+        const etag = response.headers?.["etag"];
+        if (etag) {
+          cache.set(url, etag, response.data);
+        }
+        return response.data;
       }
       throw err;
     }
@@ -339,10 +358,10 @@ export async function cachedTimeBased<T>(
   maxAgeMs: number,
   fetcher: () => Promise<T>,
 ): Promise<T> {
-  const cached = cache.getIfFresh(key, maxAgeMs);
+  const cached = cache.getEntryIfFresh(key, maxAgeMs);
   if (cached) {
     debug(MODULE, `Time-based cache hit for ${key}`);
-    return cached as T;
+    return cached.body as T;
   }
 
   const result = await fetcher();
