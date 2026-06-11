@@ -97,6 +97,7 @@ Branch naming: `feature/description`, `fix/description`, `chore/description`.
 
 - **CI:** GitHub Actions on Node 20, 22, 24. Runs: audit, lint, format, typecheck, test, bundle.
 - **Release:** release-please auto-creates version bump PRs from conventional commits.
+- **Version coupling (deliberate):** `.claude-plugin/plugin.json` version tracks the **core** component, and the MCP server's announced version (`packages/mcp-server/src/index.ts`, `x-release-please-version` annotation) tracks **mcp-server** — both via `extra-files` in `release-please-config.json`. Don't hand-edit these versions; release PRs bump them.
 - **Publish:** Merging a release-please PR auto-publishes to npm via granular token.
 
 ## Code Style
