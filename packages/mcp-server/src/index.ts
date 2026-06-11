@@ -47,7 +47,9 @@ export async function runServer(): Promise<void> {
       "GitHub token required. Set GITHUB_TOKEN or run `gh auth login`.",
     );
   }
-  const scout = await createScout({ githubToken: token });
+  // Local persistence: read and write ~/.oss-scout/state.json so the server
+  // sees the user's preferences and history and survives restarts (#113).
+  const scout = await createScout({ githubToken: token, persistence: "local" });
   const server = createServer(scout);
   await server.connect(new StdioServerTransport());
 }

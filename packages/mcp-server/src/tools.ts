@@ -228,7 +228,9 @@ export function registerTools(server: McpServer, scout: OssScout): void {
           const count = scout.getSkippedIssues().length;
           scout.clearSkippedIssues();
           const synced = await scout.checkpoint();
-          const syncNote = synced ? "" : " (saved locally, gist sync failed)";
+          const syncNote = synced
+            ? ""
+            : " (warning: failed to persist to disk)";
           return {
             content: [
               {
@@ -248,7 +250,9 @@ export function registerTools(server: McpServer, scout: OssScout): void {
             .some((s) => s.url === issueUrl);
           scout.unskipIssue(issueUrl!);
           const synced = await scout.checkpoint();
-          const syncNote = synced ? "" : " (saved locally, gist sync failed)";
+          const syncNote = synced
+            ? ""
+            : " (warning: failed to persist to disk)";
           return {
             content: [
               {
@@ -289,7 +293,7 @@ export function registerTools(server: McpServer, scout: OssScout): void {
           : undefined;
         scout.skipIssue(issueUrl!, metadata);
         const synced = await scout.checkpoint();
-        const syncNote = synced ? "" : " (saved locally, gist sync failed)";
+        const syncNote = synced ? "" : " (warning: failed to persist to disk)";
         return {
           content: [{ type: "text", text: `Skipped: ${issueUrl}${syncNote}` }],
         };

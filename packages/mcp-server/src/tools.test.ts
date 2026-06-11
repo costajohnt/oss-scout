@@ -83,6 +83,37 @@ describe("registerTools", () => {
     expect(names).toContain("scout-features");
   });
 
+  describe("persistence reporting (#113)", () => {
+    it("persists a skip add via checkpoint and reports no warning on success", async () => {
+      const checkpoint = vi.fn().mockResolvedValue(true);
+      const local = createMockScout({ checkpoint } as Partial<OssScout>);
+      const localServer = new McpServer({ name: "t", version: "0.0.1" });
+      vi.spyOn(localServer, "tool");
+      registerTools(localServer, local);
+      const handler = getToolHandler(localServer, "skip");
+      const result = (await handler(
+        { action: "add", issueUrl: "https://github.com/o/r/issues/1" },
+        {},
+      )) as { content: Array<{ text: string }> };
+      expect(checkpoint).toHaveBeenCalled();
+      expect(result.content[0].text).not.toContain("failed to persist");
+    });
+
+    it("warns that nothing was persisted when checkpoint fails", async () => {
+      const local = createMockScout({
+        checkpoint: vi.fn().mockResolvedValue(false),
+      } as Partial<OssScout>);
+      const localServer = new McpServer({ name: "t", version: "0.0.1" });
+      vi.spyOn(localServer, "tool");
+      registerTools(localServer, local);
+      const handler = getToolHandler(localServer, "skip");
+      const result = (await handler({ action: "clear" }, {})) as {
+        content: Array<{ text: string }>;
+      };
+      expect(result.content[0].text).toContain("failed to persist");
+    });
+  });
+
   describe("skip tool execution", () => {
     it("rejects invalid issue URLs on add and surfaces isError", async () => {
       const handler = getToolHandler(server, "skip");
