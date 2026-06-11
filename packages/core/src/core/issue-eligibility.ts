@@ -8,7 +8,7 @@
 
 import { Octokit } from "@octokit/rest";
 import { paginateAll } from "./pagination.js";
-import { errorMessage, getHttpStatusCode, isRateLimitError } from "./errors.js";
+import { errorMessage, rethrowIfFatal } from "./errors.js";
 import { warn } from "./logger.js";
 import { getHttpCache, withInflightDedup } from "./http-cache.js";
 import { getSearchBudgetTracker } from "./search-budget.js";
@@ -199,9 +199,7 @@ export async function checkNoExistingPR(
 
     return { passed: linkedPRCount === 0, linkedPR };
   } catch (error) {
-    if (getHttpStatusCode(error) === 401 || isRateLimitError(error)) {
-      throw error;
-    }
+    rethrowIfFatal(error);
     const errMsg = errorMessage(error);
     warn(
       MODULE,
@@ -258,9 +256,7 @@ export async function checkUserMergedPRsInRepo(
         tracker.recordCall();
       }
     } catch (error) {
-      if (getHttpStatusCode(error) === 401 || isRateLimitError(error)) {
-        throw error;
-      }
+      rethrowIfFatal(error);
       const errMsg = errorMessage(error);
       warn(
         MODULE,
@@ -316,9 +312,7 @@ export async function checkNotClaimed(
 
     return { passed: true };
   } catch (error) {
-    if (getHttpStatusCode(error) === 401 || isRateLimitError(error)) {
-      throw error;
-    }
+    rethrowIfFatal(error);
     const errMsg = errorMessage(error);
     warn(
       MODULE,

@@ -8,7 +8,12 @@
 import { Octokit } from "@octokit/rest";
 import { daysBetween } from "./utils.js";
 import { type ContributionGuidelines, type ProjectHealth } from "./types.js";
-import { errorMessage, getHttpStatusCode, isRateLimitError } from "./errors.js";
+import {
+  errorMessage,
+  getHttpStatusCode,
+  isRateLimitError,
+  rethrowIfFatal,
+} from "./errors.js";
 import { warn } from "./logger.js";
 import { getHttpCache, cachedRequest, cachedTimeBased } from "./http-cache.js";
 
@@ -121,9 +126,7 @@ export async function checkProjectHealth(
       },
     );
   } catch (error) {
-    if (getHttpStatusCode(error) === 401 || isRateLimitError(error)) {
-      throw error;
-    }
+    rethrowIfFatal(error);
     const errMsg = errorMessage(error);
     warn(
       MODULE,

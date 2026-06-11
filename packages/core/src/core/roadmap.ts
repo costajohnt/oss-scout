@@ -12,7 +12,7 @@
  */
 
 import type { Octokit } from "@octokit/rest";
-import { errorMessage, getHttpStatusCode, isRateLimitError } from "./errors.js";
+import { errorMessage, getHttpStatusCode, rethrowIfFatal } from "./errors.js";
 import { warn } from "./logger.js";
 
 const MODULE = "roadmap";
@@ -153,7 +153,7 @@ async function fetchRoadmapIssueRefsUncached(
       pruneCache();
       return refs;
     } catch (err: unknown) {
-      if (getHttpStatusCode(err) === 401 || isRateLimitError(err)) throw err;
+      rethrowIfFatal(err);
       const status = getHttpStatusCode(err);
       if (status === 404) continue; // path missing — try next
       warn(

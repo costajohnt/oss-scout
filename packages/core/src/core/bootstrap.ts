@@ -5,12 +5,7 @@
 
 import { getOctokit, checkRateLimit } from "./github.js";
 import { debug, warn } from "./logger.js";
-import {
-  ConfigurationError,
-  errorMessage,
-  getHttpStatusCode,
-  isRateLimitError,
-} from "./errors.js";
+import { ConfigurationError, errorMessage, rethrowIfFatal } from "./errors.js";
 import { extractRepoFromUrl } from "./utils.js";
 import type { OssScout } from "../scout.js";
 
@@ -84,7 +79,7 @@ export async function bootstrapScout(
     debug(MODULE, `Fetched ${starredRepos.length} starred repos`);
     scout.setStarredRepos(starredRepos);
   } catch (err) {
-    if (getHttpStatusCode(err) === 401 || isRateLimitError(err)) throw err;
+    rethrowIfFatal(err);
     warn(MODULE, `Failed to fetch starred repos: ${errorMessage(err)}`);
     errors.push("starred repos fetch failed");
   }
@@ -116,7 +111,7 @@ export async function bootstrapScout(
     }
     debug(MODULE, `Imported ${mergedPRCount} merged PRs`);
   } catch (err) {
-    if (getHttpStatusCode(err) === 401 || isRateLimitError(err)) throw err;
+    rethrowIfFatal(err);
     warn(MODULE, `Failed to fetch merged PRs: ${errorMessage(err)}`);
     errors.push("merged PR fetch failed");
   }
@@ -148,7 +143,7 @@ export async function bootstrapScout(
     }
     debug(MODULE, `Imported ${closedPRCount} closed PRs`);
   } catch (err) {
-    if (getHttpStatusCode(err) === 401 || isRateLimitError(err)) throw err;
+    rethrowIfFatal(err);
     warn(MODULE, `Failed to fetch closed PRs: ${errorMessage(err)}`);
     errors.push("closed PR fetch failed");
   }
@@ -180,7 +175,7 @@ export async function bootstrapScout(
     }
     debug(MODULE, `Imported ${openPRCount} open PRs`);
   } catch (err) {
-    if (getHttpStatusCode(err) === 401 || isRateLimitError(err)) throw err;
+    rethrowIfFatal(err);
     warn(MODULE, `Failed to fetch open PRs: ${errorMessage(err)}`);
     errors.push("open PR fetch failed");
   }

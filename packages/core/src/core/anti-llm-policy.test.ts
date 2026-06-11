@@ -31,6 +31,18 @@ vi.mock("./errors.js", () => ({
     }
     return false;
   }),
+  rethrowIfFatal: vi.fn((e: unknown) => {
+    const s =
+      e && typeof e === "object" && "status" in e
+        ? (e as { status: unknown }).status
+        : undefined;
+    const msg = e instanceof Error ? e.message.toLowerCase() : "";
+    const rateLimited =
+      s === 429 ||
+      (s === 403 &&
+        (msg.includes("rate limit") || msg.includes("abuse detection")));
+    if (s === 401 || rateLimited) throw e;
+  }),
 }));
 
 vi.mock("./http-cache.js", () => ({

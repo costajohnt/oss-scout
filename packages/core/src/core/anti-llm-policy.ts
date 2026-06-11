@@ -9,7 +9,12 @@
  */
 
 import { Octokit } from "@octokit/rest";
-import { errorMessage, getHttpStatusCode, isRateLimitError } from "./errors.js";
+import {
+  errorMessage,
+  getHttpStatusCode,
+  isRateLimitError,
+  rethrowIfFatal,
+} from "./errors.js";
 import { warn } from "./logger.js";
 import { getHttpCache } from "./http-cache.js";
 import type { AntiLLMPolicyResult, AntiLLMPolicySourceFile } from "./types.js";
@@ -125,7 +130,7 @@ async function fetchFileText(
   } catch (error) {
     const status = getHttpStatusCode(error);
     if (status === 404) return { text: null, transient: false };
-    if (status === 401 || isRateLimitError(error)) throw error;
+    rethrowIfFatal(error);
     warn(
       MODULE,
       `Unexpected error fetching ${path} from ${owner}/${repo}: ${errorMessage(error)}`,

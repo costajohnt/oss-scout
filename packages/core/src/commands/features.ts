@@ -2,9 +2,7 @@
  * Features command — surfaces feature opportunities in anchor repos.
  */
 
-import { buildCommandScout } from "./command-scout.js";
-import { requireGitHubToken } from "../core/utils.js";
-import { loadLocalState, saveLocalState } from "../core/local-state.js";
+import { withScout } from "./with-scout.js";
 import { isLinkedPRStalled } from "../core/linked-pr.js";
 import type { ScoutState } from "../core/schemas.js";
 import type { FeatureCandidate } from "../core/feature-discovery.js";
@@ -112,27 +110,23 @@ function mapBiggerBet(
 export async function runFeatures(
   options: FeaturesCommandOptions,
 ): Promise<FeaturesOutput> {
-  const token = requireGitHubToken();
-  const state = options.state ?? loadLocalState();
-  const scout = await buildCommandScout(state, token);
+  return withScout(
+    options.state,
+    async (scout) => {
+      const result = await scout.features({
+        count: options.maxResults,
+        anchorThreshold: options.anchorThreshold,
+        splitRatio: options.splitRatio,
+        broad: options.broad,
+      });
 
-  const result = await scout.features({
-    count: options.maxResults,
-    anchorThreshold: options.anchorThreshold,
-    splitRatio: options.splitRatio,
-    broad: options.broad,
-  });
-
-  saveLocalState(scout.getState() as ScoutState);
-  const persisted = await scout.checkpoint();
-  if (!persisted) {
-    console.error("Warning: changes saved locally but gist sync failed.");
-  }
-
-  return {
-    quickWins: result.quickWins.map(mapQuickWin),
-    biggerBets: result.biggerBets.map(mapBiggerBet),
-    anchorRepos: result.anchorRepos,
-    message: result.message,
-  };
+      return {
+        quickWins: result.quickWins.map(mapQuickWin),
+        biggerBets: result.biggerBets.map(mapBiggerBet),
+        anchorRepos: result.anchorRepos,
+        message: result.message,
+      };
+    },
+    { persist: true },
+  );
 }

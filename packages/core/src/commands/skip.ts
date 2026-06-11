@@ -2,23 +2,17 @@
  * Skip command — manage the skip list for excluding issues from future searches.
  */
 
-import { loadLocalState, saveLocalState } from "../core/local-state.js";
+import { loadLocalState } from "../core/local-state.js";
 import type { SkippedIssue, ScoutState } from "../core/schemas.js";
-import { getGitHubToken } from "../core/utils.js";
-import { buildCommandScout } from "./command-scout.js";
+import { withScout, persistScout } from "./with-scout.js";
 import {
   ISSUE_URL_PATTERN,
   validateGitHubUrl,
   validateUrl,
 } from "./validation.js";
 
-/**
- * Build a scout for skip operations, honoring the persistence preference.
- * The old helper had two identical branches and hardcoded provided mode.
- */
-function createSkipScout(state: ScoutState) {
-  return buildCommandScout(state, getGitHubToken() ?? "");
-}
+// Skip operations are local-only, so they don't require a GitHub token.
+const SKIP_SCOUT_OPTIONS = { requireToken: false } as const;
 
 /**
  * Skip an issue by URL — adds it to the skip list and removes it from saved results.
@@ -37,28 +31,32 @@ export async function runSkip(options: {
   validateUrl(options.issueUrl);
   validateGitHubUrl(options.issueUrl, ISSUE_URL_PATTERN, "issue");
 
-  const state = options.state ?? loadLocalState();
-  const scout = await createSkipScout(state);
+  return withScout(
+    options.state,
+    async (scout) => {
+      const alreadySkipped = scout
+        .getSkippedIssues()
+        .some((s) => s.url === options.issueUrl);
+      if (alreadySkipped) {
+        return { skipped: false, alreadySkipped: true };
+      }
 
-  const alreadySkipped = scout
-    .getSkippedIssues()
-    .some((s) => s.url === options.issueUrl);
-  if (alreadySkipped) {
-    return { skipped: false, alreadySkipped: true };
-  }
+      // Try to enrich metadata from saved results
+      const saved = scout
+        .getSavedResults()
+        .find((r) => r.issueUrl === options.issueUrl);
+      const metadata = saved
+        ? { repo: saved.repo, number: saved.number, title: saved.title }
+        : parseIssueUrl(options.issueUrl);
 
-  // Try to enrich metadata from saved results
-  const saved = scout
-    .getSavedResults()
-    .find((r) => r.issueUrl === options.issueUrl);
-  const metadata = saved
-    ? { repo: saved.repo, number: saved.number, title: saved.title }
-    : parseIssueUrl(options.issueUrl);
-
-  scout.skipIssue(options.issueUrl, metadata);
-  saveLocalState(scout.getState() as ScoutState);
-  await scout.checkpoint();
-  return { skipped: true, alreadySkipped: false };
+      scout.skipIssue(options.issueUrl, metadata);
+      // Persist only on an actual change so an already-skipped no-op doesn't
+      // trigger a needless gist push.
+      await persistScout(scout);
+      return { skipped: true, alreadySkipped: false };
+    },
+    SKIP_SCOUT_OPTIONS,
+  );
 }
 
 /**
@@ -73,11 +71,13 @@ export function runSkipList(options?: { state?: ScoutState }): SkippedIssue[] {
  * Clear all skipped issues.
  */
 export async function runSkipClear(): Promise<void> {
-  const state = loadLocalState();
-  const scout = await createSkipScout(state);
-  scout.clearSkippedIssues();
-  saveLocalState(scout.getState() as ScoutState);
-  await scout.checkpoint();
+  await withScout(
+    undefined,
+    (scout) => {
+      scout.clearSkippedIssues();
+    },
+    { ...SKIP_SCOUT_OPTIONS, persist: true },
+  );
 }
 
 /**
@@ -90,14 +90,17 @@ export async function runSkipClear(): Promise<void> {
 export async function runSkipRemove(options: { issueUrl: string }): Promise<{
   removed: boolean;
 }> {
-  const state = loadLocalState();
-  const scout = await createSkipScout(state);
-  const before = scout.getSkippedIssues().length;
-  scout.unskipIssue(options.issueUrl);
-  const removed = before !== scout.getSkippedIssues().length;
-  saveLocalState(scout.getState() as ScoutState);
-  await scout.checkpoint();
-  return { removed };
+  return withScout(
+    undefined,
+    async (scout) => {
+      const before = scout.getSkippedIssues().length;
+      scout.unskipIssue(options.issueUrl);
+      const removed = before !== scout.getSkippedIssues().length;
+      await persistScout(scout);
+      return { removed };
+    },
+    SKIP_SCOUT_OPTIONS,
+  );
 }
 
 /**

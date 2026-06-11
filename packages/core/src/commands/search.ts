@@ -2,9 +2,7 @@
  * Search command — finds contributable issues using multi-strategy search.
  */
 
-import { buildCommandScout } from "./command-scout.js";
-import { requireGitHubToken } from "../core/utils.js";
-import { loadLocalState, saveLocalState } from "../core/local-state.js";
+import { withScout } from "./with-scout.js";
 import { isLinkedPRStalled } from "../core/linked-pr.js";
 import type { ScoutState, SearchStrategy } from "../core/schemas.js";
 
@@ -78,68 +76,66 @@ interface SearchCommandOptions {
 export async function runSearch(
   options: SearchCommandOptions,
 ): Promise<SearchOutput> {
-  const token = requireGitHubToken();
-  const state = options.state ?? loadLocalState();
-  const scout = await buildCommandScout(state, token);
-  const result = await scout.search({
-    maxResults: options.maxResults,
-    strategies: options.strategies,
-    preferLanguages: options.preferLanguages,
-    preferRepos: options.preferRepos,
-    diversityRatio: options.diversityRatio,
-  });
+  return withScout(
+    options.state,
+    async (scout) => {
+      const result = await scout.search({
+        maxResults: options.maxResults,
+        strategies: options.strategies,
+        preferLanguages: options.preferLanguages,
+        preferRepos: options.preferRepos,
+        diversityRatio: options.diversityRatio,
+      });
 
-  // Persist results to local state and gist
-  scout.saveResults(result.candidates);
-  saveLocalState(scout.getState() as ScoutState);
-  const persisted = await scout.checkpoint();
-  if (!persisted) {
-    console.error("Warning: changes saved locally but gist sync failed.");
-  }
+      scout.saveResults(result.candidates);
 
-  return {
-    candidates: result.candidates.map((c) => {
-      const repoScoreRecord = scout.getRepoScoreRecord(c.issue.repo);
       return {
-        issue: {
-          repo: c.issue.repo,
-          repoUrl: `https://github.com/${c.issue.repo}`,
-          number: c.issue.number,
-          title: c.issue.title,
-          url: c.issue.url,
-          labels: c.issue.labels,
-        },
-        recommendation: c.recommendation,
-        reasonsToApprove: c.reasonsToApprove,
-        reasonsToSkip: c.reasonsToSkip,
-        searchPriority: c.searchPriority,
-        viabilityScore: c.viabilityScore,
-        repoScore: repoScoreRecord
-          ? {
-              score: repoScoreRecord.score,
-              mergedPRCount: repoScoreRecord.mergedPRCount,
-              closedWithoutMergeCount: repoScoreRecord.closedWithoutMergeCount,
-              isResponsive: repoScoreRecord.signals?.isResponsive ?? false,
-              lastMergedAt: repoScoreRecord.lastMergedAt,
-            }
-          : undefined,
-        linkedPR: c.vettingResult.linkedPR
-          ? {
-              number: c.vettingResult.linkedPR.number,
-              state: c.vettingResult.linkedPR.state,
-              url: c.vettingResult.linkedPR.url,
-              updatedAt: c.vettingResult.linkedPR.updatedAt,
-              isStalled: isLinkedPRStalled(c.vettingResult.linkedPR),
-            }
-          : undefined,
-        boostScore: c.boostScore,
-        boostReasons: c.boostReasons,
-        diversitySlot: c.diversitySlot,
+        candidates: result.candidates.map((c) => {
+          const repoScoreRecord = scout.getRepoScoreRecord(c.issue.repo);
+          return {
+            issue: {
+              repo: c.issue.repo,
+              repoUrl: `https://github.com/${c.issue.repo}`,
+              number: c.issue.number,
+              title: c.issue.title,
+              url: c.issue.url,
+              labels: c.issue.labels,
+            },
+            recommendation: c.recommendation,
+            reasonsToApprove: c.reasonsToApprove,
+            reasonsToSkip: c.reasonsToSkip,
+            searchPriority: c.searchPriority,
+            viabilityScore: c.viabilityScore,
+            repoScore: repoScoreRecord
+              ? {
+                  score: repoScoreRecord.score,
+                  mergedPRCount: repoScoreRecord.mergedPRCount,
+                  closedWithoutMergeCount:
+                    repoScoreRecord.closedWithoutMergeCount,
+                  isResponsive: repoScoreRecord.signals?.isResponsive ?? false,
+                  lastMergedAt: repoScoreRecord.lastMergedAt,
+                }
+              : undefined,
+            linkedPR: c.vettingResult.linkedPR
+              ? {
+                  number: c.vettingResult.linkedPR.number,
+                  state: c.vettingResult.linkedPR.state,
+                  url: c.vettingResult.linkedPR.url,
+                  updatedAt: c.vettingResult.linkedPR.updatedAt,
+                  isStalled: isLinkedPRStalled(c.vettingResult.linkedPR),
+                }
+              : undefined,
+            boostScore: c.boostScore,
+            boostReasons: c.boostReasons,
+            diversitySlot: c.diversitySlot,
+          };
+        }),
+        excludedRepos: result.excludedRepos,
+        aiPolicyBlocklist: result.aiPolicyBlocklist,
+        rateLimitWarning: result.rateLimitWarning,
+        strategiesUsed: result.strategiesUsed,
       };
-    }),
-    excludedRepos: result.excludedRepos,
-    aiPolicyBlocklist: result.aiPolicyBlocklist,
-    rateLimitWarning: result.rateLimitWarning,
-    strategiesUsed: result.strategiesUsed,
-  };
+    },
+    { persist: true },
+  );
 }
