@@ -36,11 +36,6 @@ vi.mock("./search-phases.js", () => ({
     allVetFailed: false,
     rateLimitHit: false,
   }),
-  searchInRepos: vi.fn().mockResolvedValue({
-    candidates: [],
-    allBatchesFailed: false,
-    rateLimitHit: false,
-  }),
   fetchIssuesFromKnownRepos: vi.fn().mockResolvedValue({
     candidates: [],
     allReposFailed: false,
@@ -138,8 +133,7 @@ function makeFakeCandidate(repo: string, priority: string) {
 // ── Import after mocks ─────────────────────────────────────────────
 
 const { IssueDiscovery } = await import("./issue-discovery.js");
-const { searchInRepos, fetchIssuesFromKnownRepos } =
-  await import("./search-phases.js");
+const { fetchIssuesFromKnownRepos } = await import("./search-phases.js");
 
 const basePreferences = {
   githubUsername: "test",
@@ -168,11 +162,6 @@ describe("Strategy Selection", () => {
     (fetchIssuesFromKnownRepos as ReturnType<typeof vi.fn>).mockResolvedValue({
       candidates: [makeFakeCandidate("owner/merged-repo", "merged_pr")],
       allReposFailed: false,
-      rateLimitHit: false,
-    });
-    (searchInRepos as ReturnType<typeof vi.fn>).mockResolvedValue({
-      candidates: [],
-      allBatchesFailed: false,
       rateLimitHit: false,
     });
     mockVetIssuesParallel.mockResolvedValue({
