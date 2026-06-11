@@ -228,6 +228,7 @@ oss-scout config reset                               # reset to defaults
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
+| `githubUsername` | string | (detected) | Your GitHub login; seeds personalization |
 | `languages` | string[] | any (all languages) | Programming language filter (use "any" for no filter) |
 | `labels` | string[] | good first issue, help wanted | Issue label filter |
 | `scope` | enum[] | all | Difficulty: beginner, intermediate, advanced |
@@ -236,11 +237,18 @@ oss-scout config reset                               # reset to defaults
 | `includeDocIssues` | boolean | true | Include documentation-only issues |
 | `minRepoScoreThreshold` | number | 4 | Skip repos scoring below this (1-10) |
 | `excludeRepos` | string[] | [] | Repos to never search |
+| `excludeOrgs` | string[] | [] | Orgs to never search |
 | `aiPolicyBlocklist` | string[] | matplotlib/matplotlib | Repos with anti-AI policies |
 | `projectCategories` | enum[] | [] | Topic filter: devtools, web-frameworks, etc. |
+| `defaultStrategy` | enum[] | all | Default search strategies: merged, starred, broad, maintained |
+| `interPhaseDelayMs` | number | 30000 | Delay between search phases (rate-limit pacing) |
+| `broadPhaseDelayMs` | number | 90000 | Extra delay before the broad phase |
+| `skipBroadWhenSufficientResults` | number | 8 | Skip the broad phase once this many candidates are found (0 disables) |
 | `persistence` | enum | local | State storage: local or gist |
 | `slmTriageModel` | string | (disabled) | Ollama model id for local SLM pre-triage during vetting (e.g. `gemma4:e4b`); empty disables it |
 | `slmTriageHost` | string | (127.0.0.1:11434) | Override the Ollama HTTP host when it runs on another machine |
+| `featuresAnchorThreshold` | number | 3 | Min merged-PR count for a repo to be a `features` anchor (1-50) |
+| `featuresSplitRatio` | number | 0.6 | `features` quick-wins / bigger-bets split (0-1) |
 
 ## Install Options
 
@@ -281,7 +289,7 @@ Agents (dispatched automatically by Claude):
 }
 ```
 
-**Tools:** search, vet, skip, config, config-set
+**Tools:** search, scout-features, vet, skip, config, config-set
 **Resources:** scout://config, scout://results, scout://scores
 
 ### As a Library
@@ -301,12 +309,13 @@ for (const c of results.candidates) {
 }
 ```
 
-Two persistence modes:
-- **`'provided'`** — caller manages state (for embedding in other tools)
-- **`'gist'`** — oss-scout manages state via private GitHub gist
+Three persistence modes:
+- **`'local'`** (default) — loads and saves `~/.oss-scout/state.json`
+- **`'gist'`** — oss-scout manages state via a private GitHub gist
+- **`'provided'`** — caller owns the state object (for embedding in other tools)
 
 ```typescript
-// Host application provides state
+// Host application provides and owns the state
 const scout = await createScout({
   githubToken: token,
   persistence: 'provided',
@@ -316,7 +325,11 @@ const scout = await createScout({
 // Record PR outcomes to improve future search quality
 scout.recordMergedPR({ url, title, mergedAt, repo });
 scout.recordClosedPR({ url, title, closedAt, repo });
-await scout.checkpoint(); // push to gist
+
+// checkpoint() persists according to the mode: it writes local state in
+// 'local' mode and pushes the gist in 'gist' mode. In 'provided' mode the
+// caller owns persistence, so checkpoint() does not write — read scout.getState().
+await scout.checkpoint();
 ```
 
 ## Viability Scoring (0-100)
@@ -341,7 +354,10 @@ Score is clamped to 0-100. Results sorted by: search priority > recommendation >
 ## CLI Reference
 
 ```
-oss-scout [--debug] [--json] <command>
+oss-scout [--debug] <command> [--json]
+
+Note: --debug is program-level; --json is a per-subcommand flag (it goes after
+the command, e.g. `oss-scout search --json`, not `oss-scout --json search`).
 
 Setup:
   setup                         Interactive first-run configuration
@@ -350,6 +366,13 @@ Setup:
 Search:
   search [count]                Search for issues (default: 10)
     --strategy <s>              Strategies: merged,starred,broad,maintained,all
+    --prefer-languages <list>   Soft-boost ranking for matching repo languages
+    --prefer-repos <list>       Soft-boost ranking for these owner/repo slugs
+    --diversity-ratio <n>       Reserve a fraction (0-1) of slots for unboosted
+  features [count]              Feature opportunities in repos with 3+ merged PRs
+    --anchor-threshold <n>      Override featuresAnchorThreshold (1-50)
+    --split-ratio <r>           Override featuresSplitRatio (0-1)
+    --broad                     Search across the ecosystem, not just anchors
   vet <issue-url>               Vet a specific issue
   vet-list                      Re-vet all saved results
     --prune                     Remove unavailable issues
@@ -393,6 +416,11 @@ Automatically filtered out:
 ├── issue-eligibility       PR checks, claim detection, requirements analysis
 ├── issue-scoring           Viability scoring (pure functions)
 ├── issue-filtering         Spam detection, doc-only filtering, per-repo caps
+├── anti-llm-policy         Detect repos with anti-AI contribution policies
+├── feature-discovery       `scout features` anchor + broad discovery
+├── personalization         preferLanguages/preferRepos boosts + diversity
+├── linked-pr / roadmap     Stalled-PR detection, ROADMAP.md scraping
+├── slm-triage              Optional local Ollama SLM pre-triage
 ├── search-phases           GitHub Search API helpers, caching, batching
 ├── search-budget           Rate limit tracking (30 req/min sliding window)
 ├── repo-health             Project health checks, CONTRIBUTING.md parsing
