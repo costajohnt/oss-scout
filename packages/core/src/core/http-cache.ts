@@ -19,6 +19,27 @@ import { errorMessage, getHttpStatusCode } from "./errors.js";
 
 const MODULE = "http-cache";
 
+/**
+ * Schema version for cache entries whose body is an oss-scout-defined shape
+ * (vetting results, search payloads, policy scans, merged-PR counts) rather
+ * than a raw GitHub API response. These are deserialized with an unchecked
+ * cast, so a shape change between releases would otherwise let a new build read
+ * a stale-shaped entry. Bump this whenever one of those cached shapes changes:
+ * old entries then miss the version-prefixed key and are refetched instead of
+ * misread (#158). Raw ETag-keyed GitHub responses are not versioned — their
+ * shape is owned by GitHub, not us.
+ */
+export const CACHE_SCHEMA_VERSION = "v1";
+
+/**
+ * Prefix a synthetic (non-URL) cache key with the schema version so a shape
+ * change invalidates old entries. Use for every key whose body is read back
+ * with an unchecked cast.
+ */
+export function versionedCacheKey(key: string): string {
+  return `${CACHE_SCHEMA_VERSION}:${key}`;
+}
+
 /** Shape of a single cache entry on disk. */
 export interface CacheEntry {
   etag: string;

@@ -66,7 +66,7 @@ let tmpCounter = 0;
  * is still last-writer-wins (no lock), but each save is now atomic and
  * crash-free on its own.
  */
-export function saveLocalState(state: ScoutState): void {
+export function saveLocalState(state: Readonly<ScoutState>): void {
   const statePath = getStatePath();
   const tmpPath = `${statePath}.tmp.${process.pid}.${tmpCounter++}`;
 

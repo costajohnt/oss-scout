@@ -211,6 +211,7 @@ function makeStateReader(
     getStarredRepos: vi.fn(() => []),
     getProjectCategories: vi.fn(() => []),
     getRepoScore: vi.fn(() => null),
+    getSLMTriageConfig: vi.fn(() => null),
     ...overrides,
   };
 }

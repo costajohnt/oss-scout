@@ -16,7 +16,7 @@ import {
   rethrowIfFatal,
 } from "./errors.js";
 import { warn } from "./logger.js";
-import { getHttpCache } from "./http-cache.js";
+import { getHttpCache, versionedCacheKey } from "./http-cache.js";
 import type { AntiLLMPolicyResult, AntiLLMPolicySourceFile } from "./types.js";
 
 const MODULE = "anti-llm-policy";
@@ -224,7 +224,7 @@ export async function fetchAndScanAntiLLMPolicy(
   options?: AntiLLMPolicyOptions,
 ): Promise<AntiLLMPolicyResult> {
   const cache = getHttpCache();
-  const cacheKey = `anti-llm-policy:${owner}/${repo}`;
+  const cacheKey = versionedCacheKey(`anti-llm-policy:${owner}/${repo}`);
   const cached = cache.getIfFresh(cacheKey, POLICY_SCAN_CACHE_TTL_MS);
   if (isAntiLLMPolicyResult(cached)) return cached;
 

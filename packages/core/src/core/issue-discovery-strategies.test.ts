@@ -154,6 +154,7 @@ const baseStateReader = {
   getStarredRepos: () => [] as string[],
   getProjectCategories: () => [] as string[],
   getRepoScore: () => null,
+  getSLMTriageConfig: () => null,
 };
 
 describe("Strategy Selection", () => {

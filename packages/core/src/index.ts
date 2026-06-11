@@ -29,6 +29,8 @@ export type {
   OpenPRRecord,
   RepoScoreUpdate,
   ProjectHealth,
+  ProjectHealthData,
+  ProjectHealthFailure,
   SearchPriority,
   CheckResult,
   AntiLLMPolicyResult,
@@ -36,6 +38,7 @@ export type {
   VetListOptions,
   VetListResult,
   VetListEntry,
+  VetListEntryBase,
   VetListSummary,
   SyncResult,
 } from "./core/types.js";
@@ -91,6 +94,7 @@ export {
   IssueVetter,
   type ScoutStateReader,
   type ScoutStateWriter,
+  type SLMConfig,
   type FeatureSignals,
 } from "./core/issue-vetting.js";
 export {

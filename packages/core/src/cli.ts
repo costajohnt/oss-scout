@@ -574,8 +574,7 @@ program
                     : r.status === "closed"
                       ? "🚫"
                       : "❌";
-            const score =
-              r.viabilityScore != null ? ` [${r.viabilityScore}/100]` : "";
+            const score = r.ok ? ` [${r.viabilityScore}/100]` : "";
             console.log(
               `  ${icon} ${r.repo}#${r.number} — ${r.status}${score}`,
             );
@@ -730,13 +729,19 @@ program
           console.log("Reasons to skip:");
           for (const r of result.reasonsToSkip) console.log(`  - ${r}`);
         }
-        console.log(
-          `\nProject health: ${result.projectHealth.isActive ? "Active" : "Inactive"}`,
-        );
-        console.log(
-          `  Last commit: ${result.projectHealth.daysSinceLastCommit} days ago`,
-        );
-        console.log(`  CI status: ${result.projectHealth.ciStatus}`);
+        if (result.projectHealth.checkFailed) {
+          console.log(
+            `\nProject health: unknown (check failed: ${result.projectHealth.failureReason})`,
+          );
+        } else {
+          console.log(
+            `\nProject health: ${result.projectHealth.isActive ? "Active" : "Inactive"}`,
+          );
+          console.log(
+            `  Last commit: ${result.projectHealth.daysSinceLastCommit} days ago`,
+          );
+          console.log(`  CI status: ${result.projectHealth.ciStatus}`);
+        }
       }
     }),
   );

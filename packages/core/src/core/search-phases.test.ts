@@ -59,6 +59,7 @@ const mockCache = {
   set: vi.fn(),
 };
 vi.mock("./http-cache.js", () => ({
+  versionedCacheKey: (key: string) => key,
   getHttpCache: vi.fn(() => mockCache),
 }));
 

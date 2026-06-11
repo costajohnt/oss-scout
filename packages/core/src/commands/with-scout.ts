@@ -23,7 +23,7 @@ const GIST_SYNC_WARNING =
  * stderr if the gist push failed (local save still succeeded).
  */
 export async function persistScout(scout: OssScout): Promise<void> {
-  saveLocalState(scout.getState() as ScoutState);
+  saveLocalState(scout.getState());
   const persisted = await scout.checkpoint();
   if (!persisted) {
     console.error(GIST_SYNC_WARNING);

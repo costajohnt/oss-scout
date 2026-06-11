@@ -32,8 +32,8 @@ export type {
 
 // ── Ephemeral types ─────────────────────────────────────────────────
 
-/** Health snapshot of a GitHub repository. */
-export interface ProjectHealth {
+/** A successful health snapshot of a GitHub repository. */
+export interface ProjectHealthData {
   repo: string;
   lastCommitAt: string;
   daysSinceLastCommit: number;
@@ -44,9 +44,28 @@ export interface ProjectHealth {
   stargazersCount?: number;
   forksCount?: number;
   language?: string | null;
-  checkFailed?: boolean;
-  failureReason?: string;
+  /** Discriminant: a real snapshot is never `checkFailed`. */
+  checkFailed?: false;
+  failureReason?: undefined;
 }
+
+/**
+ * The health check itself failed (transient API error). Only the repo and the
+ * failure reason are known — none of the snapshot fields are meaningful, so the
+ * type does not carry them. Narrow on `checkFailed` to reach a real snapshot.
+ */
+export interface ProjectHealthFailure {
+  repo: string;
+  checkFailed: true;
+  failureReason: string;
+}
+
+/**
+ * Health snapshot of a GitHub repository, or a marker that the check failed.
+ * A discriminated union (on `checkFailed`) so the "failure" shape can't be read
+ * as if it carried real snapshot data. Narrow before reading snapshot fields.
+ */
+export type ProjectHealth = ProjectHealthData | ProjectHealthFailure;
 
 /** Priority tier for issue search results. */
 export type SearchPriority = "merged_pr" | "starred" | "normal";
@@ -98,26 +117,18 @@ export interface IssueCandidate {
   viabilityScore: number;
   searchPriority: SearchPriority;
   /**
-   * Personalization sort tier (#1244). Populated only when the caller
-   * passes `preferLanguages` / `preferRepos` to `search()` *and* the
-   * candidate matches at least one. Affects sort order between the
-   * `recommendation` tier and `viabilityScore`; never used as a filter.
+   * Personalization marker (#1244). A candidate is EITHER boosted (it matched
+   * a `preferLanguages` / `preferRepos` bias and gets a soft sort boost between
+   * the `recommendation` tier and `viabilityScore`) OR a diversity slot (it
+   * matched no bias and filled a slot reserved by `diversityRatio`) — never
+   * both. Modelling it as a single discriminated field makes that mutual
+   * exclusivity structural instead of prose across three optional fields.
+   * Absent when no personalization was requested or the candidate matched
+   * nothing.
    */
-  boostScore?: number;
-  /**
-   * Human-readable reasons the candidate matched personalization bias
-   * (#1244). Mirrors `reasonsToApprove`/`reasonsToSkip` shape for
-   * symmetry with the existing surface.
-   */
-  boostReasons?: string[];
-  /**
-   * Marks a candidate that filled a reserved diversity slot (#1244).
-   * Populated only when `diversityRatio > 0` was passed AND the
-   * candidate matched no personalization bias. Mutually exclusive with
-   * a non-zero `boostScore` (a candidate cannot be both biased-toward
-   * and a diversity slot in the same result set).
-   */
-  diversitySlot?: boolean;
+  personalization?:
+    | { kind: "boosted"; score: number; reasons: string[] }
+    | { kind: "diversity" };
 }
 
 /** Subset of RepoScore fields that callers may update. */
@@ -131,12 +142,16 @@ export interface RepoScoreUpdate {
   language?: string | null;
 }
 
-/** Result of a check (e.g., no existing PR, not claimed). */
-export interface CheckResult {
-  passed: boolean;
-  inconclusive?: boolean;
-  reason?: string;
-}
+/**
+ * Result of a check (e.g., no existing PR, not claimed). Discriminated on
+ * `inconclusive`: a `reason` exists only when the check could not be completed
+ * (a transient API error), and an inconclusive check always reports `passed:
+ * true` because the caller assumes the issue is still eligible. A conclusive
+ * result carries no `reason`.
+ */
+export type CheckResult =
+  | { passed: boolean; inconclusive?: false; reason?: undefined }
+  | { passed: true; inconclusive: true; reason: string };
 
 // ── Const arrays and mappings ───────────────────────────────────────
 
@@ -166,17 +181,32 @@ export interface VetListOptions {
   prune?: boolean;
 }
 
-/** A single entry in the vet-list result. */
-export interface VetListEntry {
+/** Identity fields shared by every vet-list entry, regardless of outcome. */
+export interface VetListEntryBase {
   issueUrl: string;
   repo: string;
   number: number;
   title: string;
   status: "still_available" | "claimed" | "closed" | "has_pr" | "error";
-  recommendation?: "approve" | "skip" | "needs_review";
-  viabilityScore?: number;
-  errorMessage?: string;
 }
+
+/**
+ * A single entry in the vet-list result. Discriminated on `ok`: a completed vet
+ * (`ok: true`) carries `recommendation` + `viabilityScore` and never an
+ * `errorMessage`; a vet that threw (`ok: false`, including a 404/410 that
+ * classifies the issue as `closed`) carries only the `errorMessage`. This makes
+ * the "score xor error" invariant structural instead of prose.
+ */
+export type VetListEntry =
+  | (VetListEntryBase & {
+      ok: true;
+      recommendation: "approve" | "skip" | "needs_review";
+      viabilityScore: number;
+    })
+  | (VetListEntryBase & {
+      ok: false;
+      errorMessage: string;
+    });
 
 /** Summary counts for a vet-list run. */
 export interface VetListSummary {

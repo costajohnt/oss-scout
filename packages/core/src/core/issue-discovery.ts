@@ -51,7 +51,11 @@ import {
   fetchIssuesFromKnownRepos,
   searchAcrossLanguagesAndLabels,
 } from "./search-phases.js";
-import { annotateBoost, applyDiversityRatio } from "./personalization.js";
+import {
+  annotateBoost,
+  applyDiversityRatio,
+  boostScoreOf,
+} from "./personalization.js";
 
 const MODULE = "issue-discovery";
 
@@ -844,13 +848,18 @@ export class IssueDiscovery {
         `Try again after the rate limit resets for complete results.`;
     }
 
-    // Personalization annotation (#1244): tag each candidate with
-    // boostScore + boostReasons before sorting so the new sort tier has
-    // values to read. No-op when neither preference list is supplied.
-    annotateBoost(allCandidates, options.preferLanguages, options.preferRepos);
+    // Personalization annotation (#1244): tag matched candidates with a
+    // `personalization` marker before sorting so the new sort tier has values
+    // to read. Returns a new array (no in-place candidate mutation, #158);
+    // a no-op when neither preference list is supplied.
+    const ranked = annotateBoost(
+      allCandidates,
+      options.preferLanguages,
+      options.preferRepos,
+    );
 
     // Sort by priority, recommendation, boost (#1244), then viability score
-    allCandidates.sort((a, b) => {
+    ranked.sort((a, b) => {
       const priorityOrder: Record<SearchPriority, number> = {
         merged_pr: 0,
         starred: 1,
@@ -866,18 +875,18 @@ export class IssueDiscovery {
         recommendationOrder[b.recommendation];
       if (recDiff !== 0) return recDiff;
 
-      // Personalization tier (#1244): higher boostScore wins. Treats
-      // undefined as 0 so unboosted candidates rank below boosted peers
-      // but stay ordered among themselves by viabilityScore. No-op when
-      // `preferLanguages`/`preferRepos` are absent — all candidates carry
-      // `boostScore: undefined` and the difference collapses to 0.
-      const boostDiff = (b.boostScore ?? 0) - (a.boostScore ?? 0);
+      // Personalization tier (#1244): higher boost wins. boostScoreOf treats
+      // an unboosted candidate as 0 so they rank below boosted peers but stay
+      // ordered among themselves by viabilityScore. No-op when
+      // `preferLanguages`/`preferRepos` are absent — every candidate scores 0
+      // and the difference collapses.
+      const boostDiff = boostScoreOf(b) - boostScoreOf(a);
       if (boostDiff !== 0) return boostDiff;
 
       return b.viabilityScore - a.viabilityScore;
     });
 
-    const capped = applyPerRepoCap(allCandidates, 2);
+    const capped = applyPerRepoCap(ranked, 2);
 
     // Diversity counterweight (#1244): when `diversityRatio > 0`, reserve
     // a fraction of the final slots for candidates that matched neither

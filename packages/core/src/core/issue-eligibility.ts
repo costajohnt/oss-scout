@@ -10,14 +10,22 @@ import { Octokit } from "@octokit/rest";
 import { paginateAll } from "./pagination.js";
 import { errorMessage, rethrowIfFatal } from "./errors.js";
 import { warn } from "./logger.js";
-import { getHttpCache, withInflightDedup } from "./http-cache.js";
+import {
+  getHttpCache,
+  withInflightDedup,
+  versionedCacheKey,
+} from "./http-cache.js";
 import { getSearchBudgetTracker } from "./search-budget.js";
 import type { CheckResult, LinkedPR } from "./types.js";
 
-/** Result of the existing-PR check, including metadata for the first linked PR (if any). */
-export interface ExistingPRCheckResult extends CheckResult {
+/**
+ * Result of the existing-PR check, including metadata for the first linked PR
+ * (if any). An intersection (not `extends`) because CheckResult is now a
+ * discriminated union (#158); the `& { linkedPR }` distributes over both arms.
+ */
+export type ExistingPRCheckResult = CheckResult & {
   linkedPR: LinkedPR | null;
-}
+};
 
 /** Shape of a cross-referenced PR event from the GitHub issue timeline API. */
 type CrossRefEvent = {
@@ -224,7 +232,7 @@ export async function checkUserMergedPRsInRepo(
   repo: string,
 ): Promise<number | null> {
   const cache = getHttpCache();
-  const cacheKey = `merged-prs:${owner}/${repo}`;
+  const cacheKey = versionedCacheKey(`merged-prs:${owner}/${repo}`);
 
   // In-flight dedup: parallel vetting frequently hits several issues from
   // one repo at once, and each used to pay a separate Search API call
