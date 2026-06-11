@@ -29,7 +29,17 @@ vi.mock("../core/utils.js", () => ({
 
 vi.mock("../core/local-state.js", () => ({
   saveLocalState: vi.fn(),
-  loadLocalState: vi.fn(),
+  loadLocalState: vi.fn(() => ({
+    version: 1,
+    preferences: { persistence: "local" },
+    savedResults: [],
+    skippedIssues: [],
+    mergedPRs: [],
+    closedPRs: [],
+    openPRs: [],
+    repoScores: {},
+    starredRepos: [],
+  })),
   hasLocalState: vi.fn().mockReturnValue(true),
 }));
 
