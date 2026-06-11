@@ -516,10 +516,17 @@ export class IssueDiscovery {
     const minStars = config.minStars ?? 50;
     const interPhaseDelay = config.interPhaseDelayMs ?? 30000;
 
-    // Strategy selection
+    // Strategy selection. Empty arrays count as "unset" so a stored
+    // defaultStrategy of [] can't silently produce zero-strategy searches.
     const ALL_STRATEGIES: readonly SearchStrategy[] = CONCRETE_STRATEGIES;
-    const rawStrategies = options.strategies ??
-      config.defaultStrategy ?? ["all"];
+    const pickStrategies = (
+      ...candidates: Array<readonly SearchStrategy[] | undefined>
+    ): readonly SearchStrategy[] =>
+      candidates.find((c) => c && c.length > 0) ?? ["all"];
+    const rawStrategies = pickStrategies(
+      options.strategies,
+      config.defaultStrategy,
+    );
     const enabledStrategies = new Set<SearchStrategy>(
       rawStrategies.includes("all") ? ALL_STRATEGIES : rawStrategies,
     );
