@@ -405,6 +405,47 @@ describe("IssueVetter", () => {
       expect(result.vettingResult.linkedPR).toBeNull();
     });
 
+    it("classifies the user's own open PR as 'you're already on it' (#166)", async () => {
+      vi.mocked(checkNoExistingPR).mockResolvedValueOnce({
+        passed: false,
+        linkedPR: {
+          number: 99,
+          author: "octocat",
+          state: "open",
+          merged: false,
+          url: "https://github.com/owner/repo/pull/99",
+        },
+      });
+      const vetter = makeVetter({
+        getGitHubUsername: vi.fn(() => "OctoCat"), // case-insensitive match
+      });
+      const result = await vetter.vetIssue(VALID_ISSUE_URL);
+      expect(result.recommendation).toBe("skip");
+      expect(result.reasonsToSkip).toContain("You already have a PR in flight");
+      expect(result.reasonsToSkip).not.toContain("Has existing PR");
+    });
+
+    it("treats a competing PR (different author) as existing-PR competition", async () => {
+      vi.mocked(checkNoExistingPR).mockResolvedValueOnce({
+        passed: false,
+        linkedPR: {
+          number: 99,
+          author: "someone-else",
+          state: "open",
+          merged: false,
+          url: "https://github.com/owner/repo/pull/99",
+        },
+      });
+      const vetter = makeVetter({
+        getGitHubUsername: vi.fn(() => "octocat"),
+      });
+      const result = await vetter.vetIssue(VALID_ISSUE_URL);
+      expect(result.reasonsToSkip).toContain("Has existing PR");
+      expect(result.reasonsToSkip).not.toContain(
+        "You already have a PR in flight",
+      );
+    });
+
     it("attaches antiLLMPolicy default (no match) when scan finds nothing", async () => {
       const vetter = makeVetter();
       const result = await vetter.vetIssue(VALID_ISSUE_URL);

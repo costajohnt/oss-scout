@@ -108,6 +108,11 @@ export interface ScoutStateReader {
    * Optional so existing implementations keep compiling; absent reads as 0.
    */
   getClosedWithoutMergeCount?(repo: string): number;
+  /**
+   * The configured GitHub username, used to tell the user's own in-flight PR
+   * apart from a competing one (#166). Optional; absent reads as "unknown".
+   */
+  getGitHubUsername?(): string;
 }
 
 /**
@@ -138,6 +143,12 @@ export interface ScoutStateWriter {
  */
 export interface RecommendationInput {
   noExistingPR: boolean;
+  /**
+   * The linked PR is the user's own open PR (#166). When true, the existing-PR
+   * block is reframed as "you're already on it" — a skip with a clear reason —
+   * instead of a competing-PR penalty.
+   */
+  ownPR: boolean;
   notClaimed: boolean;
   clearRequirements: boolean;
   contributionGuidelinesFound: boolean;
@@ -179,7 +190,12 @@ export function deriveRecommendation(
   const reasonsToSkip: string[] = [];
 
   // Notes (order preserved from the original vetIssue body).
-  if (!input.noExistingPR) notes.push("Existing PR found for this issue");
+  if (!input.noExistingPR)
+    notes.push(
+      input.ownPR
+        ? "Your PR is already in flight for this issue"
+        : "Existing PR found for this issue",
+    );
   if (!input.notClaimed) notes.push("Issue appears to be claimed by someone");
   if (input.existingPRInconclusive) {
     notes.push(
@@ -203,7 +219,10 @@ export function deriveRecommendation(
     notes.push("No CONTRIBUTING.md found");
 
   // Reasons to skip / approve.
-  if (!input.noExistingPR) reasonsToSkip.push("Has existing PR");
+  if (!input.noExistingPR)
+    reasonsToSkip.push(
+      input.ownPR ? "You already have a PR in flight" : "Has existing PR",
+    );
   if (!input.notClaimed) reasonsToSkip.push("Already claimed");
   if (!input.projectIsActive && !input.projectCheckFailed)
     reasonsToSkip.push("Inactive project");
@@ -236,6 +255,9 @@ export function deriveRecommendation(
   // Recommendation.
   let recommendation: "approve" | "skip" | "needs_review";
   if (input.issueClosed) {
+    recommendation = "skip";
+  } else if (input.ownPR) {
+    // You're already working on this; don't re-surface it as competition.
     recommendation = "skip";
   } else if (input.passedAllChecks) {
     recommendation = "approve";
@@ -354,6 +376,18 @@ export class IssueVetter {
     const noExistingPR = existingPRCheck.passed;
     const notClaimed = claimCheck.passed;
 
+    // Is the linked PR the user's own open PR (#166)? If so the issue is
+    // "you're already on it", not competition.
+    const username = this.stateReader.getGitHubUsername?.() ?? "";
+    const linkedPR = existingPRCheck.linkedPR;
+    const ownPR =
+      !noExistingPR &&
+      !!linkedPR &&
+      linkedPR.state === "open" &&
+      !linkedPR.merged &&
+      username !== "" &&
+      linkedPR.author.toLowerCase() === username.toLowerCase();
+
     // Analyze issue quality
     const clearRequirements = analyzeRequirements(ghIssue.body || "");
 
@@ -435,6 +469,7 @@ export class IssueVetter {
     const { notes, reasonsToApprove, reasonsToSkip, recommendation } =
       deriveRecommendation({
         noExistingPR,
+        ownPR,
         notClaimed,
         clearRequirements,
         contributionGuidelinesFound: !!contributionGuidelines,

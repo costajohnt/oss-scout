@@ -465,6 +465,11 @@ export class OssScout implements ScoutStateReader, ScoutStateWriter {
     return this.state.preferences.projectCategories;
   }
 
+  /** Configured GitHub username (used to classify own vs competing PRs, #166). */
+  getGitHubUsername(): string {
+    return this.state.preferences.githubUsername;
+  }
+
   getRepoScore(repo: string): number | null {
     const score = this.state.repoScores[repo];
     return score ? score.score : null;
