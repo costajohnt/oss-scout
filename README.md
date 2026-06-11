@@ -220,7 +220,7 @@ oss-scout config set languages "typescript,rust"    # set languages
 oss-scout config set minStars 100                   # minimum repo stars
 oss-scout config set includeDocIssues false          # exclude doc-only issues
 oss-scout config set excludeRepos "+spam/repo"       # append to exclude list
-oss-scout config set excludeRepos "-spam/repo"       # remove from exclude list
+oss-scout config set excludeRepos -- "-spam/repo"   # remove ("--" escapes the dash)
 oss-scout config reset                               # reset to defaults
 ```
 
