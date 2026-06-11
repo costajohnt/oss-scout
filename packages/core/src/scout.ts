@@ -402,6 +402,7 @@ export class OssScout implements ScoutStateReader {
         (r) => !unavailableUrls.has(r.issueUrl),
       );
       prunedCount = before - (this.state.savedResults?.length ?? 0);
+      if (prunedCount > 0) this.addTombstones([...unavailableUrls]);
       this.dirty = true;
     }
 
@@ -582,6 +583,9 @@ export class OssScout implements ScoutStateReader {
    */
   updatePreferences(updates: Partial<ScoutPreferences>): void {
     this.state.preferences = { ...this.state.preferences, ...updates };
+    // Stamp so the gist merge keeps the fresher preferences instead of
+    // always taking the remote copy (#117).
+    this.state.preferencesUpdatedAt = new Date().toISOString();
     this.dirty = true;
   }
 
@@ -644,8 +648,23 @@ export class OssScout implements ScoutStateReader {
    * Clear all saved results.
    */
   clearResults(): void {
+    this.addTombstones((this.state.savedResults ?? []).map((r) => r.issueUrl));
     this.state.savedResults = [];
     this.dirty = true;
+  }
+
+  /**
+   * Record deletion tombstones (#117) so a later gist merge does not
+   * resurrect these URLs from another machine's copy. A re-add with a newer
+   * timestamp overrides the tombstone in mergeStates.
+   */
+  private addTombstones(urls: string[]): void {
+    if (urls.length === 0) return;
+    const removedAt = new Date().toISOString();
+    const existing = this.state.tombstones ?? [];
+    const byUrl = new Map(existing.map((t) => [t.url, t]));
+    for (const url of urls) byUrl.set(url, { url, removedAt });
+    this.state.tombstones = [...byUrl.values()];
   }
 
   // ── Skip List ───────────────────────────────────────────────────────
@@ -669,7 +688,10 @@ export class OssScout implements ScoutStateReader {
         skippedAt: new Date().toISOString(),
       },
     ];
-    // Also remove from saved results if present
+    // Also remove from saved results if present. No tombstone needed: the
+    // skip entry itself is the durable record, and mergeStates reconciles
+    // saved results against the skip list so a merge can't resurrect a
+    // skipped URL into the saved list (#117).
     if (this.state.savedResults) {
       this.state.savedResults = this.state.savedResults.filter(
         (r) => r.issueUrl !== url,
@@ -689,9 +711,11 @@ export class OssScout implements ScoutStateReader {
    * Remove a specific issue from the skip list.
    */
   unskipIssue(url: string): void {
+    const before = (this.state.skippedIssues ?? []).length;
     this.state.skippedIssues = (this.state.skippedIssues ?? []).filter(
       (s) => s.url !== url,
     );
+    if (this.state.skippedIssues.length < before) this.addTombstones([url]);
     this.dirty = true;
   }
 
@@ -699,6 +723,7 @@ export class OssScout implements ScoutStateReader {
    * Clear all skipped issues.
    */
   clearSkippedIssues(): void {
+    this.addTombstones((this.state.skippedIssues ?? []).map((s) => s.url));
     this.state.skippedIssues = [];
     this.dirty = true;
   }

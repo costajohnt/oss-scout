@@ -56,6 +56,7 @@ program
       const prefs = await runSetup();
       const state = loadLocalState();
       state.preferences = prefs;
+      state.preferencesUpdatedAt = new Date().toISOString(); // #117 merge recency
       saveLocalState(state);
       if (options.json) {
         console.log(formatJsonSuccess(prefs));

@@ -235,6 +235,7 @@ export function runConfigSet(key: string, value: string): ScoutPreferences {
   // Validate the full preferences object
   const validated = ScoutPreferencesSchema.parse(prefs);
   state.preferences = validated;
+  state.preferencesUpdatedAt = new Date().toISOString(); // #117 merge recency
   saveLocalState(state);
 
   return validated;
@@ -247,6 +248,7 @@ export function runConfigReset(): ScoutPreferences {
   const state = loadLocalState();
   const defaults = ScoutPreferencesSchema.parse({});
   state.preferences = defaults;
+  state.preferencesUpdatedAt = new Date().toISOString(); // #117 merge recency
   saveLocalState(state);
   return defaults;
 }

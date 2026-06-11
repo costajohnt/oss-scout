@@ -313,6 +313,58 @@ describe("OssScout", () => {
     });
   });
 
+  describe("deletion tombstones (#117)", () => {
+    it("records a tombstone when an issue is unskipped", () => {
+      const scout = makeScout();
+      scout.skipIssue("https://github.com/a/b/issues/1");
+      scout.unskipIssue("https://github.com/a/b/issues/1");
+      const tombstones = scout.getState().tombstones ?? [];
+      expect(tombstones.map((t) => t.url)).toContain(
+        "https://github.com/a/b/issues/1",
+      );
+    });
+
+    it("records tombstones when the skip list is cleared", () => {
+      const scout = makeScout();
+      scout.skipIssue("https://github.com/a/b/issues/1");
+      scout.skipIssue("https://github.com/a/b/issues/2");
+      scout.clearSkippedIssues();
+      const urls = (scout.getState().tombstones ?? []).map((t) => t.url);
+      expect(urls).toContain("https://github.com/a/b/issues/1");
+      expect(urls).toContain("https://github.com/a/b/issues/2");
+    });
+
+    it("records tombstones when results are cleared", () => {
+      const scout = makeScout({
+        savedResults: [
+          {
+            issueUrl: "https://github.com/a/b/issues/3",
+            repo: "a/b",
+            number: 3,
+            title: "t",
+            labels: [],
+            recommendation: "approve",
+            viabilityScore: 80,
+            searchPriority: "normal",
+            firstSeenAt: "2026-06-01T00:00:00Z",
+            lastSeenAt: "2026-06-01T00:00:00Z",
+            lastScore: 80,
+          },
+        ],
+      });
+      scout.clearResults();
+      expect((scout.getState().tombstones ?? []).map((t) => t.url)).toContain(
+        "https://github.com/a/b/issues/3",
+      );
+    });
+
+    it("does not record a tombstone when unskip removes nothing", () => {
+      const scout = makeScout();
+      scout.unskipIssue("https://github.com/a/b/issues/nope");
+      expect(scout.getState().tombstones ?? []).toHaveLength(0);
+    });
+  });
+
   describe("setStarredRepos", () => {
     it("updates starred repos with timestamp", () => {
       const scout = makeScout();

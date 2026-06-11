@@ -431,6 +431,50 @@ describe("GistStateStore", () => {
       expect(ok).toBe(false);
     });
 
+    it("merges the concurrent remote state before writing, not last-writer-wins (#117)", async () => {
+      // A second machine pushed a merged PR the local copy never saw
+      const remoteState = makeState({
+        mergedPRs: [
+          {
+            url: "https://github.com/x/y/pull/99",
+            title: "from other machine",
+            mergedAt: "2026-06-01T00:00:00Z",
+          },
+        ],
+      });
+      const update = vi.fn().mockResolvedValue({ data: { id: "gist-1" } });
+      const octokit = makeOctokit({
+        list: vi.fn().mockResolvedValue({
+          data: [{ id: "gist-1", description: "oss-scout-state" }],
+        }),
+        get: vi.fn().mockResolvedValue(gistResponse(remoteState, "gist-1")),
+        update,
+      });
+
+      const store = new GistStateStore(octokit);
+      await store.bootstrap();
+
+      // Local push adds a different PR; the remote one must survive
+      const localState = makeState({
+        mergedPRs: [
+          {
+            url: "https://github.com/x/y/pull/1",
+            title: "from this machine",
+            mergedAt: "2026-06-02T00:00:00Z",
+          },
+        ],
+      });
+      const ok = await store.push(localState);
+      expect(ok).toBe(true);
+
+      const written = JSON.parse(
+        update.mock.calls.at(-1)![0].files["state.json"].content,
+      );
+      const urls = written.mergedPRs.map((p: { url: string }) => p.url);
+      expect(urls).toContain("https://github.com/x/y/pull/99");
+      expect(urls).toContain("https://github.com/x/y/pull/1");
+    });
+
     it("returns false on API error but still writes cache", async () => {
       const octokit = makeOctokit({
         list: vi.fn().mockResolvedValue({ data: [] }),
@@ -585,13 +629,144 @@ describe("GistStateStore", () => {
 });
 
 describe("mergeStates", () => {
-  it("uses remote preferences", () => {
+  it("uses remote preferences when neither side has a timestamp", () => {
     const local = makeState({ preferences: { githubUsername: "local" } });
     const remote = makeState({ preferences: { githubUsername: "remote" } });
 
     const merged = mergeStates(local, remote);
 
     expect(merged.preferences.githubUsername).toBe("remote");
+  });
+
+  it("keeps the fresher preferences by preferencesUpdatedAt (#117)", () => {
+    const local = makeState({
+      preferences: { githubUsername: "local" },
+      preferencesUpdatedAt: "2026-06-02T00:00:00Z",
+    });
+    const remote = makeState({
+      preferences: { githubUsername: "remote" },
+      preferencesUpdatedAt: "2026-06-01T00:00:00Z",
+    });
+
+    // Local edit is newer, so it must not be reverted to the remote copy
+    expect(mergeStates(local, remote).preferences.githubUsername).toBe("local");
+    // ...and remote wins when remote is newer
+    expect(mergeStates(remote, local).preferences.githubUsername).toBe("local");
+  });
+
+  it("does not resurrect a tombstoned skip on merge (#117)", () => {
+    const url = "https://github.com/a/b/issues/9";
+    // Local removed the skip (tombstone); remote still has it
+    const local = makeState({
+      skippedIssues: [],
+      tombstones: [{ url, removedAt: "2026-06-02T00:00:00Z" }],
+    });
+    const remote = makeState({
+      skippedIssues: [
+        {
+          url,
+          repo: "a/b",
+          number: 9,
+          title: "t",
+          skippedAt: "2026-06-01T00:00:00Z",
+        },
+      ],
+    });
+
+    const merged = mergeStates(local, remote);
+    expect(merged.skippedIssues.find((s) => s.url === url)).toBeUndefined();
+  });
+
+  it("does not resurrect a tombstoned saved result on merge (#117)", () => {
+    const issueUrl = "https://github.com/a/b/issues/5";
+    const local = makeState({
+      savedResults: [],
+      tombstones: [{ url: issueUrl, removedAt: "2026-06-02T00:00:00Z" }],
+    });
+    const remote = makeState({
+      savedResults: [
+        {
+          issueUrl,
+          repo: "a/b",
+          number: 5,
+          title: "t",
+          labels: [],
+          recommendation: "approve" as const,
+          viabilityScore: 80,
+          searchPriority: "normal",
+          firstSeenAt: "2026-06-01T00:00:00Z",
+          lastSeenAt: "2026-06-01T00:00:00Z",
+          lastScore: 80,
+        },
+      ],
+    });
+
+    expect(
+      mergeStates(local, remote).savedResults.find(
+        (r) => r.issueUrl === issueUrl,
+      ),
+    ).toBeUndefined();
+  });
+
+  it("allows a re-skip after a tombstone (newer timestamp wins) (#117)", () => {
+    const url = "https://github.com/a/b/issues/9";
+    // User unskipped (tombstone at T1) then re-skipped (skippedAt at T2 > T1)
+    const local = makeState({
+      skippedIssues: [
+        {
+          url,
+          repo: "a/b",
+          number: 9,
+          title: "t",
+          skippedAt: "2026-06-03T00:00:00Z",
+        },
+      ],
+      tombstones: [{ url, removedAt: "2026-06-02T00:00:00Z" }],
+    });
+    const remote = makeState({ skippedIssues: [] });
+
+    const merged = mergeStates(local, remote);
+    expect(merged.skippedIssues.find((s) => s.url === url)).toBeDefined();
+  });
+
+  it("does not resurrect a skipped URL into saved results from remote (#117)", () => {
+    // Local skipped an issue (which removes it from savedResults). Remote
+    // still has it saved. The merge must not let the remote saved copy
+    // reappear, because a skip is the authoritative signal to suppress it.
+    const url = "https://github.com/a/b/issues/7";
+    const local = makeState({
+      savedResults: [],
+      skippedIssues: [
+        {
+          url,
+          repo: "a/b",
+          number: 7,
+          title: "t",
+          skippedAt: "2026-06-03T00:00:00Z",
+        },
+      ],
+    });
+    const remote = makeState({
+      savedResults: [
+        {
+          issueUrl: url,
+          repo: "a/b",
+          number: 7,
+          title: "t",
+          labels: [],
+          recommendation: "approve" as const,
+          viabilityScore: 80,
+          searchPriority: "normal",
+          firstSeenAt: "2026-06-01T00:00:00Z",
+          lastSeenAt: "2026-06-01T00:00:00Z",
+          lastScore: 80,
+        },
+      ],
+    });
+
+    const merged = mergeStates(local, remote);
+    expect(merged.savedResults.find((r) => r.issueUrl === url)).toBeUndefined();
+    expect(merged.skippedIssues.find((s) => s.url === url)).toBeDefined();
   });
 
   it("unions mergedPRs by URL", () => {
