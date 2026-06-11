@@ -112,12 +112,28 @@ describe("local-state", () => {
       expect(loaded.preferences.githubUsername).toBe("saved-user");
     });
 
-    it("performs atomic write (no .tmp file left behind)", () => {
+    it("performs atomic write (no tmp files left behind)", () => {
       const state = ScoutStateSchema.parse({ version: 1 });
+      saveLocalState(state);
       saveLocalState(state);
 
       expect(fs.existsSync(path.join(tmpDir, "state.json"))).toBe(true);
-      expect(fs.existsSync(path.join(tmpDir, "state.json.tmp"))).toBe(false);
+      const leftovers = fs
+        .readdirSync(tmpDir)
+        .filter((f) => f.includes(".tmp"));
+      expect(leftovers).toEqual([]);
+    });
+
+    it("cleans up the unique tmp file when the rename fails", () => {
+      const state = ScoutStateSchema.parse({ version: 1 });
+      // Force a real rename failure: a file cannot replace a directory
+      fs.mkdirSync(path.join(tmpDir, "state.json"));
+
+      expect(() => saveLocalState(state)).toThrow();
+      const leftovers = fs
+        .readdirSync(tmpDir)
+        .filter((f) => f.includes(".tmp"));
+      expect(leftovers).toEqual([]);
     });
 
     it("overwrites existing state", () => {
