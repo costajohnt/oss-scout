@@ -16,6 +16,7 @@ vi.mock("./search-budget.js", () => ({
 }));
 
 vi.mock("./http-cache.js", () => ({
+  versionedCacheKey: (key: string) => key,
   getHttpCache: vi.fn(() => ({
     getIfFresh: vi.fn(() => null),
     set: vi.fn(),

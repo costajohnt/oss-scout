@@ -94,6 +94,7 @@ vi.mock("./anti-llm-policy.js", () => ({
 }));
 
 vi.mock("./http-cache.js", () => ({
+  versionedCacheKey: (key: string) => key,
   getHttpCache: vi.fn(() => ({
     getIfFresh: vi.fn(() => null),
     set: vi.fn(),
@@ -128,6 +129,7 @@ function makeStubStateReader(
     getStarredRepos: vi.fn(() => []),
     getProjectCategories: vi.fn(() => []),
     getRepoScore: vi.fn(() => null),
+    getSLMTriageConfig: vi.fn(() => null),
     ...overrides,
   };
 }

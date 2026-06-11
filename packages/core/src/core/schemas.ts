@@ -168,7 +168,10 @@ export const SavedCandidateSchema = z.looseObject({
   labels: z.array(z.string()),
   recommendation: z.enum(["approve", "skip", "needs_review"]),
   viabilityScore: z.number(),
-  searchPriority: z.string(),
+  // Tightened from z.string() to the actual 3-value union (#158). `.catch`
+  // keeps old persisted state loadable: any unrecognized stored value (or a
+  // future-version value) decodes to "normal" instead of failing the parse.
+  searchPriority: z.enum(["merged_pr", "starred", "normal"]).catch("normal"),
   firstSeenAt: z.string(),
   lastSeenAt: z.string(),
   lastScore: z.number(),

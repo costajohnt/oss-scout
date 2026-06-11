@@ -18,6 +18,7 @@ import { _clearRoadmapCacheForTests } from "./roadmap.js";
 // Broad mode routes through cachedSearchIssues (#121); stub its singletons
 // so tests never touch the real ~/.oss-scout cache or budget pacing.
 vi.mock("./http-cache.js", () => ({
+  versionedCacheKey: (key: string) => key,
   getHttpCache: vi.fn(() => ({
     getIfFresh: vi.fn(() => null),
     set: vi.fn(),

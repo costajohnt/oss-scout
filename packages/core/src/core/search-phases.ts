@@ -14,7 +14,7 @@ import {
 } from "./types.js";
 import { errorMessage, getHttpStatusCode, isRateLimitError } from "./errors.js";
 import { debug, warn } from "./logger.js";
-import { getHttpCache } from "./http-cache.js";
+import { getHttpCache, versionedCacheKey } from "./http-cache.js";
 import {
   type GitHubSearchItem,
   detectLabelFarmingRepos,
@@ -118,7 +118,9 @@ export async function cachedSearchIssues(
     per_page: number;
   },
 ): Promise<{ total_count: number; items: GitHubSearchItem[] }> {
-  const cacheKey = `search:${params.q}:${params.sort}:${params.order}:${params.per_page}`;
+  const cacheKey = versionedCacheKey(
+    `search:${params.q}:${params.sort}:${params.order}:${params.per_page}`,
+  );
   const cache = getHttpCache();
 
   // Check cache first

@@ -31,31 +31,41 @@ export const REPO_BOOST = 20;
 export const LANGUAGE_BOOST = 10;
 
 /**
- * Annotate each candidate with `boostScore` and `boostReasons` based on
- * the caller-supplied preference lists. Mutates the array in place; the
- * caller is responsible for re-sorting afterwards.
+ * The personalization sort weight of a candidate: its boost score, or 0 when it
+ * is not boosted (unboosted or a diversity slot). Reads the structural
+ * `personalization` field (#158) so callers never poke at the old loose
+ * `boostScore` field.
+ */
+export function boostScoreOf(candidate: IssueCandidate): number {
+  return candidate.personalization?.kind === "boosted"
+    ? candidate.personalization.score
+    : 0;
+}
+
+/**
+ * Return a new candidate list where each candidate that matches a
+ * caller-supplied preference carries `personalization: { kind: "boosted", ... }`.
+ * Does NOT mutate the input candidates (#158) — matched candidates are shallow
+ * copies with the field set; unmatched candidates are passed through unchanged.
+ * The caller re-sorts the returned array.
  *
- * Mutation (rather than returning new objects) keeps the personalization
- * step a single linear pass over the array the caller already holds —
- * the sort step reads back from the same objects.
- *
- * No-op when both preference lists are empty or undefined: candidates
- * retain `boostScore: undefined` and the sort tier collapses to 0.
+ * No-op when both preference lists are empty or undefined: the input array is
+ * returned as-is and the sort tier collapses to 0 for every candidate.
  */
 export function annotateBoost(
   candidates: IssueCandidate[],
   preferLanguages?: string[],
   preferRepos?: string[],
-): void {
+): IssueCandidate[] {
   const langSet = new Set(
     (preferLanguages ?? []).map((l) => l.trim().toLowerCase()).filter(Boolean),
   );
   const repoSet = new Set(
     (preferRepos ?? []).map((r) => r.trim().toLowerCase()).filter(Boolean),
   );
-  if (langSet.size === 0 && repoSet.size === 0) return;
+  if (langSet.size === 0 && repoSet.size === 0) return candidates;
 
-  for (const c of candidates) {
+  return candidates.map((c) => {
     let score = 0;
     const reasons: string[] = [];
 
@@ -64,17 +74,15 @@ export function annotateBoost(
       reasons.push(`repo affinity: ${c.issue.repo}`);
     }
 
-    const lang = c.projectHealth.language;
+    const lang = c.projectHealth.checkFailed ? null : c.projectHealth.language;
     if (langSet.size > 0 && lang && langSet.has(lang.toLowerCase())) {
       score += LANGUAGE_BOOST;
       reasons.push(`language match: ${lang}`);
     }
 
-    if (score > 0) {
-      c.boostScore = score;
-      c.boostReasons = reasons;
-    }
-  }
+    if (score === 0) return c;
+    return { ...c, personalization: { kind: "boosted", score, reasons } };
+  });
 }
 
 /**
@@ -126,9 +134,9 @@ export function applyDiversityRatio(
   for (const c of candidates) {
     if (picks.length >= maxResults) break;
     if (seen.has(c.issue.url)) continue;
-    if (c.boostScore && c.boostScore > 0) continue;
-    c.diversitySlot = true;
-    picks.push(c);
+    if (boostScoreOf(c) > 0) continue;
+    // Tag a shallow copy rather than mutating the shared candidate (#158).
+    picks.push({ ...c, personalization: { kind: "diversity" } });
     seen.add(c.issue.url);
   }
 

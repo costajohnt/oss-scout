@@ -13,6 +13,7 @@ vi.mock("./logger.js", () => ({
 
 // Mock http-cache to pass through to the real fetcher (no caching in tests)
 vi.mock("./http-cache.js", () => ({
+  versionedCacheKey: (key: string) => key,
   getHttpCache: () => ({}),
   cachedRequest: async (
     _cache: unknown,
@@ -107,8 +108,11 @@ describe("checkProjectHealth", () => {
 
     const health = await checkProjectHealth(octokit, "error-org", "error-repo");
     expect(health.checkFailed).toBe(true);
-    expect(health.failureReason).toBeDefined();
-    expect(health.isActive).toBe(false);
+    if (health.checkFailed) {
+      expect(health.failureReason).toBeDefined();
+    }
+    // The slim failure shape (#158) carries no snapshot fields.
+    expect(health).not.toHaveProperty("isActive");
   });
 
   it("propagates 401 auth errors instead of swallowing", async () => {

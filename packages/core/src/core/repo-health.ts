@@ -132,14 +132,11 @@ export async function checkProjectHealth(
       MODULE,
       `Error checking project health for ${owner}/${repo}: ${errMsg}`,
     );
+    // The check failed: only the repo and the reason are known. The
+    // discriminated ProjectHealth type intentionally has no place for the
+    // neutral-default snapshot fields this used to fabricate (#158).
     return {
       repo: `${owner}/${repo}`,
-      lastCommitAt: "",
-      daysSinceLastCommit: 999,
-      openIssuesCount: 0,
-      avgIssueResponseDays: 0,
-      ciStatus: "unknown",
-      isActive: false,
       checkFailed: true,
       failureReason: errMsg,
     };

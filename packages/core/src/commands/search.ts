@@ -125,9 +125,19 @@ export async function runSearch(
                   isStalled: isLinkedPRStalled(c.vettingResult.linkedPR),
                 }
               : undefined,
-            boostScore: c.boostScore,
-            boostReasons: c.boostReasons,
-            diversitySlot: c.diversitySlot,
+            // Keep the JSON output shape stable across the #158 internal
+            // refactor: derive the flat boost fields from the structural
+            // `personalization` marker.
+            boostScore:
+              c.personalization?.kind === "boosted"
+                ? c.personalization.score
+                : undefined,
+            boostReasons:
+              c.personalization?.kind === "boosted"
+                ? c.personalization.reasons
+                : undefined,
+            diversitySlot:
+              c.personalization?.kind === "diversity" ? true : undefined,
           };
         }),
         excludedRepos: result.excludedRepos,

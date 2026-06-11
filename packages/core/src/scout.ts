@@ -10,6 +10,7 @@ import { IssueVetter } from "./core/issue-vetting.js";
 import type {
   ScoutStateReader,
   ScoutStateWriter,
+  SLMConfig,
 } from "./core/issue-vetting.js";
 import {
   discoverFeatures,
@@ -390,6 +391,7 @@ export class OssScout implements ScoutStateReader, ScoutStateWriter {
             number: item.number,
             title: item.title,
             status: this.classifyVetResult(candidate),
+            ok: true,
             recommendation: candidate.recommendation,
             viabilityScore: candidate.viabilityScore,
           });
@@ -407,6 +409,7 @@ export class OssScout implements ScoutStateReader, ScoutStateWriter {
             number: item.number,
             title: item.title,
             status: isGone ? "closed" : "error",
+            ok: false,
             errorMessage: errorMessage(error),
           });
         })
@@ -562,14 +565,14 @@ export class OssScout implements ScoutStateReader, ScoutStateWriter {
   }
 
   /**
-   * Optional SLM pre-triage config read from preferences (oss-autopilot#1122).
-   * Empty `model` disables the call; the vetter treats it as a no-op.
+   * SLM pre-triage config read from preferences (oss-autopilot#1122). Returns
+   * `null` when no `slmTriageModel` is configured — the vetter skips the SLM
+   * call entirely (#158).
    */
-  getSLMTriageConfig(): { model: string; host: string } {
-    return {
-      model: this.state.preferences.slmTriageModel ?? "",
-      host: this.state.preferences.slmTriageHost ?? "",
-    };
+  getSLMTriageConfig(): SLMConfig | null {
+    const model = this.state.preferences.slmTriageModel ?? "";
+    if (!model) return null;
+    return { model, host: this.state.preferences.slmTriageHost ?? "" };
   }
 
   /** Get current preferences (read-only). */

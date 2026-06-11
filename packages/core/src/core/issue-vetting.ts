@@ -49,7 +49,7 @@ import {
   issueCoreKey,
   type PrefetchedIssueCore,
 } from "./issue-graphql.js";
-import { getHttpCache } from "./http-cache.js";
+import { getHttpCache, versionedCacheKey } from "./http-cache.js";
 import {
   triageWithSLM,
   buildTriageInput,
@@ -88,6 +88,16 @@ export type FeatureSignals = {
 };
 
 /**
+ * SLM pre-triage configuration (oss-autopilot#1122). `host` is the Ollama
+ * endpoint; an empty `host` means "use the triage default". A `null` config
+ * (not this shape) means SLM triage is disabled (#158).
+ */
+export interface SLMConfig {
+  model: string;
+  host: string;
+}
+
+/**
  * Read-only interface for accessing scout state during issue vetting.
  * Implementations may be backed by gist persistence, in-memory state, etc.
  */
@@ -103,11 +113,13 @@ export interface ScoutStateReader {
   /** Numeric quality score for a repo, or null if not evaluated. */
   getRepoScore(repo: string): number | null;
   /**
-   * SLM pre-triage config (oss-autopilot#1122). Returns the configured
-   * model id and Ollama host, or empty strings when not configured —
-   * vetIssue treats either of these as "skip the SLM call".
+   * SLM pre-triage config (oss-autopilot#1122). Returns the configured model
+   * id and Ollama host, or `null` when SLM triage is not configured — vetIssue
+   * skips the SLM call on `null`. Required (#158): the old optional method with
+   * an empty-string sentinel could not distinguish "not configured" from "host
+   * defaulted"; `SLMConfig | null` makes the absence explicit.
    */
-  getSLMTriageConfig?(): { model: string; host: string };
+  getSLMTriageConfig(): SLMConfig | null;
   /**
    * Number of the user's PRs closed without merge in this repo (#125).
    * Optional so existing implementations keep compiling; absent reads as 0.
@@ -325,7 +337,7 @@ export class IssueVetter {
     const sigKey = opts?.featureSignals
       ? `:r${opts.featureSignals.reactions}c${opts.featureSignals.comments}m${opts.featureSignals.hasMilestone ? 1 : 0}o${opts.featureSignals.onRoadmap ? 1 : 0}w${opts.featureSignals.wontfixNoContributor ? 1 : 0}`
       : "";
-    const cacheKey = `vet:${issueUrl}${sigKey}`;
+    const cacheKey = versionedCacheKey(`vet:${issueUrl}${sigKey}`);
     const cached = cache.getIfFresh(cacheKey, VETTING_CACHE_TTL_MS);
     if (
       cached &&
@@ -485,13 +497,17 @@ export class IssueVetter {
         notClaimed,
         clearRequirements,
         contributionGuidelinesFound: !!contributionGuidelines,
-        projectIsActive: projectHealth.isActive,
+        projectIsActive: projectHealth.checkFailed
+          ? false
+          : projectHealth.isActive,
         projectCheckFailed: !!projectHealth.checkFailed,
         projectFailureReason: projectHealth.failureReason,
         existingPRInconclusive: !!existingPRCheck.inconclusive,
-        existingPRReason: existingPRCheck.reason,
+        existingPRReason: existingPRCheck.inconclusive
+          ? existingPRCheck.reason
+          : undefined,
         claimInconclusive: !!claimCheck.inconclusive,
-        claimReason: claimCheck.reason,
+        claimReason: claimCheck.inconclusive ? claimCheck.reason : undefined,
         mergedCountInconclusive,
         effectiveMergedCount,
         orgName,
@@ -502,11 +518,14 @@ export class IssueVetter {
       });
     vettingResult.notes = notes;
 
-    // Calculate repo quality bonus from star/fork counts
-    const repoQualityBonus = calculateRepoQualityBonus(
-      projectHealth.stargazersCount ?? 0,
-      projectHealth.forksCount ?? 0,
-    );
+    // Calculate repo quality bonus from star/fork counts. A failed health
+    // check carries no counts (#158), so the bonus is 0 in that case.
+    const repoQualityBonus = projectHealth.checkFailed
+      ? 0
+      : calculateRepoQualityBonus(
+          projectHealth.stargazersCount ?? 0,
+          projectHealth.forksCount ?? 0,
+        );
     if (projectHealth.checkFailed && repoQualityBonus === 0) {
       vettingResult.notes.push(
         "Repo quality bonus unavailable: could not fetch star/fork counts due to API error",
@@ -539,13 +558,11 @@ export class IssueVetter {
     }
 
     // Optional SLM pre-triage (oss-autopilot#1122). Fail-open: any error
-    // path returns null and the rest of the pipeline is unaffected.
-    const slmConfig = this.stateReader.getSLMTriageConfig?.() ?? {
-      model: "",
-      host: "",
-    };
+    // path returns null and the rest of the pipeline is unaffected. A null
+    // config means SLM triage is disabled (#158).
+    const slmConfig = this.stateReader.getSLMTriageConfig();
     let slmTriage: IssueCandidate["slmTriage"] = null;
-    if (slmConfig.model) {
+    if (slmConfig) {
       const slmOpts: SLMTriageOptions = { model: slmConfig.model };
       if (slmConfig.host) slmOpts.host = slmConfig.host;
       slmTriage = await triageWithSLM(
