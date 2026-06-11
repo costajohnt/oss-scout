@@ -322,8 +322,17 @@ export class IssueVetter {
       reasonsToApprove.push("Matches preferred project category");
     }
 
+    // GitHub answers 200 for closed issues, so without an explicit state
+    // check a closed issue would vet as still available (#120).
+    const issueClosed = ghIssue.state === "closed";
+    if (issueClosed) {
+      reasonsToSkip.push("Issue is closed");
+    }
+
     let recommendation: "approve" | "skip" | "needs_review";
-    if (vettingResult.passedAllChecks) {
+    if (issueClosed) {
+      recommendation = "skip";
+    } else if (vettingResult.passedAllChecks) {
       recommendation = "approve";
     } else if (reasonsToSkip.length > 2) {
       recommendation = "skip";
@@ -402,6 +411,7 @@ export class IssueVetter {
 
     const result: IssueCandidate = {
       issue: trackedIssue,
+      issueState: issueClosed ? "closed" : "open",
       vettingResult,
       projectHealth,
       antiLLMPolicy,
