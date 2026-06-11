@@ -163,9 +163,14 @@ $ oss-scout vet-list --prune
   🔒 user/library#789 — claimed [78/100]
   🔀 org/project#456 — has_pr [85/100]
 
+🔔 Changes since last check (1):
+  user/library#789: still_available → claimed
+
 Summary: 5 available, 1 claimed, 1 has PR, 1 closed
 Pruned 3 unavailable issues from saved results.
 ```
+
+Each run records every saved result's status, so the next `vet-list` reports just what changed ("was available, now claimed"). The transitions are also in the `--json` envelope (`transitions[]`), so a scheduler can act on them without re-diffing.
 
 ## Saved Results
 

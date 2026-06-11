@@ -561,6 +561,14 @@ program
             );
             console.log(`     ${r.title}`);
           }
+          if (result.transitions.length > 0) {
+            console.log(
+              `\n🔔 Changes since last check (${result.transitions.length}):`,
+            );
+            for (const t of result.transitions) {
+              console.log(`  ${t.repo}#${t.number}: ${t.from} → ${t.to}`);
+            }
+          }
           console.log(
             `\nSummary: ${result.summary.stillAvailable} available, ${result.summary.claimed} claimed, ${result.summary.hasPR} has PR, ${result.summary.closed} closed, ${result.summary.errors} errors`,
           );
