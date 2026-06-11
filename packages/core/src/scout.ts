@@ -228,13 +228,25 @@ export class OssScout implements ScoutStateReader, ScoutStateWriter {
       this.state.preferences,
       this,
     );
+    // Per-call flags override the persisted personalization defaults (#168).
+    // An empty preference array reads as "no boost" just like an absent flag.
+    const prefs = this.state.preferences;
+    const prefLangs = prefs.preferLanguages ?? [];
+    const prefRepos = prefs.preferRepos ?? [];
+    const preferLanguages =
+      options?.preferLanguages ??
+      (prefLangs.length > 0 ? prefLangs : undefined);
+    const preferRepos =
+      options?.preferRepos ?? (prefRepos.length > 0 ? prefRepos : undefined);
+    const diversityRatio = options?.diversityRatio ?? prefs.diversityRatio ?? 0;
+
     const { candidates, strategiesUsed } = await discovery.searchIssues({
       maxResults: options?.maxResults,
       strategies: options?.strategies,
       skippedUrls,
-      preferLanguages: options?.preferLanguages,
-      preferRepos: options?.preferRepos,
-      diversityRatio: options?.diversityRatio,
+      preferLanguages,
+      preferRepos,
+      diversityRatio,
       interPhaseDelayMs: options?.interPhaseDelayMs,
       broadPhaseDelayMs: options?.broadPhaseDelayMs,
     });
