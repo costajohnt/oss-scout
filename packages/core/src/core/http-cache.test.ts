@@ -8,6 +8,7 @@ import {
   cachedRequest,
   cachedTimeBased,
   withInflightDedup,
+  getHttpCache,
 } from "./http-cache.js";
 
 vi.mock("./logger.js", () => ({
@@ -193,6 +194,129 @@ describe("HttpCache", () => {
 
     // The corrupt file should have been deleted
     expect(fs.existsSync(filePath)).toBe(false);
+  });
+
+  it("ignores an entry whose stored url differs from the requested one (hash collision guard)", () => {
+    const cache = new HttpCache(tmpDir);
+    const requested = "https://api.github.com/repos/wanted/repo";
+    const hash = crypto.createHash("sha256").update(requested).digest("hex");
+    const filePath = path.join(tmpDir, `${hash}.json`);
+
+    // Plant an entry at the requested key whose body belongs to another URL.
+    fs.writeFileSync(
+      filePath,
+      JSON.stringify({
+        etag: "x",
+        url: "https://api.github.com/repos/other/repo",
+        body: { wrong: true },
+        cachedAt: new Date().toISOString(),
+      }),
+    );
+
+    expect(cache.get(requested)).toBeNull();
+  });
+
+  describe("getIfFresh / getEntryIfFresh", () => {
+    it("returns the body for a fresh entry and null once it ages out", () => {
+      const cache = new HttpCache(tmpDir);
+      const key = "fresh-key";
+      cache.set(key, "", { v: 1 });
+
+      expect(cache.getIfFresh(key, 60_000)).toEqual({ v: 1 });
+
+      // Backdate past the window.
+      const hash = crypto.createHash("sha256").update(key).digest("hex");
+      const filePath = path.join(tmpDir, `${hash}.json`);
+      const entry = JSON.parse(fs.readFileSync(filePath, "utf-8"));
+      entry.cachedAt = new Date(Date.now() - 120_000).toISOString();
+      fs.writeFileSync(filePath, JSON.stringify(entry));
+
+      expect(cache.getIfFresh(key, 60_000)).toBeNull();
+      expect(cache.getEntryIfFresh(key, 60_000)).toBeNull();
+    });
+
+    it("returns null when cachedAt is unparseable (NaN-age guard)", () => {
+      const cache = new HttpCache(tmpDir);
+      const key = "bad-date-key";
+      cache.set(key, "", { v: 1 });
+
+      const hash = crypto.createHash("sha256").update(key).digest("hex");
+      const filePath = path.join(tmpDir, `${hash}.json`);
+      const entry = JSON.parse(fs.readFileSync(filePath, "utf-8"));
+      entry.cachedAt = "not-a-date";
+      fs.writeFileSync(filePath, JSON.stringify(entry));
+
+      // age = Date.now() - NaN = NaN, which the !Number.isFinite guard rejects.
+      expect(cache.getEntryIfFresh(key, 60_000)).toBeNull();
+      expect(cache.getIfFresh(key, 60_000)).toBeNull();
+    });
+
+    it("returns null for an entry timestamped in the future (negative age)", () => {
+      const cache = new HttpCache(tmpDir);
+      const key = "future-key";
+      cache.set(key, "", { v: 1 });
+
+      const hash = crypto.createHash("sha256").update(key).digest("hex");
+      const filePath = path.join(tmpDir, `${hash}.json`);
+      const entry = JSON.parse(fs.readFileSync(filePath, "utf-8"));
+      entry.cachedAt = new Date(Date.now() + 120_000).toISOString();
+      fs.writeFileSync(filePath, JSON.stringify(entry));
+
+      expect(cache.getEntryIfFresh(key, 60_000)).toBeNull();
+    });
+  });
+
+  it("cachedRequest caches a fresh 200 and sends If-None-Match on the next call", async () => {
+    const cache = new HttpCache(tmpDir);
+    const url = "https://api.github.com/repos/fresh/cycle";
+
+    const fetcher = vi
+      .fn()
+      .mockImplementationOnce((headers: Record<string, string>) => {
+        // First call: no cache yet, so no conditional header.
+        expect(headers["if-none-match"]).toBeUndefined();
+        return Promise.resolve({
+          data: { stars: 7 },
+          headers: { etag: "etag-fresh" },
+        });
+      })
+      .mockImplementationOnce((headers: Record<string, string>) => {
+        // Second call: the stored etag is replayed as If-None-Match.
+        expect(headers["if-none-match"]).toBe("etag-fresh");
+        return Promise.resolve({
+          data: { stars: 9 },
+          headers: { etag: "etag-fresh-2" },
+        });
+      });
+
+    const first = await cachedRequest(cache, url, fetcher);
+    expect(first).toEqual({ stars: 7 });
+    expect(cache.get(url)!.etag).toBe("etag-fresh");
+
+    const second = await cachedRequest(cache, url, fetcher);
+    expect(second).toEqual({ stars: 9 });
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+
+  it("cachedRequest rethrows a non-304 error from the initial fetch", async () => {
+    const cache = new HttpCache(tmpDir);
+    const url = "https://api.github.com/repos/boom/repo";
+    const serverError = new Error("Internal Server Error") as Error & {
+      status: number;
+    };
+    serverError.status = 500;
+    const fetcher = vi.fn().mockRejectedValue(serverError);
+
+    await expect(cachedRequest(cache, url, fetcher)).rejects.toThrow(
+      "Internal Server Error",
+    );
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("getHttpCache singleton", () => {
+  it("returns the same instance across calls", () => {
+    expect(getHttpCache()).toBe(getHttpCache());
   });
 });
 
