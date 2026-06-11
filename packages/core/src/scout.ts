@@ -34,6 +34,7 @@ import type {
   OpenPRRecord,
   RepoScoreUpdate,
   ProjectCategory,
+  ProjectHealth,
   VetListOptions,
   VetListResult,
   VetListEntry,
@@ -251,6 +252,12 @@ export class OssScout implements ScoutStateReader, ScoutStateWriter {
       broadPhaseDelayMs: options?.broadPhaseDelayMs,
     });
 
+    // Feed the freshly observed maintainer-responsiveness signals back into the
+    // repo scores so the next search ranks responsive/active repos higher (#167).
+    for (const c of candidates) {
+      this.updateRepoSignalsFromHealth(c.projectHealth);
+    }
+
     this.state.lastSearchAt = new Date().toISOString();
     this.dirty = true;
 
@@ -261,6 +268,28 @@ export class OssScout implements ScoutStateReader, ScoutStateWriter {
       rateLimitWarning: discovery.rateLimitWarning ?? undefined,
       strategiesUsed,
     };
+  }
+
+  /**
+   * Populate the `hasActiveMaintainers` repo-score signal from a freshly
+   * computed projectHealth (#167). It was initialized false and never set, so
+   * calculateScore's +1 active-maintainers weight was inert; `isActive`
+   * (recent commit activity) is a real, already-computed proxy.
+   *
+   * `isResponsive` and `avgResponseDays` are deliberately NOT set here:
+   * `projectHealth.avgIssueResponseDays` is a hardcoded `0` placeholder
+   * (repo-health.ts), so deriving responsiveness from it would award +1 to
+   * every repo — a fake signal worse than the inert one. Real responsiveness
+   * needs an actual response-time measurement (extra API calls), deferred.
+   * `hasHostileComments` likewise stays a host-settable capability (it needs
+   * comment sentiment, out of scope). A failed health check is skipped so its
+   * neutral-default fields don't pollute the score.
+   */
+  private updateRepoSignalsFromHealth(health: ProjectHealth): void {
+    if (health.checkFailed) return;
+    this.updateRepoScore(health.repo, {
+      signals: { hasActiveMaintainers: health.isActive },
+    });
   }
 
   /**
