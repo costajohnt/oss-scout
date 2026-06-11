@@ -951,3 +951,25 @@ describe("mergeStates", () => {
     expect(merged.gistId).toBe("remote-gist");
   });
 });
+
+describe("mergeStates unknown-key round-trip (#137)", () => {
+  it("carries unknown top-level keys through a merge, remote wins on conflict", () => {
+    const local = makeState() as Record<string, unknown>;
+    local.futureLocalOnly = "from-local";
+    local.futureShared = "local-value";
+    const remote = makeState() as Record<string, unknown>;
+    remote.futureRemoteOnly = "from-remote";
+    remote.futureShared = "remote-value";
+
+    const merged = mergeStates(
+      local as unknown as ScoutState,
+      remote as unknown as ScoutState,
+    ) as Record<string, unknown>;
+
+    expect(merged.futureLocalOnly).toBe("from-local");
+    expect(merged.futureRemoteOnly).toBe("from-remote");
+    expect(merged.futureShared).toBe("remote-value");
+    // Known merged fields are still computed, not blindly overwritten
+    expect(merged.version).toBe(1);
+  });
+});

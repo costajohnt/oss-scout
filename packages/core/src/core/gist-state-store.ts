@@ -7,7 +7,7 @@
 
 import * as fs from "fs";
 import * as path from "path";
-import { ScoutStateSchema } from "./schemas.js";
+import { ScoutStateSchema, parseScoutState } from "./schemas.js";
 import type {
   ScoutState,
   RepoScore,
@@ -285,7 +285,7 @@ export class GistStateStore {
 
     try {
       const parsed = JSON.parse(file.content);
-      return ScoutStateSchema.parse(parsed);
+      return parseScoutState(parsed);
     } catch (err) {
       warn(MODULE, `Gist content failed validation: ${errorMessage(err)}`);
       return null;
@@ -351,7 +351,7 @@ export class GistStateStore {
   private readCache(): ScoutState | null {
     try {
       const raw = fs.readFileSync(getCachePath(), "utf-8");
-      return ScoutStateSchema.parse(JSON.parse(raw));
+      return parseScoutState(JSON.parse(raw));
     } catch (err) {
       const code = (err as NodeJS.ErrnoException)?.code;
       if (code !== "ENOENT") {
@@ -381,9 +381,13 @@ export class GistStateStore {
  * - preferences: remote wins
  * - starredRepos: keep the list with the fresher timestamp
  * - savedResults: union by issueUrl, keep newer lastSeenAt
+ * - unknown top-level keys (from a newer binary, #137): carried over via
+ *   spreads, remote wins on conflicts to mirror the preferences rule
  */
 export function mergeStates(local: ScoutState, remote: ScoutState): ScoutState {
   return {
+    ...local,
+    ...remote,
     version: 1,
     preferences: remote.preferences,
     repoScores: mergeRepoScores(local.repoScores, remote.repoScores),

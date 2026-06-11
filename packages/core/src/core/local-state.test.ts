@@ -154,3 +154,24 @@ describe("local-state", () => {
     });
   });
 });
+
+describe("unknown-key round-trip (#137)", () => {
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "oss-scout-test-"));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("save then load preserves fields this binary does not know about", () => {
+    const state = ScoutStateSchema.parse({ version: 1 });
+    (state as Record<string, unknown>).futureField = { keep: "me" };
+    saveLocalState(state);
+
+    const loaded = loadLocalState();
+    expect((loaded as Record<string, unknown>).futureField).toEqual({
+      keep: "me",
+    });
+  });
+});
