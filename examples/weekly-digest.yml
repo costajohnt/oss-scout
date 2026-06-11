@@ -1,0 +1,29 @@
+# Example: schedule oss-scout to post a weekly digest issue.
+#
+# Copy this into `.github/workflows/oss-scout-digest.yml` in your own repo.
+# The digest issue is created/updated in the repo this workflow runs in.
+#
+# For personalized results (your starred repos + merged-PR history), set a
+# repository secret `OSS_SCOUT_TOKEN` to a personal access token with `repo`
+# read scope. Without it the action still runs, just with less personalization.
+
+name: oss-scout digest
+
+on:
+  schedule:
+    - cron: "0 14 * * 1" # Mondays at 14:00 UTC
+  workflow_dispatch: {} # allow manual runs
+
+permissions:
+  issues: write
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: costajohnt/oss-scout@v1
+        with:
+          github-username: your-github-login
+          search-token: ${{ secrets.OSS_SCOUT_TOKEN }}
+          max-results: "10"
+          strategy: all

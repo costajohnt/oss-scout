@@ -1,0 +1,98 @@
+name: "oss-scout digest"
+description: "Run oss-scout search on a schedule and open/update a digest issue with the top candidates."
+author: "John Costa"
+branding:
+  icon: "search"
+  color: "purple"
+
+inputs:
+  github-username:
+    description: "GitHub login to personalize search for. Defaults to the repository owner."
+    required: false
+    default: ${{ github.repository_owner }}
+  search-token:
+    description: >-
+      Token used for bootstrap + search (reads your starred repos and PR
+      history). A personal access token with repo read scope gives the best
+      personalization; defaults to the workflow GITHUB_TOKEN, which only sees
+      this repository.
+    required: false
+    default: ${{ github.token }}
+  issue-token:
+    description: "Token used to create/update the digest issue (needs issues: write). Defaults to GITHUB_TOKEN."
+    required: false
+    default: ${{ github.token }}
+  max-results:
+    description: "Number of candidates to surface."
+    required: false
+    default: "10"
+  strategy:
+    description: "Search strategies (comma-separated): merged, starred, broad, maintained, all."
+    required: false
+    default: "all"
+  issue-title:
+    description: "Title of the digest issue."
+    required: false
+    default: "oss-scout digest"
+  issue-label:
+    description: "Label used to find and update the existing digest issue."
+    required: false
+    default: "oss-scout-digest"
+  version:
+    description: "Version of @oss-scout/core to run."
+    required: false
+    default: "latest"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set up Node
+      uses: actions/setup-node@v4
+      with:
+        node-version: "20"
+
+    - name: Bootstrap and search
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.search-token }}
+      run: |
+        set -euo pipefail
+        PKG="@oss-scout/core@${{ inputs.version }}"
+        npx -y "$PKG" config set githubUsername "${{ inputs.github-username }}"
+        # Bootstrap is best-effort: a repo-scoped token may not see full history.
+        npx -y "$PKG" bootstrap || echo "bootstrap skipped (limited token scope)"
+        npx -y "$PKG" search "${{ inputs.max-results }}" --strategy "${{ inputs.strategy }}" > /dev/null
+
+    - name: Render digest
+      shell: bash
+      run: |
+        set -euo pipefail
+        PKG="@oss-scout/core@${{ inputs.version }}"
+        npx -y "$PKG" results --markdown > digest.md
+        {
+          echo ""
+          echo "_Updated $(date -u '+%Y-%m-%d %H:%M UTC') by [oss-scout](https://github.com/costajohnt/oss-scout)._"
+        } >> digest.md
+
+    - name: Open or update the digest issue
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.issue-token }}
+        GH_REPO: ${{ github.repository }}
+      run: |
+        set -euo pipefail
+        # Ensure the label exists (ignore "already exists").
+        gh label create "${{ inputs.issue-label }}" --color ededed \
+          --description "oss-scout scheduled digest" 2>/dev/null || true
+
+        existing=$(gh issue list --label "${{ inputs.issue-label }}" --state open \
+          --json number --jq '.[0].number // empty')
+
+        if [ -n "$existing" ]; then
+          gh issue edit "$existing" --body-file digest.md
+          echo "Updated digest issue #$existing"
+        else
+          gh issue create --title "${{ inputs.issue-title }}" \
+            --label "${{ inputs.issue-label }}" --body-file digest.md
+          echo "Created a new digest issue"
+        fi
