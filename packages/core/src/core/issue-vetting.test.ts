@@ -505,6 +505,20 @@ describe("IssueVetter", () => {
   // ── vetIssuesParallel ─────────────────────────────────────────────
 
   describe("vetIssuesParallel", () => {
+    it("dedups duplicate input URLs instead of corrupting the pending map (#129)", async () => {
+      const vetter = makeVetter();
+      const vetSpy = vi.spyOn(vetter, "vetIssue");
+      const urls = [
+        "https://github.com/owner/repo/issues/1",
+        "https://github.com/owner/repo/issues/1",
+        "https://github.com/owner/repo/issues/2",
+      ];
+      const result = await vetter.vetIssuesParallel(urls, 10);
+      expect(vetSpy).toHaveBeenCalledTimes(2);
+      expect(result.candidates.length).toBe(2);
+      expect(result.allFailed).toBe(false);
+    });
+
     it("returns multiple candidates on success", async () => {
       const vetter = makeVetter();
       const urls = [
