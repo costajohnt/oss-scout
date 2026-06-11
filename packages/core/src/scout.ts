@@ -13,7 +13,6 @@ import {
   discoverFeaturesBroad,
   type FeatureSearchResult,
 } from "./core/feature-discovery.js";
-import { ScoutStateSchema } from "./core/schemas.js";
 import type {
   ScoutState,
   ScoutPreferences,
@@ -43,7 +42,7 @@ import type {
 } from "./core/gist-state-store.js";
 import { getOctokit } from "./core/github.js";
 import type { Octokit } from "@octokit/rest";
-import { loadLocalState } from "./core/local-state.js";
+import { loadLocalState, saveLocalState } from "./core/local-state.js";
 import { warn } from "./core/logger.js";
 import { extractRepoFromUrl } from "./core/utils.js";
 import {
@@ -137,6 +136,8 @@ export async function createScout(config: ScoutConfig): Promise<OssScout> {
   let state: ScoutState;
   let gistStore: GistStateStore | null = null;
 
+  let persistLocal = false;
+
   if (config.persistence === "provided") {
     state = config.initialState;
   } else if (config.persistence === "gist") {
@@ -155,10 +156,16 @@ export async function createScout(config: ScoutConfig): Promise<OssScout> {
       state.gistId = result.gistId;
     }
   } else {
-    state = ScoutStateSchema.parse({ version: 1 });
+    // Default: local-file persistence. The previous else-branch silently
+    // created throwaway in-memory state, so a documented standalone scout
+    // (and the MCP server) read no preferences and persisted nothing while
+    // checkpoint() reported success (#116). Load the real state and save it
+    // on checkpoint.
+    state = loadLocalState();
+    persistLocal = true;
   }
 
-  return new OssScout(config.githubToken, state, gistStore);
+  return new OssScout(config.githubToken, state, gistStore, { persistLocal });
 }
 
 /**
@@ -171,12 +178,17 @@ export class OssScout implements ScoutStateReader {
   private state: ScoutState;
   private dirty = false;
 
+  /** When true, checkpoint() also writes ~/.oss-scout/state.json. */
+  private persistLocal: boolean;
+
   constructor(
     private githubToken: string,
     initialState: ScoutState,
     private gistStore: GistStateStore | null = null,
+    opts: { persistLocal?: boolean } = {},
   ) {
     this.state = initialState;
+    this.persistLocal = opts.persistLocal ?? false;
   }
 
   // ── Search ──────────────────────────────────────────────────────────
@@ -731,6 +743,17 @@ export class OssScout implements ScoutStateReader {
     if (this.gistStore) {
       const ok = await this.gistStore.push(this.state);
       if (!ok) return false;
+    }
+
+    if (this.persistLocal) {
+      // Honest persistence: in local mode the previous no-op return true
+      // claimed success while saving nothing (#116). A failed write keeps
+      // the dirty flag and reports failure.
+      try {
+        saveLocalState(this.state);
+      } catch {
+        return false;
+      }
     }
 
     this.dirty = false;

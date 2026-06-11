@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { createScout, OssScout } from "./scout.js";
 import { ScoutStateSchema } from "./core/schemas.js";
 import type { ScoutState } from "./core/schemas.js";
@@ -13,6 +13,21 @@ vi.mock("./core/feature-discovery.js", async (importOriginal) => {
 });
 
 import { discoverFeatures } from "./core/feature-discovery.js";
+
+// In-memory local-state stub so the default ("local") createScout path is
+// hermetic and never touches the developer's real ~/.oss-scout/state.json.
+// Tests seed `localStateStore.current` (see beforeEach) with a parsed state.
+const localStateStore = vi.hoisted(() => ({ current: null as unknown }));
+vi.mock("./core/local-state.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./core/local-state.js")>();
+  return {
+    ...actual,
+    loadLocalState: vi.fn(() => localStateStore.current),
+    saveLocalState: vi.fn((s: unknown) => {
+      localStateStore.current = s;
+    }),
+  };
+});
 
 // Stub the shared cache singleton so cache-burning entry points
 // (search/features/vetList) never touch the real ~/.oss-scout/cache in tests.
@@ -32,10 +47,37 @@ function makeState(overrides: Partial<ScoutState> = {}): ScoutState {
 }
 
 describe("createScout", () => {
-  it("creates instance with default state", async () => {
+  beforeEach(() => {
+    localStateStore.current = ScoutStateSchema.parse({ version: 1 });
+  });
+
+  it("default (local) mode loads local state, not throwaway in-memory (#116)", async () => {
+    // The stored local state carries a real preference; the default scout
+    // must surface it rather than silently starting from blank defaults
+    localStateStore.current = ScoutStateSchema.parse({
+      version: 1,
+      preferences: { githubUsername: "stored-user" },
+    });
     const scout = await createScout({ githubToken: "test-token" });
     expect(scout).toBeInstanceOf(OssScout);
-    expect(scout.getState().version).toBe(1);
+    expect(scout.getPreferences().githubUsername).toBe("stored-user");
+  });
+
+  it("default (local) mode persists on checkpoint (#116)", async () => {
+    const { saveLocalState } = await import("./core/local-state.js");
+    const scout = await createScout({ githubToken: "test-token" });
+    scout.recordMergedPR({
+      url: "https://github.com/o/r/pull/1",
+      title: "t",
+      mergedAt: "2026-01-01T00:00:00Z",
+      repo: "o/r",
+    });
+    const ok = await scout.checkpoint();
+    expect(ok).toBe(true);
+    expect(saveLocalState).toHaveBeenCalled();
+    // The saved state actually contains the recorded PR (not a no-op success)
+    const saved = localStateStore.current as ScoutState;
+    expect(saved.mergedPRs).toHaveLength(1);
   });
 
   it("creates instance with provided state", async () => {
