@@ -81,8 +81,7 @@ const { evictStaleMock } = vi.hoisted(() => ({
   evictStaleMock: vi.fn(() => 0),
 }));
 vi.mock("../core/http-cache.js", async (importOriginal) => {
-  const actual =
-    await importOriginal<typeof import("../core/http-cache.js")>();
+  const actual = await importOriginal<typeof import("../core/http-cache.js")>();
   return {
     ...actual,
     getHttpCache: () =>
