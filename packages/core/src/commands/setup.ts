@@ -178,6 +178,12 @@ export async function runSetup(
     );
     const excludeRepos = parseCSV(excludeInput);
 
+    // Optional local SLM pre-triage (Ollama). Empty leaves it disabled.
+    const slmTriageModel = await ask(
+      rl,
+      "Local SLM triage model for faster pre-filtering (Ollama model id, e.g. gemma4:e4b, optional): ",
+    );
+
     const prefs = ScoutPreferencesSchema.parse({
       githubUsername,
       languages,
@@ -186,6 +192,7 @@ export async function runSetup(
       excludeRepos,
       projectCategories,
       minStars: isNaN(minStars) ? 50 : minStars,
+      slmTriageModel,
     });
 
     console.error("\n✅ Setup complete! Preferences saved.\n");

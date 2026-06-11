@@ -3,10 +3,11 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { OssScout } from "@oss-scout/core";
 import {
   SearchStrategySchema,
-  ScoutPreferencesSchema,
   ISSUE_URL_PATTERN,
   validateGitHubUrl,
   validateUrl,
+  applyPreferenceField,
+  SORTED_PREFERENCE_KEYS,
 } from "@oss-scout/core";
 
 // Generous ceiling: even with inter-phase delays zeroed, vetting many issues
@@ -307,29 +308,6 @@ export function registerTools(server: McpServer, scout: OssScout): void {
     },
   );
 
-  const VALID_KEYS = Object.keys(ScoutPreferencesSchema.shape);
-  const ARRAY_KEYS = new Set([
-    "languages",
-    "labels",
-    "projectCategories",
-    "excludeRepos",
-    "excludeOrgs",
-    "aiPolicyBlocklist",
-    "scope",
-    "defaultStrategy",
-  ]);
-  const NUMBER_KEYS = new Set([
-    "minStars",
-    "maxIssueAgeDays",
-    "minRepoScoreThreshold",
-    "interPhaseDelayMs",
-    "broadPhaseDelayMs",
-    "skipBroadWhenSufficientResults",
-    "featuresAnchorThreshold",
-    "featuresSplitRatio",
-  ]);
-  const BOOLEAN_KEYS = new Set(["includeDocIssues"]);
-
   server.tool(
     "config-set",
     "Update an oss-scout configuration preference",
@@ -337,91 +315,34 @@ export function registerTools(server: McpServer, scout: OssScout): void {
       key: z
         .string()
         .describe(
-          "Preference key to update (e.g. languages, minStars, excludeRepos)",
+          `Preference key to update. One of: ${SORTED_PREFERENCE_KEYS.join(", ")}`,
         ),
       value: z
         .string()
         .describe(
-          "New value — comma-separated for arrays, plain string for scalars",
+          'New value. Comma-separated for arrays; prefix with + to append or - to remove items (e.g. "+spam/repo"). Plain string/number/boolean for scalars.',
         ),
     },
     async ({ key, value }) => {
-      if (!VALID_KEYS.includes(key)) {
+      // Parse + validate via the shared field map so the CLI and MCP stay in
+      // lockstep, including the +/- array syntax and the scope special case
+      // (#153). applyPreferenceField throws ValidationError on a bad key/value.
+      let validated;
+      try {
+        validated = applyPreferenceField(scout.getPreferences(), key, value);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
         return {
-          content: [
-            {
-              type: "text",
-              text: `Unknown config key: "${key}". Valid keys: ${VALID_KEYS.join(", ")}`,
-            },
-          ],
+          content: [{ type: "text", text: msg }],
           isError: true,
         };
       }
 
-      let parsed: unknown;
-      if (ARRAY_KEYS.has(key)) {
-        // Accept comma-separated strings → arrays
-        try {
-          parsed = JSON.parse(value);
-          if (!Array.isArray(parsed)) {
-            parsed = value
-              .split(",")
-              .map((s: string) => s.trim())
-              .filter(Boolean);
-          }
-        } catch {
-          parsed = value
-            .split(",")
-            .map((s: string) => s.trim())
-            .filter(Boolean);
-        }
-      } else if (NUMBER_KEYS.has(key)) {
-        const num = Number(value);
-        if (isNaN(num)) {
-          return {
-            content: [
-              { type: "text", text: `Invalid number for "${key}": "${value}"` },
-            ],
-            isError: true,
-          };
-        }
-        parsed = num;
-      } else if (BOOLEAN_KEYS.has(key)) {
-        const lower = value.toLowerCase();
-        if (lower === "true" || lower === "yes") parsed = true;
-        else if (lower === "false" || lower === "no") parsed = false;
-        else {
-          return {
-            content: [
-              {
-                type: "text",
-                text: `Invalid boolean for "${key}": "${value}". Use true/false or yes/no.`,
-              },
-            ],
-            isError: true,
-          };
-        }
-      } else {
-        // String or enum fields — pass through as-is
-        parsed = value;
-      }
-
-      const currentPrefs = scout.getPreferences();
-      const candidate = { ...currentPrefs, [key]: parsed };
-
-      // Validate the full preferences object with Zod
-      const result = ScoutPreferencesSchema.safeParse(candidate);
-      if (!result.success) {
-        const issues = result.error.issues
-          .map((i) => `${i.path.join(".")}: ${i.message}`)
-          .join("; ");
-        return {
-          content: [{ type: "text", text: `Validation error: ${issues}` }],
-          isError: true,
-        };
-      }
-
-      scout.updatePreferences({ [key]: parsed });
+      // Apply only the changed key; validation above ran against the full
+      // merged object so cross-field rules still hold.
+      scout.updatePreferences({
+        [key]: validated[key as keyof typeof validated],
+      });
       await scout.checkpoint();
       const updated = scout.getPreferences();
       return {

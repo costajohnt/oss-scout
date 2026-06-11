@@ -368,6 +368,25 @@ describe("config command", () => {
       });
     });
 
+    describe("SLM triage fields", () => {
+      it("should set slmTriageModel (#153)", () => {
+        writeState(makeState());
+
+        const result = runConfigSet("slmTriageModel", "gemma4:e4b");
+
+        expect(result.slmTriageModel).toBe("gemma4:e4b");
+        expect(readState().preferences.slmTriageModel).toBe("gemma4:e4b");
+      });
+
+      it("should set slmTriageHost (#153)", () => {
+        writeState(makeState());
+
+        const result = runConfigSet("slmTriageHost", "http://10.0.0.5:11434");
+
+        expect(result.slmTriageHost).toBe("http://10.0.0.5:11434");
+      });
+    });
+
     describe("validation", () => {
       it("should reject unknown keys", () => {
         writeState(makeState());
