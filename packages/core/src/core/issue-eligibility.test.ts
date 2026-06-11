@@ -31,6 +31,7 @@ import {
   checkNotClaimed,
   checkUserMergedPRsInRepo,
   analyzeRequirements,
+  commentClaimsIssue,
 } from "./issue-eligibility.js";
 import { paginateAll } from "./pagination.js";
 import type { Octokit } from "@octokit/rest";
@@ -308,6 +309,63 @@ describe("checkNoExistingPR", () => {
     const result = await checkNoExistingPR(octokit, "owner", "repo", 5);
     expect(result.linkedPR).not.toBeNull();
     expect(result.linkedPR?.updatedAt).toBeUndefined();
+  });
+});
+
+// ── commentClaimsIssue ────────────────────────────────────────────
+
+describe("commentClaimsIssue", () => {
+  it.each([
+    ["I'm working on this already"],
+    ["I am working on it right now"],
+    ["I'll take this issue"],
+    ["I will take this"],
+    ["I'd like to work on this feature"],
+    ["I would love to work on this"],
+    ["Can I work on this?"],
+    ["May I work on it please?"],
+    ["could i work on this one"],
+    ["I'm on it"],
+    ["I'll submit a PR shortly"],
+    ["This should be assigned to me"],
+    ["Bob is working on it"],
+    ["Started working on a fix yesterday."],
+    ["Thanks for the report. I'm working on this."],
+    ["Can I work on the parser bug?"],
+    ["can i work on #126"],
+    ["May I take this issue?"],
+    ["I would like to work on the auth module"],
+    ["I'd like to work on issue 42"],
+  ])("claims: %s", (body) => {
+    expect(commentClaimsIssue(body)).toBe(true);
+  });
+
+  it.each([
+    ["Is anyone working on this?"],
+    ["is anyone working on it currently"],
+    ["Who is working on this?"],
+    ["Can I work on a repro?"],
+    ["Are you still working on it?"],
+    ["No one is working on this as far as I know"],
+    ["Nobody is working on a fix yet"],
+    ["I'm not working on this anymore"],
+    ["This would be a nice feature."],
+    ["I agree, we should add this."],
+    ["Someone should be working on a fix for the upstream bug"],
+    ["Could I work on a similar feature in another repo?"],
+    ["Can I take 5 minutes to explain the design?"],
+    ["I will take 2 weeks off starting Monday"],
+  ])("does not claim: %s", (body) => {
+    expect(commentClaimsIssue(body)).toBe(false);
+  });
+
+  it("evaluates clauses independently within one comment", () => {
+    expect(
+      commentClaimsIssue("Is anyone working on this? If not, I'll take this."),
+    ).toBe(true);
+    expect(commentClaimsIssue("Is anyone working on this? Just curious.")).toBe(
+      false,
+    );
   });
 });
 
