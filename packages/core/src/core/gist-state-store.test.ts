@@ -211,6 +211,40 @@ describe("GistStateStore", () => {
       expect(cached.preferences.githubUsername).toBe("cached-user");
     });
 
+    it("falls back to the local cache when a found gist has unparseable content (data-loss guard #162)", async () => {
+      // Seed a local cache so the fallback has something to return.
+      const cachedState = makeState({
+        preferences: { githubUsername: "cached-user" },
+      });
+      fs.writeFileSync(
+        path.join(tempDir, "state-cache.json"),
+        JSON.stringify(cachedState),
+      );
+
+      const octokit = makeOctokit({
+        list: vi.fn().mockResolvedValue({
+          data: [{ id: "found-gist", description: "oss-scout-state" }],
+        }),
+        // The gist exists but its state.json is corrupt, so fetchGistState
+        // returns null — we must NOT create a new gist (that would orphan the
+        // user's real state); fall back to cache in degraded mode instead.
+        get: vi.fn().mockResolvedValue({
+          data: {
+            id: "found-gist",
+            files: { "state.json": { content: "{ not valid json" } },
+          },
+        }),
+        create: vi.fn(),
+      });
+
+      const store = new GistStateStore(octokit);
+      const result = await store.bootstrap();
+
+      expect(result.degraded).toBe(true);
+      expect(result.state.preferences.githubUsername).toBe("cached-user");
+      expect(octokit.gists.create).not.toHaveBeenCalled();
+    });
+
     describe("degraded mode", () => {
       it("falls back to local cache on API failure", async () => {
         const cachedState = makeState({
@@ -429,6 +463,44 @@ describe("GistStateStore", () => {
       const ok = await store.push(makeState());
 
       expect(ok).toBe(false);
+    });
+
+    it("refuses to write a state that exceeds the 900KB gist limit (#162)", async () => {
+      const update = vi.fn().mockResolvedValue({ data: { id: "gist-1" } });
+      const octokit = makeOctokit({
+        list: vi.fn().mockResolvedValue({
+          data: [{ id: "gist-1", description: "oss-scout-state" }],
+        }),
+        get: vi.fn().mockResolvedValue(gistResponse(makeState(), "gist-1")),
+        update,
+      });
+      const store = new GistStateStore(octokit);
+      await store.bootstrap();
+
+      // One saved result with a >900KB title pushes the serialized state past
+      // the guard threshold.
+      const huge = makeState({
+        savedResults: [
+          {
+            issueUrl: "https://github.com/a/b/issues/1",
+            repo: "a/b",
+            number: 1,
+            title: "x".repeat(1_000_000),
+            labels: [],
+            recommendation: "approve" as const,
+            viabilityScore: 80,
+            searchPriority: "normal",
+            firstSeenAt: "2026-06-01T00:00:00Z",
+            lastSeenAt: "2026-06-01T00:00:00Z",
+            lastScore: 80,
+          },
+        ],
+      });
+
+      const ok = await store.push(huge);
+
+      expect(ok).toBe(false);
+      expect(update).not.toHaveBeenCalled();
     });
 
     it("merges the concurrent remote state before writing, not last-writer-wins (#117)", async () => {
@@ -690,6 +762,50 @@ describe("mergeStates", () => {
     const merged = mergeStates(local, remote);
     expect(merged.savedResults.find((r) => r.issueUrl === url)).toBeUndefined();
     expect(merged.skippedIssues.find((s) => s.url === url)).toBeDefined();
+  });
+
+  it("merges skipped issues by URL, keeping the newer skippedAt and unioning distinct URLs (#162)", () => {
+    const shared = "https://github.com/a/b/issues/1";
+    const local = makeState({
+      skippedIssues: [
+        {
+          url: shared,
+          repo: "a/b",
+          number: 1,
+          title: "old",
+          skippedAt: "2026-06-01T00:00:00Z",
+        },
+      ],
+    });
+    const remote = makeState({
+      skippedIssues: [
+        {
+          url: shared,
+          repo: "a/b",
+          number: 1,
+          title: "newer",
+          skippedAt: "2026-06-05T00:00:00Z",
+        },
+        {
+          url: "https://github.com/a/b/issues/2",
+          repo: "a/b",
+          number: 2,
+          title: "remote-only",
+          skippedAt: "2026-06-02T00:00:00Z",
+        },
+      ],
+    });
+
+    const merged = mergeStates(local, remote);
+    const sharedEntry = merged.skippedIssues.find((s) => s.url === shared);
+    expect(sharedEntry?.title).toBe("newer");
+    expect(sharedEntry?.skippedAt).toBe("2026-06-05T00:00:00Z");
+    expect(
+      merged.skippedIssues.find(
+        (s) => s.url === "https://github.com/a/b/issues/2",
+      ),
+    ).toBeDefined();
+    expect(merged.skippedIssues).toHaveLength(2);
   });
 
   it("unions mergedPRs by URL", () => {
