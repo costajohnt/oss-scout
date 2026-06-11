@@ -22,11 +22,14 @@ fi
 
 ## Step 1: Check Setup
 
+`setup` is interactive and exits with a CONFIGURATION error in non-TTY
+contexts like this one. Read the current preferences instead:
+
 ```bash
-GITHUB_TOKEN=$(gh auth token 2>/dev/null || echo "$GITHUB_TOKEN") node "${CLAUDE_PLUGIN_ROOT}/packages/core/dist/cli.bundle.cjs" setup --json 2>/dev/null
+GITHUB_TOKEN=$(gh auth token 2>/dev/null || echo "$GITHUB_TOKEN") node "${CLAUDE_PLUGIN_ROOT}/packages/core/dist/cli.bundle.cjs" config --json 2>/dev/null
 ```
 
-If setup is not complete, suggest running `/scout-setup` first. Continue anyway — the CLI works with auto-detected defaults.
+If `data.githubUsername` is empty or missing, setup has not been run: suggest `/scout-setup` first. Continue anyway — the CLI works with auto-detected defaults.
 
 ## Step 2: Run Search
 
