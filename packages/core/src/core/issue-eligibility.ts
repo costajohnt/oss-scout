@@ -279,20 +279,26 @@ export async function checkNotClaimed(
   if (commentCount === 0) return { passed: true };
 
   try {
-    // Paginate through all comments
-    const comments = await octokit.paginate(
-      octokit.issues.listComments,
-      {
+    // Fetch only the newest comments. Walking every page cost a
+    // 2,000-comment issue 20 list calls per vet, then discarded all but the
+    // tail anyway. Claims live in recent activity, so fetch the last page
+    // (plus its predecessor so a short last page still yields ~100+
+    // comments): at most 2 calls.
+    const PER_PAGE = 100;
+    const lastPage = Math.max(1, Math.ceil(commentCount / PER_PAGE));
+    const pagesToFetch = lastPage > 1 ? [lastPage - 1, lastPage] : [1];
+
+    const recentComments: Array<{ body?: string | null }> = [];
+    for (const page of pagesToFetch) {
+      const response = await octokit.issues.listComments({
         owner,
         repo,
         issue_number: issueNumber,
-        per_page: 100,
-      },
-      (response) => response.data,
-    );
-
-    // Limit to last 100 comments to avoid excessive processing
-    const recentComments = comments.slice(-100);
+        per_page: PER_PAGE,
+        page,
+      });
+      recentComments.push(...response.data);
+    }
 
     for (const comment of recentComments) {
       if (commentClaimsIssue(comment.body || "")) {
