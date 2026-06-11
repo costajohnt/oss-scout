@@ -75,6 +75,23 @@ vi.mock("../core/issue-discovery.js", () => {
   };
 });
 
+// Stub the shared cache singleton so search()'s evictStale call never
+// touches the real ~/.oss-scout/cache during tests.
+const { evictStaleMock } = vi.hoisted(() => ({
+  evictStaleMock: vi.fn(() => 0),
+}));
+vi.mock("../core/http-cache.js", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../core/http-cache.js")>();
+  return {
+    ...actual,
+    getHttpCache: () =>
+      ({ evictStale: evictStaleMock }) as unknown as ReturnType<
+        typeof actual.getHttpCache
+      >,
+  };
+});
+
 // ── Helpers ──────────────────────────────────────────────────────────
 
 function makeState(overrides: Partial<ScoutState> = {}): ScoutState {
@@ -88,6 +105,12 @@ describe("E2E: search flow", () => {
 
   beforeEach(() => {
     scout = new OssScout("fake-token", makeState());
+  });
+
+  it("search evicts stale cache entries exactly once per invocation", async () => {
+    evictStaleMock.mockClear();
+    await scout.search({ maxResults: 5 });
+    expect(evictStaleMock).toHaveBeenCalledTimes(1);
   });
 
   it("search returns candidates", async () => {
