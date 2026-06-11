@@ -15,6 +15,11 @@ import {
   type SearchPriority,
   type IssueCandidate,
   type ProjectCategory,
+  type ScoutPreferences,
+  type ScoutState,
+  type MergedPRRecord,
+  type ClosedPRRecord,
+  type OpenPRRecord,
 } from "./types.js";
 import {
   ValidationError,
@@ -103,6 +108,27 @@ export interface ScoutStateReader {
    * Optional so existing implementations keep compiling; absent reads as 0.
    */
   getClosedWithoutMergeCount?(repo: string): number;
+}
+
+/**
+ * Write side of the scout state, consumed by the bootstrap flow. Defined here
+ * next to ScoutStateReader so core/bootstrap.ts can depend on this contract
+ * instead of importing the OssScout facade from the package root (an upward
+ * dependency). OssScout implements it (#156).
+ */
+export interface ScoutStateWriter {
+  /** Read current preferences (bootstrap reads githubUsername). */
+  getPreferences(): Readonly<ScoutPreferences>;
+  /** Replace the cached starred-repo list. */
+  setStarredRepos(repos: string[]): void;
+  /** Record a merged PR (deduplicated by URL). */
+  recordMergedPR(pr: MergedPRRecord): void;
+  /** Record a PR closed without merge (deduplicated by URL). */
+  recordClosedPR(pr: ClosedPRRecord): void;
+  /** Record an open PR (deduplicated by URL). */
+  recordOpenPR(pr: OpenPRRecord): void;
+  /** Snapshot the current state (bootstrap reports counts from it). */
+  getState(): Readonly<ScoutState>;
 }
 
 export class IssueVetter {

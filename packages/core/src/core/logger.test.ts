@@ -1,5 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { enableDebug, debug, info, warn } from "./logger.js";
+import {
+  enableDebug,
+  debug,
+  info,
+  warn,
+  setLogLevel,
+  getLogLevel,
+} from "./logger.js";
 
 describe("logger", () => {
   let errorSpy: ReturnType<typeof vi.spyOn>;
@@ -95,6 +102,43 @@ describe("logger", () => {
       enableDebug();
       debug("mod", "should appear");
       expect(errorSpy).toHaveBeenCalled();
+    });
+  });
+
+  describe("setLogLevel (#156)", () => {
+    // currentLevel is a module global; restore the default so the leveled
+    // tests don't leak state into the rest of the file.
+    afterEach(() => setLogLevel("info"));
+
+    it("silent suppresses warn, info, and debug", () => {
+      setLogLevel("silent");
+      warn("mod", "w");
+      info("mod", "i");
+      debug("mod", "d");
+      expect(errorSpy).not.toHaveBeenCalled();
+    });
+
+    it("warn level emits warn but suppresses info and debug", () => {
+      setLogLevel("warn");
+      info("mod", "i");
+      debug("mod", "d");
+      expect(errorSpy).not.toHaveBeenCalled();
+      warn("mod", "w");
+      expect(errorSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it("info level emits warn and info but suppresses debug", () => {
+      setLogLevel("info");
+      debug("mod", "d");
+      expect(errorSpy).not.toHaveBeenCalled();
+      info("mod", "i");
+      warn("mod", "w");
+      expect(errorSpy).toHaveBeenCalledTimes(2);
+    });
+
+    it("getLogLevel reflects the set level", () => {
+      setLogLevel("warn");
+      expect(getLogLevel()).toBe("warn");
     });
   });
 });
