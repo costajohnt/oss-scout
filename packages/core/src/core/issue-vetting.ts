@@ -448,7 +448,13 @@ export class IssueVetter {
     // continuing to log per-issue warnings buries the actual problem.
     let firstAuthError: unknown = null;
 
-    for (const url of urls) {
+    // Dedup defensively: the pending map is keyed by URL, so a duplicate
+    // input would overwrite the in-flight entry and its finally-cleanup
+    // would deregister the second task, letting allSettled return while a
+    // vet still runs (#129). Callers dedup today, but nothing enforced it.
+    const uniqueUrls = [...new Set(urls)];
+
+    for (const url of uniqueUrls) {
       if (candidates.length >= maxResults) break;
       if (firstAuthError) break; // stop scheduling once auth has failed
       attemptedCount++;
