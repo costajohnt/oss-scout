@@ -98,6 +98,11 @@ export interface ScoutStateReader {
    * vetIssue treats either of these as "skip the SLM call".
    */
   getSLMTriageConfig?(): { model: string; host: string };
+  /**
+   * Number of the user's PRs closed without merge in this repo (#125).
+   * Optional so existing implementations keep compiling; absent reads as 0.
+   */
+  getClosedWithoutMergeCount?(repo: string): number;
 }
 
 export class IssueVetter {
@@ -359,7 +364,8 @@ export class IssueVetter {
       clearRequirements,
       hasContributionGuidelines: !!contributionGuidelines,
       issueUpdatedAt: ghIssue.updated_at,
-      closedWithoutMergeCount: 0,
+      closedWithoutMergeCount:
+        this.stateReader.getClosedWithoutMergeCount?.(repoFullName) ?? 0,
       mergedPRCount: effectiveMergedCount,
       orgHasMergedPRs,
       repoQualityBonus,

@@ -218,6 +218,40 @@ describe("OssScout", () => {
     });
   });
 
+  describe("getClosedWithoutMergeCount", () => {
+    it("returns the tracked repo-score count when a score record exists", () => {
+      const scout = makeScout();
+      scout.recordClosedPR({
+        url: "https://github.com/owner/repo/pull/1",
+        title: "Rejected PR",
+        closedAt: "2025-01-01T00:00:00Z",
+        repo: "owner/repo",
+      });
+      scout.recordClosedPR({
+        url: "https://github.com/owner/repo/pull/2",
+        title: "Also rejected",
+        closedAt: "2025-02-01T00:00:00Z",
+        repo: "owner/repo",
+      });
+      expect(scout.getClosedWithoutMergeCount("owner/repo")).toBe(2);
+    });
+
+    it("falls back to counting closedPRs when no score record exists", () => {
+      const state = makeState({
+        closedPRs: [
+          {
+            url: "https://github.com/owner/repo/pull/9",
+            title: "Old rejection",
+            closedAt: "2024-01-01T00:00:00Z",
+          },
+        ],
+      });
+      const scout = new OssScout("fake-token", state);
+      expect(scout.getClosedWithoutMergeCount("owner/repo")).toBe(1);
+      expect(scout.getClosedWithoutMergeCount("other/repo")).toBe(0);
+    });
+  });
+
   describe("updatePreferences", () => {
     it("updates specific preferences", () => {
       const scout = makeScout();

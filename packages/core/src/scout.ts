@@ -444,6 +444,19 @@ export class OssScout implements ScoutStateReader {
   }
 
   /**
+   * Number of the user's PRs closed without merge in this repo (#125).
+   * Prefers the tracked repo score; falls back to counting closedPRs so the
+   * scoring penalty works even before a score record exists.
+   */
+  getClosedWithoutMergeCount(repo: string): number {
+    const score = this.state.repoScores[repo];
+    if (score) return score.closedWithoutMergeCount;
+    return (this.state.closedPRs ?? []).filter(
+      (p) => extractRepoFromUrl(p.url) === repo,
+    ).length;
+  }
+
+  /**
    * Optional SLM pre-triage config read from preferences (oss-autopilot#1122).
    * Empty `model` disables the call; the vetter treats it as a no-op.
    */

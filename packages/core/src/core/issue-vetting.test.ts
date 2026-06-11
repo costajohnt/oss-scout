@@ -259,6 +259,26 @@ describe("IssueVetter", () => {
       expect(cacheSet).not.toHaveBeenCalled();
     });
 
+    it("passes the stored closed-without-merge count into scoring (#125)", async () => {
+      installCacheSpy();
+      const vetter = makeVetter({
+        getClosedWithoutMergeCount: vi.fn(() => 2),
+      });
+      await vetter.vetIssue(VALID_ISSUE_URL);
+      expect(vi.mocked(calculateViabilityScore)).toHaveBeenCalledWith(
+        expect.objectContaining({ closedWithoutMergeCount: 2 }),
+      );
+    });
+
+    it("defaults the closed-without-merge count to 0 when the reader lacks the method", async () => {
+      installCacheSpy();
+      const vetter = makeVetter();
+      await vetter.vetIssue(VALID_ISSUE_URL);
+      expect(vi.mocked(calculateViabilityScore)).toHaveBeenCalledWith(
+        expect.objectContaining({ closedWithoutMergeCount: 0 }),
+      );
+    });
+
     it("recommends approve when all checks pass", async () => {
       const vetter = makeVetter();
       const result = await vetter.vetIssue(VALID_ISSUE_URL);
