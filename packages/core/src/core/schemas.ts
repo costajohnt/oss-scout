@@ -196,7 +196,12 @@ export const ScoutPreferencesSchema = z.object({
   persistence: PersistenceModeSchema.default("local"),
   defaultStrategy: z.array(SearchStrategySchema).optional(),
   broadPhaseDelayMs: z.number().min(0).max(300000).default(90000),
-  skipBroadWhenSufficientResults: z.number().int().min(0).max(100).default(15),
+  /**
+   * Skip the expensive broad phase once this many candidates were found by
+   * the cheaper phases. Clamped at runtime to maxResults - 1 so it stays
+   * satisfiable; 0 disables skipping entirely.
+   */
+  skipBroadWhenSufficientResults: z.number().int().min(0).max(100).default(8),
   /**
    * Optional Ollama model id used for SLM pre-triage during vetting
    * (oss-autopilot#1122). Empty disables the feature. Recommended values:
