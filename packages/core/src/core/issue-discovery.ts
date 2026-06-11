@@ -677,7 +677,15 @@ export class IssueDiscovery {
 
     // Phase 2: General search (with rate limit mitigation)
     const broadDelay = config.broadPhaseDelayMs ?? 90000;
-    const skipThreshold = config.skipBroadWhenSufficientResults ?? 15;
+    // Clamp to maxResults - 1: the phase gate below already skips the whole
+    // phase at >= maxResults, so any larger threshold would be unsatisfiable
+    // (the default 15 vs default maxResults 10 made this dead config). 0
+    // stays "never skip".
+    const configuredSkipThreshold = config.skipBroadWhenSufficientResults ?? 8;
+    const skipThreshold =
+      configuredSkipThreshold > 0
+        ? Math.min(configuredSkipThreshold, maxResults - 1)
+        : 0;
 
     if (
       allCandidates.length < maxResults &&

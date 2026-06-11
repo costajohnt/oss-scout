@@ -948,6 +948,30 @@ describe("IssueDiscovery", () => {
       expect(sleepCalls).not.toContain(90000);
     });
 
+    it("clamps an unsatisfiable threshold to maxResults - 1 (old persisted default 15 vs maxResults 10)", async () => {
+      // 9 candidates from Phase 0: under maxResults (10), so Phase 2's gate
+      // is open; threshold 15 would never fire unclamped, but clamped to 9
+      // it skips the broad phase.
+      const candidates = Array.from({ length: 9 }, (_, i) =>
+        makeCandidate(`org/clamp-${i}`, "merged_pr"),
+      );
+      mockFetchIssuesFromKnownRepos.mockResolvedValue({
+        candidates,
+        allReposFailed: false,
+        rateLimitHit: false,
+      });
+      vi.mocked(applyPerRepoCap).mockImplementation((c) => c);
+
+      const discovery = makeDiscovery(
+        { getReposWithMergedPRs: vi.fn(() => ["org/clamp-0"]) },
+        { skipBroadWhenSufficientResults: 15 },
+      );
+
+      await discovery.searchIssues({ maxResults: 10 });
+
+      expect(mockSearchAcrossLanguagesAndLabels).not.toHaveBeenCalled();
+    });
+
     it("skipBroadWhenSufficientResults=0 means never skip Phase 2", async () => {
       // Phase 0 returns many candidates
       const candidates = Array.from({ length: 20 }, (_, i) =>

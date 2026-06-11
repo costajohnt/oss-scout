@@ -156,9 +156,9 @@ describe("ScoutPreferencesSchema", () => {
     expect(prefs.broadPhaseDelayMs).toBe(90000);
   });
 
-  it("applies skipBroadWhenSufficientResults default of 15", () => {
+  it("applies skipBroadWhenSufficientResults default of 8 (below default maxResults)", () => {
     const prefs = ScoutPreferencesSchema.parse({});
-    expect(prefs.skipBroadWhenSufficientResults).toBe(15);
+    expect(prefs.skipBroadWhenSufficientResults).toBe(8);
   });
 
   it("accepts custom broadPhaseDelayMs", () => {
