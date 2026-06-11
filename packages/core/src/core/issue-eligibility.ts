@@ -89,24 +89,70 @@ function buildLinkedPRFromTimelineEvent(
 
 const MODULE = "issue-eligibility";
 
-/** Phrases that indicate someone has already claimed an issue. */
-const CLAIM_PHRASES = [
-  "i'm working on this",
-  "i am working on this",
-  "i'll take this",
-  "i will take this",
-  "working on it",
-  "i'd like to work on",
-  "i would like to work on",
-  "can i work on",
-  "may i work on",
-  "assigned to me",
-  "i'm on it",
-  "i'll submit a pr",
-  "i will submit a pr",
-  "working on a fix",
-  "working on a pr",
-] as const;
+/**
+ * Claim detection, applied per clause (sentence). Plain substring matching
+ * flagged questions ("is anyone working on it?") and negations ("no one is
+ * working on this") as claims. Rules:
+ *
+ * - A clause ending in "?" is never a claim, EXCEPT a permission request
+ *   ("can I work on this?"), which is the author asking to take the issue.
+ * - A declarative clause with an indefinite or negated subject (anyone,
+ *   someone, nobody, not, ...) is never a claim.
+ * - Otherwise declarative claim patterns match, including third-person
+ *   ("Bob is working on it" means the issue is taken).
+ */
+/**
+ * Object that refers to the issue at hand: this/it/that, "the <thing>",
+ * "#123", "issue ...". Deliberately excludes "a <thing>" ("can I work on a
+ * repro?" introduces new work, it does not claim the issue). The numeric
+ * branch requires the # prefix: a bare number collides with quantity idioms
+ * ("can I take 5 minutes"). Residual misses: gerund objects ("work on
+ * fixing the bug") and bare numbers ("work on 126").
+ */
+const ISSUE_OBJECT = String.raw`(?:this\b|it\b|that\b|the\b|#\d+|issue\b)`;
+
+/** Explicit first-person claims; not subject to the subject guard. */
+const FIRST_PERSON_CLAIM_PATTERNS: readonly RegExp[] = [
+  new RegExp(String.raw`\bi\s*(?:'ll|will) take ${ISSUE_OBJECT}`),
+  new RegExp(
+    String.raw`\bi\s*(?:'d|would) (?:like|love) to work on ${ISSUE_OBJECT}`,
+  ),
+  /\bi\s*(?:'m|am) on it\b/,
+  /\bi\s*(?:'ll|will) submit a pr\b/,
+  /\bassigned to me\b/,
+];
+
+/**
+ * Generic "working on ..." phrasings. These also match third-person claims
+ * ("Bob is working on it"), so they need the subject guard below to avoid
+ * flagging indefinite or negated subjects.
+ */
+const GENERIC_WORKING_PATTERNS: readonly RegExp[] = [
+  /\bworking on (?:this|it)\b/,
+  /\bworking on a (?:fix|pr)\b/,
+];
+
+/** Asking to take the issue counts as a claim even phrased as a question. */
+const PERMISSION_CLAIM_PATTERN = new RegExp(
+  String.raw`\b(?:can|may|could) i (?:work on|take) ${ISSUE_OBJECT}`,
+);
+
+/** Subjects/negations that make a "working on ..." clause a non-claim. */
+const NON_CLAIM_SUBJECTS =
+  /\b(?:anyone|anybody|someone|somebody|who|whoever|nobody|no[- ]?one|not)\b/;
+
+/** True when a single comment body claims the issue. */
+export function commentClaimsIssue(body: string): boolean {
+  const clauses = body.toLowerCase().split(/(?<=[.!?])|\n+/);
+  for (const clause of clauses) {
+    if (PERMISSION_CLAIM_PATTERN.test(clause)) return true;
+    if (clause.trimEnd().endsWith("?")) continue;
+    if (FIRST_PERSON_CLAIM_PATTERNS.some((p) => p.test(clause))) return true;
+    if (NON_CLAIM_SUBJECTS.test(clause)) continue;
+    if (GENERIC_WORKING_PATTERNS.some((p) => p.test(clause))) return true;
+  }
+  return false;
+}
 
 /**
  * Check whether an open PR already exists for the given issue.
@@ -249,8 +295,7 @@ export async function checkNotClaimed(
     const recentComments = comments.slice(-100);
 
     for (const comment of recentComments) {
-      const body = (comment.body || "").toLowerCase();
-      if (CLAIM_PHRASES.some((phrase) => body.includes(phrase))) {
+      if (commentClaimsIssue(comment.body || "")) {
         return { passed: false };
       }
     }
