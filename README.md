@@ -250,6 +250,9 @@ oss-scout config reset                               # reset to defaults
 | `broadPhaseDelayMs` | number | 90000 | Extra delay before the broad phase |
 | `skipBroadWhenSufficientResults` | number | 8 | Skip the broad phase once this many candidates are found (0 disables) |
 | `persistence` | enum | local | State storage: local or gist |
+| `preferLanguages` | string[] | [] | Soft-boost ranking for these repo languages (the `--prefer-languages` flag overrides) |
+| `preferRepos` | string[] | [] | Soft-boost ranking for these `owner/repo` slugs (the `--prefer-repos` flag overrides) |
+| `diversityRatio` | number | 0 | Fraction of result slots (0-1) reserved for unboosted candidates (the `--diversity-ratio` flag overrides) |
 | `slmTriageModel` | string | (disabled) | Ollama model id for local SLM pre-triage during vetting (e.g. `gemma4:e4b`); empty disables it |
 | `slmTriageHost` | string | (127.0.0.1:11434) | Override the Ollama HTTP host when it runs on another machine |
 | `featuresAnchorThreshold` | number | 3 | Min merged-PR count for a repo to be a `features` anchor (1-50) |

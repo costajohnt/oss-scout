@@ -46,6 +46,9 @@ export function runConfigShow(): void {
     `  defaultStrategy:      ${prefs.defaultStrategy ? formatArray(prefs.defaultStrategy) : "(all)"}`,
   );
   console.log(`  persistence:          ${prefs.persistence}`);
+  console.log(`  preferLanguages:      ${formatArray(prefs.preferLanguages)}`);
+  console.log(`  preferRepos:          ${formatArray(prefs.preferRepos)}`);
+  console.log(`  diversityRatio:       ${prefs.diversityRatio}`);
   console.log(
     `  broadPhaseDelayMs:    ${prefs.broadPhaseDelayMs}ms (${(prefs.broadPhaseDelayMs / 1000).toFixed(0)}s)`,
   );

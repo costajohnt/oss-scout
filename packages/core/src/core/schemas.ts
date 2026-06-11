@@ -203,6 +203,15 @@ export const ScoutPreferencesSchema = z.looseObject({
   interPhaseDelayMs: z.number().min(0).max(120000).default(30000),
   persistence: PersistenceModeSchema.default("local"),
   defaultStrategy: z.array(SearchStrategySchema).optional(),
+  /**
+   * Persisted personalization defaults (#168). The `--prefer-languages`,
+   * `--prefer-repos`, and `--diversity-ratio` search flags override these when
+   * passed, so a stored preference removes the need to retype the boost every
+   * search. Empty / 0 disables the corresponding signal (same as the flags).
+   */
+  preferLanguages: z.array(z.string()).default([]),
+  preferRepos: z.array(z.string()).default([]),
+  diversityRatio: z.number().min(0).max(1).default(0),
   broadPhaseDelayMs: z.number().min(0).max(300000).default(90000),
   /**
    * Skip the expensive broad phase once this many candidates were found by
