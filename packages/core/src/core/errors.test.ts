@@ -5,8 +5,13 @@ import {
   ValidationError,
   errorMessage,
   getHttpStatusCode,
+  isRateLimitError,
   resolveErrorCode,
 } from "./errors.js";
+
+function withStatus(message: string, status: number): Error {
+  return Object.assign(new Error(message), { status });
+}
 
 describe("Custom Error Hierarchy", () => {
   describe("OssScoutError", () => {
@@ -133,6 +138,23 @@ describe("getHttpStatusCode", () => {
   it("returns undefined for primitives", () => {
     expect(getHttpStatusCode("string")).toBeUndefined();
     expect(getHttpStatusCode(42)).toBeUndefined();
+  });
+});
+
+describe("isRateLimitError", () => {
+  it.each([
+    [429, "anything", true],
+    [403, "API rate limit exceeded", true],
+    [403, "You have exceeded a secondary rate limit", true],
+    [403, "You have triggered an abuse detection mechanism", true],
+    [403, "Forbidden: resource not accessible", false],
+    [500, "Internal server error", false],
+  ])("status %s with message %j classifies as %s", (status, msg, expected) => {
+    expect(isRateLimitError(withStatus(msg, status))).toBe(expected);
+  });
+
+  it("returns false for an error with no status", () => {
+    expect(isRateLimitError(new Error("no status at all"))).toBe(false);
   });
 });
 

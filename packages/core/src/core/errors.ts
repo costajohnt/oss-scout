@@ -52,7 +52,10 @@ export function isRateLimitError(error: unknown): boolean {
   if (status === 429) return true;
   if (status === 403) {
     const msg = errorMessage(error).toLowerCase();
-    return msg.includes("rate limit");
+    // "rate limit" also covers GitHub's "secondary rate limit" wording;
+    // abuse-detection 403s carry neither substring but are the same
+    // back-off-and-retry condition, so they must propagate too (#138).
+    return msg.includes("rate limit") || msg.includes("abuse detection");
   }
   return false;
 }
@@ -78,10 +81,8 @@ export function resolveErrorCode(err: unknown): ErrorCode {
   const status = getHttpStatusCode(err);
   if (status === 401) return "AUTH_REQUIRED";
   if (status === 403) {
-    const msg = errorMessage(err).toLowerCase();
-    if (msg.includes("rate limit") || msg.includes("abuse detection"))
-      return "RATE_LIMITED";
-    return "AUTH_REQUIRED";
+    // Single source of truth for the 403 rate-limit/abuse classification
+    return isRateLimitError(err) ? "RATE_LIMITED" : "AUTH_REQUIRED";
   }
   if (status === 404) return "NOT_FOUND";
   if (status === 429) return "RATE_LIMITED";
