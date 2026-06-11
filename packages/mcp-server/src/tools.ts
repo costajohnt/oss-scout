@@ -1,7 +1,13 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { OssScout } from "@oss-scout/core";
-import { SearchStrategySchema, ScoutPreferencesSchema } from "@oss-scout/core";
+import {
+  SearchStrategySchema,
+  ScoutPreferencesSchema,
+  ISSUE_URL_PATTERN,
+  validateGitHubUrl,
+  validateUrl,
+} from "@oss-scout/core";
 
 const TOOL_TIMEOUT_MS = 60000;
 
@@ -250,6 +256,11 @@ export function registerTools(server: McpServer, scout: OssScout): void {
         }
 
         // action === "add"
+        // Same validation as the CLI's runSkip: skip matching is exact-URL,
+        // so junk or near-miss URLs would be stored but never match anything.
+        // The throw is caught below and surfaced as isError.
+        validateUrl(issueUrl!);
+        validateGitHubUrl(issueUrl!, ISSUE_URL_PATTERN, "issue");
         const alreadySkipped = scout
           .getSkippedIssues()
           .some((s) => s.url === issueUrl);
