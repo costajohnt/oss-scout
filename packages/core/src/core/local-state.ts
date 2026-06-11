@@ -56,15 +56,32 @@ export function loadLocalState(): ScoutState {
   }
 }
 
+/** Monotonic counter so two saves in one process never share a tmp path. */
+let tmpCounter = 0;
+
 /**
- * Save state to local file using atomic write (write to .tmp, then rename).
+ * Save state to local file using atomic write (write to a unique tmp file,
+ * then rename). A fixed ".tmp" path let two concurrent processes interleave
+ * write/rename and crash one of them with ENOENT. The load-mutate-save cycle
+ * is still last-writer-wins (no lock), but each save is now atomic and
+ * crash-free on its own.
  */
 export function saveLocalState(state: ScoutState): void {
   const statePath = getStatePath();
-  const tmpPath = statePath + ".tmp";
+  const tmpPath = `${statePath}.tmp.${process.pid}.${tmpCounter++}`;
 
   const data = JSON.stringify(state, null, 2) + "\n";
   fs.writeFileSync(tmpPath, data, { mode: 0o600 });
-  fs.renameSync(tmpPath, statePath);
+  try {
+    fs.renameSync(tmpPath, statePath);
+  } catch (err) {
+    // Do not leave an orphan tmp file behind on a failed rename
+    try {
+      fs.unlinkSync(tmpPath);
+    } catch {
+      // already gone
+    }
+    throw err;
+  }
   debug(MODULE, "State saved");
 }
