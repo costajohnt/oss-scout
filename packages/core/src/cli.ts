@@ -450,7 +450,9 @@ const configCmd = program
 
 configCmd
   .command("set <key> <value>")
-  .description("Update a single preference (e.g. config set minStars 100)")
+  .description(
+    'Update a single preference (e.g. config set minStars 100). For dash-prefixed values like the array-remove form, escape with --: config set excludeRepos -- "-spam/repo"',
+  )
   .option("--json", "Output as JSON")
   .action(async (key: string, value: string, options: { json?: boolean }) => {
     try {

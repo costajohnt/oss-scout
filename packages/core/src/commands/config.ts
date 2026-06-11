@@ -79,6 +79,13 @@ function parseArrayValue(value: string): string[] {
 
 /**
  * Apply an array update: plain set, +append, or -remove.
+ *
+ * The -remove form starts with a dash, which commander rejects as an
+ * unknown option unless escaped: `config set excludeRepos -- "-spam/repo"`.
+ * Documented in the CLI help and README (#132). Full pass-through parsing
+ * was evaluated and rejected: it breaks `config set k v --json` (trailing
+ * flag becomes a third operand) and, via the required program-level
+ * positional mode, `search 5 --debug`.
  */
 function updateArray(current: string[], value: string): string[] {
   if (value.startsWith("+")) {
