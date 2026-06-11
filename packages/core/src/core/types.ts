@@ -189,10 +189,24 @@ export interface VetListSummary {
 }
 
 /** Result of a batch vet-list operation. */
+/** A saved result whose availability status changed since the last vet-list (#165). */
+export interface VetStatusTransition {
+  issueUrl: string;
+  repo: string;
+  number: number;
+  from: VetListEntry["status"];
+  to: VetListEntry["status"];
+}
+
 export interface VetListResult {
   results: VetListEntry[];
   summary: VetListSummary;
   prunedCount?: number;
+  /**
+   * Status changes since the previous vet-list run, computed from each saved
+   * result's `lastStatus`. Empty on a first run (no prior status to compare).
+   */
+  transitions: VetStatusTransition[];
 }
 
 // ── Config types for the OssScout API ───────────────────────────────

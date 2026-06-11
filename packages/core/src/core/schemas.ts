@@ -173,6 +173,14 @@ export const SavedCandidateSchema = z.looseObject({
   lastSeenAt: z.string(),
   lastScore: z.number(),
   horizon: HorizonSchema.optional(),
+  /**
+   * Availability status recorded by the previous `vet-list` run, so the next
+   * run can report transitions ("was available, now claimed") instead of
+   * re-diffing full snapshots (#165). "error" is never stored.
+   */
+  lastStatus: z
+    .enum(["still_available", "claimed", "closed", "has_pr"])
+    .optional(),
 });
 
 // ── Scout preferences schema ────────────────────────────────────────

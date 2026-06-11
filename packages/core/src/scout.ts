@@ -398,6 +398,36 @@ export class OssScout implements ScoutStateReader, ScoutStateWriter {
       errors: results.filter((r) => r.status === "error").length,
     };
 
+    // Claim-watch (#165): compare each result's current status to the status
+    // recorded on the saved result last time, then persist the new status so
+    // the next run can diff again. "error" is transient — never a transition
+    // target and never stored.
+    const prevStatus = new Map(
+      (this.state.savedResults ?? []).map((r) => [r.issueUrl, r.lastStatus]),
+    );
+    const transitions = results
+      .filter((r) => r.status !== "error")
+      .filter((r) => {
+        const prev = prevStatus.get(r.issueUrl);
+        return prev !== undefined && prev !== r.status;
+      })
+      .map((r) => ({
+        issueUrl: r.issueUrl,
+        repo: r.repo,
+        number: r.number,
+        from: prevStatus.get(r.issueUrl)!,
+        to: r.status,
+      }));
+
+    const currentStatus = new Map(results.map((r) => [r.issueUrl, r.status]));
+    for (const saved of this.state.savedResults ?? []) {
+      const status = currentStatus.get(saved.issueUrl);
+      if (status !== undefined && status !== "error") {
+        saved.lastStatus = status;
+      }
+    }
+    if (results.length > 0) this.dirty = true;
+
     let prunedCount: number | undefined;
     if (options?.prune) {
       const unavailableUrls = new Set(
@@ -414,7 +444,7 @@ export class OssScout implements ScoutStateReader, ScoutStateWriter {
       this.dirty = true;
     }
 
-    return { results, summary, prunedCount };
+    return { results, summary, prunedCount, transitions };
   }
 
   private classifyVetResult(candidate: IssueCandidate): VetListEntry["status"] {

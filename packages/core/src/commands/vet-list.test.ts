@@ -191,6 +191,58 @@ describe("vetList", () => {
     expect(result.summary.hasPR).toBe(1);
   });
 
+  it("reports a status transition and persists the new status (#165)", async () => {
+    const { OssScout } = await import("../scout.js");
+    const state = ScoutStateSchema.parse({ version: 1 });
+    state.savedResults = [
+      makeSavedCandidate({ lastStatus: "still_available" }),
+    ];
+    const scout = new OssScout("fake-token", state);
+
+    // Now claimed.
+    vi.spyOn(scout, "vetIssue").mockResolvedValue(
+      makeIssueCandidate({ notClaimed: false, recommendation: "skip" }),
+    );
+
+    const result = await scout.vetList();
+
+    expect(result.transitions).toHaveLength(1);
+    expect(result.transitions[0]).toMatchObject({
+      from: "still_available",
+      to: "claimed",
+    });
+    // New status persisted for the next run.
+    expect(scout.getSavedResults()[0].lastStatus).toBe("claimed");
+  });
+
+  it("emits no transitions on a first run (no prior status) but records status (#165)", async () => {
+    const { OssScout } = await import("../scout.js");
+    const state = ScoutStateSchema.parse({ version: 1 });
+    state.savedResults = [makeSavedCandidate()]; // no lastStatus
+    const scout = new OssScout("fake-token", state);
+
+    vi.spyOn(scout, "vetIssue").mockResolvedValue(makeIssueCandidate());
+
+    const result = await scout.vetList();
+
+    expect(result.transitions).toEqual([]);
+    expect(scout.getSavedResults()[0].lastStatus).toBe("still_available");
+  });
+
+  it("does not report a transition when the status is unchanged (#165)", async () => {
+    const { OssScout } = await import("../scout.js");
+    const state = ScoutStateSchema.parse({ version: 1 });
+    state.savedResults = [
+      makeSavedCandidate({ lastStatus: "still_available" }),
+    ];
+    const scout = new OssScout("fake-token", state);
+
+    vi.spyOn(scout, "vetIssue").mockResolvedValue(makeIssueCandidate());
+
+    const result = await scout.vetList();
+    expect(result.transitions).toEqual([]);
+  });
+
   it("propagates 401 auth errors instead of swallowing per-item", async () => {
     const { OssScout } = await import("../scout.js");
     const state = ScoutStateSchema.parse({ version: 1 });
