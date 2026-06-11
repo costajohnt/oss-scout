@@ -131,6 +131,137 @@ export interface ScoutStateWriter {
   getState(): Readonly<ScoutState>;
 }
 
+/**
+ * Inputs to deriveRecommendation: the already-computed check results and
+ * affinity signals. Kept as a flat record of primitives so the derivation is a
+ * pure function, independently unit-testable (#157).
+ */
+export interface RecommendationInput {
+  noExistingPR: boolean;
+  notClaimed: boolean;
+  clearRequirements: boolean;
+  contributionGuidelinesFound: boolean;
+  projectIsActive: boolean;
+  projectCheckFailed: boolean;
+  projectFailureReason?: string;
+  existingPRInconclusive: boolean;
+  existingPRReason?: string;
+  claimInconclusive: boolean;
+  claimReason?: string;
+  mergedCountInconclusive: boolean;
+  effectiveMergedCount: number;
+  orgName: string;
+  orgHasMergedPRs: boolean;
+  matchesCategory: boolean;
+  issueClosed: boolean;
+  /** noExistingPR && notClaimed && projectActive && clearRequirements. */
+  passedAllChecks: boolean;
+}
+
+export interface RecommendationOutput {
+  notes: string[];
+  reasonsToApprove: string[];
+  reasonsToSkip: string[];
+  recommendation: "approve" | "skip" | "needs_review";
+}
+
+/**
+ * Derive the human-readable notes, approve/skip reasons, and the final
+ * recommendation from a vet's check results. Pure: no I/O, no state reads — the
+ * caller computes the inputs and threads them in. Extracted from vetIssue so
+ * the recommendation logic is testable in isolation (#157).
+ */
+export function deriveRecommendation(
+  input: RecommendationInput,
+): RecommendationOutput {
+  const notes: string[] = [];
+  const reasonsToApprove: string[] = [];
+  const reasonsToSkip: string[] = [];
+
+  // Notes (order preserved from the original vetIssue body).
+  if (!input.noExistingPR) notes.push("Existing PR found for this issue");
+  if (!input.notClaimed) notes.push("Issue appears to be claimed by someone");
+  if (input.existingPRInconclusive) {
+    notes.push(
+      `Could not verify absence of existing PRs: ${input.existingPRReason || "API error"}`,
+    );
+  }
+  if (input.claimInconclusive) {
+    notes.push(
+      `Could not verify claim status: ${input.claimReason || "API error"}`,
+    );
+  }
+  if (input.projectCheckFailed) {
+    notes.push(
+      `Could not verify project activity: ${input.projectFailureReason || "API error"}`,
+    );
+  } else if (!input.projectIsActive) {
+    notes.push("Project may be inactive");
+  }
+  if (!input.clearRequirements) notes.push("Issue requirements are unclear");
+  if (!input.contributionGuidelinesFound)
+    notes.push("No CONTRIBUTING.md found");
+
+  // Reasons to skip / approve.
+  if (!input.noExistingPR) reasonsToSkip.push("Has existing PR");
+  if (!input.notClaimed) reasonsToSkip.push("Already claimed");
+  if (!input.projectIsActive && !input.projectCheckFailed)
+    reasonsToSkip.push("Inactive project");
+  if (!input.clearRequirements) reasonsToSkip.push("Unclear requirements");
+
+  if (input.noExistingPR) reasonsToApprove.push("No existing PR");
+  if (input.notClaimed) reasonsToApprove.push("Not claimed");
+  if (input.projectIsActive && !input.projectCheckFailed)
+    reasonsToApprove.push("Active project");
+  if (input.clearRequirements) reasonsToApprove.push("Clear requirements");
+  if (input.contributionGuidelinesFound)
+    reasonsToApprove.push("Has contribution guidelines");
+  if (input.effectiveMergedCount > 0) {
+    reasonsToApprove.push(
+      `Trusted project (${input.effectiveMergedCount} PR${input.effectiveMergedCount > 1 ? "s" : ""} merged)`,
+    );
+  }
+  if (input.orgHasMergedPRs) {
+    reasonsToApprove.push(
+      `Org affinity (merged PRs in other ${input.orgName} repos)`,
+    );
+  }
+  if (input.matchesCategory) {
+    reasonsToApprove.push("Matches preferred project category");
+  }
+  if (input.issueClosed) {
+    reasonsToSkip.push("Issue is closed");
+  }
+
+  // Recommendation.
+  let recommendation: "approve" | "skip" | "needs_review";
+  if (input.issueClosed) {
+    recommendation = "skip";
+  } else if (input.passedAllChecks) {
+    recommendation = "approve";
+  } else if (reasonsToSkip.length > 2) {
+    recommendation = "skip";
+  } else {
+    recommendation = "needs_review";
+  }
+
+  // Downgrade an "approve" when any check was inconclusive — "approve" should
+  // only be given when checks actually passed, not when they were skipped.
+  const hasInconclusiveChecks =
+    input.projectCheckFailed ||
+    input.existingPRInconclusive ||
+    input.claimInconclusive ||
+    input.mergedCountInconclusive;
+  if (recommendation === "approve" && hasInconclusiveChecks) {
+    recommendation = "needs_review";
+    notes.push(
+      "Recommendation downgraded: one or more checks were inconclusive",
+    );
+  }
+
+  return { notes, reasonsToApprove, reasonsToSkip, recommendation };
+}
+
 export class IssueVetter {
   private octokit: Octokit;
   private stateReader: ScoutStateReader;
@@ -247,34 +378,8 @@ export class IssueVetter {
       notes: [],
     };
 
-    // Build notes
-    if (!noExistingPR)
-      vettingResult.notes.push("Existing PR found for this issue");
-    if (!notClaimed)
-      vettingResult.notes.push("Issue appears to be claimed by someone");
-    if (existingPRCheck.inconclusive) {
-      vettingResult.notes.push(
-        `Could not verify absence of existing PRs: ${existingPRCheck.reason || "API error"}`,
-      );
-    }
-    if (claimCheck.inconclusive) {
-      vettingResult.notes.push(
-        `Could not verify claim status: ${claimCheck.reason || "API error"}`,
-      );
-    }
-    if (projectHealth.checkFailed) {
-      vettingResult.notes.push(
-        `Could not verify project activity: ${projectHealth.failureReason || "API error"}`,
-      );
-    } else if (!projectHealth.isActive) {
-      vettingResult.notes.push("Project may be inactive");
-    }
-    if (!clearRequirements)
-      vettingResult.notes.push("Issue requirements are unclear");
-    if (!contributionGuidelines)
-      vettingResult.notes.push("No CONTRIBUTING.md found");
-
-    // Create tracked issue
+    // Create tracked issue. It holds a reference to vettingResult, whose
+    // notes are filled in by deriveRecommendation below.
     const trackedIssue: TrackedIssue = {
       id: ghIssue.id,
       url: issueUrl,
@@ -291,25 +396,7 @@ export class IssueVetter {
       vettingResult,
     };
 
-    // Determine recommendation
-    const reasonsToSkip: string[] = [];
-    const reasonsToApprove: string[] = [];
-
-    if (!noExistingPR) reasonsToSkip.push("Has existing PR");
-    if (!notClaimed) reasonsToSkip.push("Already claimed");
-    if (!projectHealth.isActive && !projectHealth.checkFailed)
-      reasonsToSkip.push("Inactive project");
-    if (!clearRequirements) reasonsToSkip.push("Unclear requirements");
-
-    if (noExistingPR) reasonsToApprove.push("No existing PR");
-    if (notClaimed) reasonsToApprove.push("Not claimed");
-    if (projectHealth.isActive && !projectHealth.checkFailed)
-      reasonsToApprove.push("Active project");
-    if (clearRequirements) reasonsToApprove.push("Clear requirements");
-    if (contributionGuidelines)
-      reasonsToApprove.push("Has contribution guidelines");
-
-    // Determine effective merged PR count: prefer local state (authoritative if present),
+    // Effective merged PR count: prefer local state (authoritative if present),
     // fall back to live GitHub API count to detect contributions made before
     // using oss-scout. null means the live check transiently failed: score as
     // 0 but treat the result as inconclusive so it is not cached.
@@ -318,13 +405,8 @@ export class IssueVetter {
     const effectiveMergedCount = hasMergedPRsInRepo
       ? 1
       : (userMergedPRCount ?? 0);
-    if (effectiveMergedCount > 0) {
-      reasonsToApprove.push(
-        `Trusted project (${effectiveMergedCount} PR${effectiveMergedCount > 1 ? "s" : ""} merged)`,
-      );
-    }
 
-    // Check for org-level affinity (user has merged PRs in another repo under same org)
+    // Org-level affinity (user has merged PRs in another repo under same org).
     const orgName = repoFullName.split("/")[0];
     let orgHasMergedPRs = false;
     if (orgName && repoFullName.includes("/")) {
@@ -332,53 +414,46 @@ export class IssueVetter {
         (r) => r.startsWith(orgName + "/") && r !== repoFullName,
       );
     }
-    if (orgHasMergedPRs) {
-      reasonsToApprove.push(
-        `Org affinity (merged PRs in other ${orgName} repos)`,
-      );
-    }
 
-    // Check for category preference match
-    const projectCategories = this.stateReader.getProjectCategories();
     const matchesCategory = repoBelongsToCategory(
       repoFullName,
-      projectCategories,
+      this.stateReader.getProjectCategories(),
     );
-    if (matchesCategory) {
-      reasonsToApprove.push("Matches preferred project category");
-    }
 
     // GitHub answers 200 for closed issues, so without an explicit state
     // check a closed issue would vet as still available (#120).
     const issueClosed = ghIssue.state === "closed";
-    if (issueClosed) {
-      reasonsToSkip.push("Issue is closed");
-    }
 
-    let recommendation: "approve" | "skip" | "needs_review";
-    if (issueClosed) {
-      recommendation = "skip";
-    } else if (vettingResult.passedAllChecks) {
-      recommendation = "approve";
-    } else if (reasonsToSkip.length > 2) {
-      recommendation = "skip";
-    } else {
-      recommendation = "needs_review";
-    }
-
-    // Downgrade to needs_review if any check was inconclusive —
-    // "approve" should only be given when all checks actually passed, not when they were skipped.
+    // Never cache a verdict built on inconclusive/failed checks (e.g. a
+    // transient 5xx): that would pin a degraded result for the whole TTL.
     const hasInconclusiveChecks =
       projectHealth.checkFailed ||
-      existingPRCheck.inconclusive ||
-      claimCheck.inconclusive ||
+      !!existingPRCheck.inconclusive ||
+      !!claimCheck.inconclusive ||
       mergedCountInconclusive;
-    if (recommendation === "approve" && hasInconclusiveChecks) {
-      recommendation = "needs_review";
-      vettingResult.notes.push(
-        "Recommendation downgraded: one or more checks were inconclusive",
-      );
-    }
+
+    const { notes, reasonsToApprove, reasonsToSkip, recommendation } =
+      deriveRecommendation({
+        noExistingPR,
+        notClaimed,
+        clearRequirements,
+        contributionGuidelinesFound: !!contributionGuidelines,
+        projectIsActive: projectHealth.isActive,
+        projectCheckFailed: !!projectHealth.checkFailed,
+        projectFailureReason: projectHealth.failureReason,
+        existingPRInconclusive: !!existingPRCheck.inconclusive,
+        existingPRReason: existingPRCheck.reason,
+        claimInconclusive: !!claimCheck.inconclusive,
+        claimReason: claimCheck.reason,
+        mergedCountInconclusive,
+        effectiveMergedCount,
+        orgName,
+        orgHasMergedPRs,
+        matchesCategory,
+        issueClosed,
+        passedAllChecks: vettingResult.passedAllChecks,
+      });
+    vettingResult.notes = notes;
 
     // Calculate repo quality bonus from star/fork counts
     const repoQualityBonus = calculateRepoQualityBonus(

@@ -241,6 +241,60 @@ function isFeatureIssue(item: RawIssueItem): boolean {
 }
 
 /**
+ * Extract feature signals from a raw issue, vet it, and classify its horizon.
+ * Shared by the anchor (discoverFeatures) and broad (discoverFeaturesBroad)
+ * paths (#157). Returns null when vetting fails for this item so the caller
+ * can skip it; fatal errors (auth/rate-limit) propagate.
+ *
+ * `roadmapRefs` is only supplied by the anchor path: when present, the roadmap
+ * signal is threaded into both the vet call and the horizon classifier exactly
+ * as before; the broad path omits it (roadmap scraping is per-repo and kept out
+ * of the cheap broad search).
+ */
+async function vetAndClassify(
+  item: RawIssueItem,
+  vetter: IssueVetter,
+  roadmapRefs?: ReadonlySet<number>,
+): Promise<FeatureCandidate | null> {
+  const labels = extractLabels(item);
+  const hasMilestone = !!item.milestone;
+  const reactions = item.reactions?.total_count ?? 0;
+  const comments = item.comments ?? 0;
+  const wontfixNoContributor = item.created_at
+    ? detectWontfixNoContributor({ labels, createdAt: item.created_at })
+    : false;
+  const useRoadmap = roadmapRefs !== undefined;
+  const onRoadmap =
+    useRoadmap &&
+    typeof item.number === "number" &&
+    roadmapRefs.has(item.number);
+
+  let candidate;
+  try {
+    candidate = await vetter.vetIssue(item.html_url, {
+      featureSignals: {
+        reactions,
+        comments,
+        hasMilestone,
+        wontfixNoContributor,
+        ...(useRoadmap ? { onRoadmap } : {}),
+      },
+    });
+  } catch (err: unknown) {
+    rethrowIfFatal(err);
+    warn(MODULE, `vet failed for ${item.html_url}: ${errorMessage(err)}`);
+    return null;
+  }
+
+  const horizon = classifyHorizon({
+    hasMilestone,
+    labels,
+    ...(useRoadmap ? { isOnRoadmap: onRoadmap } : {}),
+  });
+  return { ...candidate, horizon };
+}
+
+/**
  * Orchestrate `scout features`: anchor resolution → per-repo issue listing
  * → feature-signal extraction → vetting → horizon classification → bucket split.
  *
@@ -302,37 +356,8 @@ export async function discoverFeatures(
     );
 
     for (const item of items) {
-      const labels = extractLabels(item);
-      const hasMilestone = !!item.milestone;
-      const reactions = item.reactions?.total_count ?? 0;
-      const comments = item.comments ?? 0;
-      const wontfixNoContributor = item.created_at
-        ? detectWontfixNoContributor({ labels, createdAt: item.created_at })
-        : false;
-      const onRoadmap =
-        typeof item.number === "number" && roadmapRefs.has(item.number);
-      let candidate;
-      try {
-        candidate = await opts.vetter.vetIssue(item.html_url, {
-          featureSignals: {
-            reactions,
-            comments,
-            hasMilestone,
-            wontfixNoContributor,
-            onRoadmap,
-          },
-        });
-      } catch (err: unknown) {
-        rethrowIfFatal(err);
-        warn(MODULE, `vet failed for ${item.html_url}: ${errorMessage(err)}`);
-        continue;
-      }
-      const horizon = classifyHorizon({
-        hasMilestone,
-        labels,
-        isOnRoadmap: onRoadmap,
-      });
-      candidates.push({ ...candidate, horizon });
+      const candidate = await vetAndClassify(item, opts.vetter, roadmapRefs);
+      if (candidate) candidates.push(candidate);
     }
   }
 
@@ -496,33 +521,10 @@ export async function discoverFeaturesBroad(
 
   const candidates: FeatureCandidate[] = [];
   for (const item of items) {
-    const labels = extractLabels(item);
-    const hasMilestone = !!item.milestone;
-    const reactions = item.reactions?.total_count ?? 0;
-    const comments = item.comments ?? 0;
-    const wontfixNoContributor = item.created_at
-      ? detectWontfixNoContributor({ labels, createdAt: item.created_at })
-      : false;
-    let candidate;
-    try {
-      candidate = await opts.vetter.vetIssue(item.html_url, {
-        featureSignals: {
-          reactions,
-          comments,
-          hasMilestone,
-          wontfixNoContributor,
-          // Roadmap scraping is per-repo and would require an extra fetch
-          // per unique repo in the broad result set — deliberately skipped
-          // here to keep the broad path cheap. Anchor mode keeps the bonus.
-        },
-      });
-    } catch (err: unknown) {
-      rethrowIfFatal(err);
-      warn(MODULE, `vet failed for ${item.html_url}: ${errorMessage(err)}`);
-      continue;
-    }
-    const horizon = classifyHorizon({ hasMilestone, labels });
-    candidates.push({ ...candidate, horizon });
+    // No roadmapRefs: roadmap scraping is per-repo and deliberately skipped
+    // on the broad path to keep it cheap. Anchor mode keeps the bonus.
+    const candidate = await vetAndClassify(item, opts.vetter);
+    if (candidate) candidates.push(candidate);
   }
 
   const passing = candidates.filter(
