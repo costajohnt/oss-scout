@@ -6,6 +6,11 @@ import { loadLocalState, saveLocalState } from "../core/local-state.js";
 import type { SkippedIssue, ScoutState } from "../core/schemas.js";
 import { createScout } from "../scout.js";
 import { getGitHubToken } from "../core/utils.js";
+import {
+  ISSUE_URL_PATTERN,
+  validateGitHubUrl,
+  validateUrl,
+} from "./validation.js";
 
 /**
  * Create an OssScout instance for skip operations.
@@ -38,6 +43,12 @@ export async function runSkip(options: {
   skipped: boolean;
   alreadySkipped: boolean;
 }> {
+  // Validate up front: skip matching is exact-URL, so a junk or near-miss
+  // URL (trailing slash, query string) would be stored but never exclude
+  // anything — a silent no-op. Reject it with the expected format instead.
+  validateUrl(options.issueUrl);
+  validateGitHubUrl(options.issueUrl, ISSUE_URL_PATTERN, "issue");
+
   const state = options.state ?? loadLocalState();
   const scout = await createSkipScout(state);
 
@@ -83,6 +94,10 @@ export async function runSkipClear(): Promise<void> {
 
 /**
  * Remove a specific issue from the skip list (unskip).
+ *
+ * Deliberately does NOT validate the URL: entries stored before skip-add
+ * validation existed may be junk, and exact-match removal is the only way
+ * to clean them up short of `skip clear`.
  */
 export async function runSkipRemove(options: { issueUrl: string }): Promise<{
   removed: boolean;
@@ -103,7 +118,9 @@ export async function runSkipRemove(options: { issueUrl: string }): Promise<{
 function parseIssueUrl(
   url: string,
 ): { repo: string; number: number; title: string } | undefined {
-  const match = url.match(/github\.com\/([^/]+\/[^/]+)\/issues\/(\d+)/);
+  const match = url.match(
+    /^https:\/\/github\.com\/([^/]+\/[^/]+)\/issues\/(\d+)$/,
+  );
   if (!match) return undefined;
   return { repo: match[1], number: parseInt(match[2], 10), title: "" };
 }

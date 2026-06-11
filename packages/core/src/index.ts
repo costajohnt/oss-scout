@@ -111,3 +111,10 @@ export {
   fetchRoadmapIssueRefs,
   parseRoadmapIssueRefs,
 } from "./core/roadmap.js";
+
+// Issue-URL validation (shared by the CLI and the MCP server)
+export {
+  ISSUE_URL_PATTERN,
+  validateGitHubUrl,
+  validateUrl,
+} from "./commands/validation.js";

@@ -82,6 +82,39 @@ describe("skip command", () => {
       expect(state.skippedIssues[0].number).toBe(1);
     });
 
+    it.each([
+      ["banana"],
+      ["https://github.com/owner/repo/issues/1/"],
+      ["https://github.com/owner/repo/issues/1?tab=comments"],
+      ["https://github.com/owner/repo/pull/1"],
+      ["https://notgithub.com/owner/repo/issues/1"],
+    ])("rejects invalid or near-miss URL %s", async (badUrl) => {
+      await expect(runSkip({ issueUrl: badUrl })).rejects.toThrow(
+        "Invalid issue URL",
+      );
+      const state = await getMockState();
+      expect(state.skippedIssues ?? []).toHaveLength(0);
+    });
+
+    it("removes legacy junk entries without validation", async () => {
+      const fresh = ScoutStateSchema.parse({ version: 1 });
+      fresh.skippedIssues = [
+        {
+          url: "banana",
+          repo: "",
+          number: 0,
+          title: "",
+          skippedAt: new Date().toISOString(),
+        },
+      ];
+      await setMockState(fresh);
+
+      const result = await runSkipRemove({ issueUrl: "banana" });
+      expect(result.removed).toBe(true);
+      const state = await getMockState();
+      expect(state.skippedIssues).toHaveLength(0);
+    });
+
     it("deduplicates — same URL not added twice", async () => {
       const url = "https://github.com/owner/repo/issues/1";
       await runSkip({ issueUrl: url });

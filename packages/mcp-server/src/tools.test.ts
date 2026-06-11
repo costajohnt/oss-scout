@@ -83,6 +83,57 @@ describe("registerTools", () => {
     expect(names).toContain("scout-features");
   });
 
+  describe("skip tool execution", () => {
+    it("rejects invalid issue URLs on add and surfaces isError", async () => {
+      const handler = getToolHandler(server, "skip");
+      const result = (await handler(
+        { action: "add", issueUrl: "banana" },
+        {},
+      )) as {
+        content: Array<{ type: string; text: string }>;
+        isError?: boolean;
+      };
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain("Invalid issue URL");
+      expect(scout.skipIssue).not.toHaveBeenCalled();
+    });
+
+    it("accepts a canonical issue URL on add", async () => {
+      const handler = getToolHandler(server, "skip");
+      const result = (await handler(
+        {
+          action: "add",
+          issueUrl: "https://github.com/owner/repo/issues/12",
+        },
+        {},
+      )) as {
+        content: Array<{ type: string; text: string }>;
+        isError?: boolean;
+      };
+
+      expect(result.isError).toBeUndefined();
+      expect(scout.skipIssue).toHaveBeenCalledWith(
+        "https://github.com/owner/repo/issues/12",
+        undefined,
+      );
+    });
+
+    it("remove stays unvalidated so legacy junk entries can be cleaned", async () => {
+      const handler = getToolHandler(server, "skip");
+      const result = (await handler(
+        { action: "remove", issueUrl: "banana" },
+        {},
+      )) as {
+        content: Array<{ type: string; text: string }>;
+        isError?: boolean;
+      };
+
+      expect(result.isError).toBeUndefined();
+      expect(scout.unskipIssue).toHaveBeenCalledWith("banana");
+    });
+  });
+
   describe("search tool execution", () => {
     it("returns JSON text content on success", async () => {
       const handler = getToolHandler(server, "search");
