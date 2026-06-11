@@ -44,6 +44,11 @@ import {
   fetchContributionGuidelines,
 } from "./repo-health.js";
 import { fetchAndScanAntiLLMPolicy } from "./anti-llm-policy.js";
+import {
+  prefetchIssueCores,
+  issueCoreKey,
+  type PrefetchedIssueCore,
+} from "./issue-graphql.js";
 import { getHttpCache } from "./http-cache.js";
 import {
   triageWithSLM,
@@ -304,7 +309,16 @@ export class IssueVetter {
    */
   async vetIssue(
     issueUrl: string,
-    opts?: { featureSignals?: FeatureSignals },
+    opts?: {
+      featureSignals?: FeatureSignals;
+      /**
+       * Issue core data already fetched in a batch GraphQL query (#169). When
+       * present it replaces the per-issue REST `issues.get`; otherwise the
+       * core is fetched via REST. The two paths are normalized to the same
+       * shape so behaviour is identical either way.
+       */
+      prefetched?: PrefetchedIssueCore;
+    },
   ): Promise<IssueCandidate> {
     // Check vetting cache first — avoids ~6+ API calls per issue
     const cache = getHttpCache();
@@ -332,12 +346,12 @@ export class IssueVetter {
     const { owner, repo, number } = parsed;
     const repoFullName = `${owner}/${repo}`;
 
-    // Fetch issue data
-    const { data: ghIssue } = await this.octokit.issues.get({
-      owner,
-      repo,
-      issue_number: number,
-    });
+    // Issue core data: use the batch-prefetched GraphQL result when the caller
+    // supplied one (#169), otherwise fetch it per-issue via REST. Both paths
+    // normalize to the same shape (fetchIssueCore), so downstream logic is
+    // identical regardless of source.
+    const core =
+      opts?.prefetched ?? (await this.fetchIssueCore(owner, repo, number));
 
     // Check if the user already has merged PRs in this repo (skip the Search API call)
     const reposWithMergedPRs = this.stateReader.getReposWithMergedPRs();
@@ -352,7 +366,7 @@ export class IssueVetter {
       userMergedPRCount,
     ] = await Promise.all([
       checkNoExistingPR(this.octokit, owner, repo, number),
-      checkNotClaimed(this.octokit, owner, repo, number, ghIssue.comments),
+      checkNotClaimed(this.octokit, owner, repo, number, core.commentCount),
       checkProjectHealth(this.octokit, owner, repo),
       fetchContributionGuidelines(this.octokit, owner, repo),
       hasMergedPRsInRepo
@@ -389,7 +403,7 @@ export class IssueVetter {
       linkedPR.author.toLowerCase() === username.toLowerCase();
 
     // Analyze issue quality
-    const clearRequirements = analyzeRequirements(ghIssue.body || "");
+    const clearRequirements = analyzeRequirements(core.body);
 
     // When the health check itself failed (API error), use a neutral default:
     // don't penalize the repo as inactive, but don't credit it as active either.
@@ -415,17 +429,15 @@ export class IssueVetter {
     // Create tracked issue. It holds a reference to vettingResult, whose
     // notes are filled in by deriveRecommendation below.
     const trackedIssue: TrackedIssue = {
-      id: ghIssue.id,
+      id: core.id,
       url: issueUrl,
       repo: repoFullName,
       number,
-      title: ghIssue.title,
+      title: core.title,
       status: "candidate",
-      labels: ghIssue.labels.map((l) =>
-        typeof l === "string" ? l : l.name || "",
-      ),
-      createdAt: ghIssue.created_at,
-      updatedAt: ghIssue.updated_at,
+      labels: core.labels,
+      createdAt: core.createdAt,
+      updatedAt: core.updatedAt,
       vetted: true,
       vettingResult,
     };
@@ -456,7 +468,7 @@ export class IssueVetter {
 
     // GitHub answers 200 for closed issues, so without an explicit state
     // check a closed issue would vet as still available (#120).
-    const issueClosed = ghIssue.state === "closed";
+    const issueClosed = core.state === "closed";
 
     // Never cache a verdict built on inconclusive/failed checks (e.g. a
     // transient 5xx): that would pin a degraded result for the whole TTL.
@@ -508,7 +520,7 @@ export class IssueVetter {
       isClaimed: !notClaimed,
       clearRequirements,
       hasContributionGuidelines: !!contributionGuidelines,
-      issueUpdatedAt: ghIssue.updated_at,
+      issueUpdatedAt: core.updatedAt,
       closedWithoutMergeCount:
         this.stateReader.getClosedWithoutMergeCount?.(repoFullName) ?? 0,
       mergedPRCount: effectiveMergedCount,
@@ -538,7 +550,7 @@ export class IssueVetter {
       if (slmConfig.host) slmOpts.host = slmConfig.host;
       slmTriage = await triageWithSLM(
         buildTriageInput({
-          issue: { ...trackedIssue, body: ghIssue.body ?? "" },
+          issue: { ...trackedIssue, body: core.body },
           linkedPR: existingPRCheck.linkedPR ?? null,
         }),
         slmOpts,
@@ -572,6 +584,35 @@ export class IssueVetter {
   }
 
   /**
+   * Fetch a single issue's core fields via REST and normalize them to the same
+   * shape as a GraphQL prefetch (#169). The REST fallback path when no
+   * prefetched core was supplied.
+   */
+  private async fetchIssueCore(
+    owner: string,
+    repo: string,
+    number: number,
+  ): Promise<PrefetchedIssueCore> {
+    const { data: ghIssue } = await this.octokit.issues.get({
+      owner,
+      repo,
+      issue_number: number,
+    });
+    return {
+      id: ghIssue.id,
+      title: ghIssue.title,
+      body: ghIssue.body || "",
+      state: ghIssue.state === "closed" ? "closed" : "open",
+      labels: ghIssue.labels.map((l) =>
+        typeof l === "string" ? l : l.name || "",
+      ),
+      commentCount: ghIssue.comments,
+      createdAt: ghIssue.created_at,
+      updatedAt: ghIssue.updated_at,
+    };
+  }
+
+  /**
    * Vet multiple issues in parallel with concurrency limit
    */
   async vetIssuesParallel(
@@ -600,12 +641,35 @@ export class IssueVetter {
     // vet still runs (#129). Callers dedup today, but nothing enforced it.
     const uniqueUrls = [...new Set(urls)];
 
+    // Batch-prefetch issue core data in one GraphQL query (#169), replacing N
+    // per-issue REST `issues.get` calls. Any URL the prefetch can't resolve
+    // (parse failure, deleted issue, non-fatal GraphQL error) is simply absent
+    // from the map and vetIssue falls back to REST for it. A fatal error (401 /
+    // rate limit) propagates out of prefetchIssueCores and aborts the batch,
+    // matching the per-issue auth-error handling below.
+    const prefetched = await prefetchIssueCores(
+      this.octokit,
+      uniqueUrls.flatMap((url) => {
+        const p = parseGitHubUrl(url);
+        return p && p.type === "issues"
+          ? [{ owner: p.owner, repo: p.repo, number: p.number }]
+          : [];
+      }),
+    );
+    const prefetchFor = (url: string): PrefetchedIssueCore | undefined => {
+      const p = parseGitHubUrl(url);
+      return p && p.type === "issues"
+        ? prefetched.get(issueCoreKey(p.owner, p.repo, p.number))
+        : undefined;
+    };
+
     for (const url of uniqueUrls) {
       if (candidates.length >= maxResults) break;
       if (firstAuthError) break; // stop scheduling once auth has failed
       attemptedCount++;
 
-      const task = this.vetIssue(url)
+      const core = prefetchFor(url);
+      const task = this.vetIssue(url, core ? { prefetched: core } : undefined)
         .then((candidate) => {
           if (candidates.length < maxResults) {
             // Override the priority if provided

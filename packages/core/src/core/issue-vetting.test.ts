@@ -44,6 +44,9 @@ vi.mock("./errors.js", () => ({
     return undefined;
   }),
   isRateLimitError: vi.fn(() => false),
+  // No-op by default: the prefetch path (#169) calls this on a GraphQL error;
+  // these tests exercise the REST fallback, so nothing here is fatal.
+  rethrowIfFatal: vi.fn(),
 }));
 
 vi.mock("./issue-scoring.js", () => ({
@@ -145,6 +148,10 @@ function makeMockOctokit(): Octokit {
         },
       }),
     },
+    // Default: an empty batch response so the #169 prefetch resolves no
+    // aliases and every issue falls back to the REST `issues.get` above.
+    // Tests exercising the prefetch path supply their own graphql mock.
+    graphql: vi.fn().mockResolvedValue({}),
   } as unknown as Octokit;
 }
 
@@ -286,6 +293,51 @@ describe("IssueVetter", () => {
       expect(result.vettingResult.passedAllChecks).toBe(true);
       expect(result.viabilityScore).toBeGreaterThan(0);
       expect(result.issueState).toBe("open");
+    });
+
+    it("uses a prefetched core instead of calling issues.get (#169)", async () => {
+      const octokit = makeMockOctokit();
+      const getSpy = (
+        octokit as unknown as { issues: { get: ReturnType<typeof vi.fn> } }
+      ).issues.get;
+      const vetter = new IssueVetter(octokit, makeStubStateReader());
+
+      const result = await vetter.vetIssue(VALID_ISSUE_URL, {
+        prefetched: {
+          id: 999,
+          title: "Prefetched title",
+          body: "1. repro\n2. expected\n```js\ncode\n```",
+          state: "open",
+          labels: ["enhancement"],
+          commentCount: 0,
+          createdAt: "2026-02-01T00:00:00Z",
+          updatedAt: "2026-04-01T00:00:00Z",
+        },
+      });
+
+      expect(getSpy).not.toHaveBeenCalled();
+      expect(result.issue.id).toBe(999);
+      expect(result.issue.title).toBe("Prefetched title");
+      expect(result.issue.labels).toEqual(["enhancement"]);
+      expect(result.issue.updatedAt).toBe("2026-04-01T00:00:00Z");
+    });
+
+    it("treats a prefetched closed core as skip (#169)", async () => {
+      const vetter = makeVetter();
+      const result = await vetter.vetIssue(VALID_ISSUE_URL, {
+        prefetched: {
+          id: 1,
+          title: "Done",
+          body: "done",
+          state: "closed",
+          labels: [],
+          commentCount: 0,
+          createdAt: "2026-01-01T00:00:00Z",
+          updatedAt: "2026-03-01T00:00:00Z",
+        },
+      });
+      expect(result.issueState).toBe("closed");
+      expect(result.recommendation).toBe("skip");
     });
 
     it("marks a closed issue as skip with issueState closed (#120)", async () => {
@@ -700,6 +752,93 @@ describe("IssueVetter", () => {
         10,
       );
       expect(result.rateLimitHit).toBe(true);
+    });
+
+    it("batch-prefetches via GraphQL and skips per-issue issues.get (#169)", async () => {
+      const node = (databaseId: number, number: number) => ({
+        databaseId,
+        title: `Issue ${number}`,
+        body: "1. repro\n2. expected\n```code```",
+        state: "OPEN" as const,
+        labels: { nodes: [{ name: "bug" }] },
+        comments: { totalCount: 0 },
+        createdAt: "2026-01-01T00:00:00Z",
+        updatedAt: "2026-03-01T00:00:00Z",
+      });
+      const getSpy = vi.fn();
+      const octokit = {
+        issues: { get: getSpy },
+        graphql: vi.fn().mockResolvedValue({
+          i0: { issue: node(11, 1) },
+          i1: { issue: node(22, 2) },
+        }),
+      } as unknown as Octokit;
+      const vetter = new IssueVetter(octokit, makeStubStateReader());
+
+      const result = await vetter.vetIssuesParallel(
+        [
+          "https://github.com/owner/repo/issues/1",
+          "https://github.com/owner/repo/issues/2",
+        ],
+        10,
+      );
+
+      expect(result.candidates).toHaveLength(2);
+      expect(getSpy).not.toHaveBeenCalled();
+      expect(
+        (octokit as unknown as { graphql: ReturnType<typeof vi.fn> }).graphql,
+      ).toHaveBeenCalledTimes(1);
+      expect(result.candidates.map((c) => c.issue.id).sort()).toEqual([11, 22]);
+    });
+
+    it("falls back to issues.get for issues the GraphQL batch omits (#169)", async () => {
+      const getSpy = vi.fn().mockResolvedValue({
+        data: {
+          id: 222,
+          html_url: "https://github.com/owner/repo/issues/2",
+          title: "Fetched via REST",
+          body: "1. repro\n2. expected\n```code```",
+          comments: 0,
+          labels: [],
+          created_at: "2026-01-01T00:00:00Z",
+          updated_at: "2026-03-01T00:00:00Z",
+        },
+      });
+      const octokit = {
+        issues: { get: getSpy },
+        // Only issue 1 resolves in the batch; issue 2 is absent.
+        graphql: vi.fn().mockResolvedValue({
+          i0: {
+            issue: {
+              databaseId: 111,
+              title: "Issue 1",
+              body: "1. repro\n2. expected\n```code```",
+              state: "OPEN",
+              labels: { nodes: [] },
+              comments: { totalCount: 0 },
+              createdAt: "2026-01-01T00:00:00Z",
+              updatedAt: "2026-03-01T00:00:00Z",
+            },
+          },
+          i1: { issue: null },
+        }),
+      } as unknown as Octokit;
+      const vetter = new IssueVetter(octokit, makeStubStateReader());
+
+      const result = await vetter.vetIssuesParallel(
+        [
+          "https://github.com/owner/repo/issues/1",
+          "https://github.com/owner/repo/issues/2",
+        ],
+        10,
+      );
+
+      expect(result.candidates).toHaveLength(2);
+      // Exactly one REST fetch — for the issue the batch could not resolve.
+      expect(getSpy).toHaveBeenCalledTimes(1);
+      expect(getSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ issue_number: 2 }),
+      );
     });
 
     it("propagates 401 auth errors instead of swallowing per-item", async () => {
