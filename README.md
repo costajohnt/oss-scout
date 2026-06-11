@@ -292,6 +292,28 @@ Agents (dispatched automatically by Claude):
 **Tools:** search, scout-features, vet, skip, config, config-set
 **Resources:** scout://config, scout://results, scout://scores
 
+### Scheduled digest (GitHub Action)
+
+Run search on a schedule and open/update a digest issue in your repo with the top candidates. Copy [`examples/weekly-digest.yml`](examples/weekly-digest.yml) into `.github/workflows/` in your own repo:
+
+```yaml
+on:
+  schedule:
+    - cron: "0 14 * * 1" # Mondays 14:00 UTC
+permissions:
+  issues: write
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: costajohnt/oss-scout@v1
+        with:
+          github-username: your-github-login
+          search-token: ${{ secrets.OSS_SCOUT_TOKEN }} # PAT for personalization (optional)
+```
+
+Inputs: `github-username`, `search-token`, `issue-token`, `max-results`, `strategy`, `issue-title`, `issue-label`, `version`. The action reuses the existing CLI (`search` + `results --markdown`); no extra machinery.
+
 ### As a Library
 
 ```bash
