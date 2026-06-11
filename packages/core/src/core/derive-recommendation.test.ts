@@ -10,6 +10,7 @@ function baseInput(
 ): RecommendationInput {
   return {
     noExistingPR: true,
+    ownPR: false,
     notClaimed: true,
     clearRequirements: true,
     contributionGuidelinesFound: true,
@@ -45,6 +46,24 @@ describe("deriveRecommendation (#157)", () => {
       "Recommendation downgraded: one or more checks were inconclusive",
     );
     expect(out.notes).toContain("Could not verify claim status: API error");
+  });
+
+  it("reframes the user's own open PR as 'you're already on it' (#166)", () => {
+    const out = deriveRecommendation(
+      baseInput({ noExistingPR: false, ownPR: true, passedAllChecks: false }),
+    );
+    expect(out.recommendation).toBe("skip");
+    expect(out.reasonsToSkip).toContain("You already have a PR in flight");
+    expect(out.reasonsToSkip).not.toContain("Has existing PR");
+    expect(out.notes).toContain("Your PR is already in flight for this issue");
+  });
+
+  it("treats a competing existing PR as 'Has existing PR' (not own)", () => {
+    const out = deriveRecommendation(
+      baseInput({ noExistingPR: false, ownPR: false, passedAllChecks: false }),
+    );
+    expect(out.reasonsToSkip).toContain("Has existing PR");
+    expect(out.reasonsToSkip).not.toContain("You already have a PR in flight");
   });
 
   it("skips a closed issue regardless of other checks", () => {
