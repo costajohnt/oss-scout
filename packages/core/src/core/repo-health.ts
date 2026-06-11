@@ -265,9 +265,10 @@ function parseContributionGuidelines(content: string): ContributionGuidelines {
   else if (lowerContent.includes("rubocop")) guidelines.linter = "RuboCop";
   else if (lowerContent.includes("prettier")) guidelines.formatter = "Prettier";
 
-  // Detect CLA requirement
+  // Detect CLA requirement. Word boundary matters: a bare substring check
+  // matches "class", "clang", "clarify", etc. and flags nearly every doc.
   if (
-    lowerContent.includes("cla") ||
+    /\bcla\b/.test(lowerContent) ||
     lowerContent.includes("contributor license agreement")
   ) {
     guidelines.claRequired = true;

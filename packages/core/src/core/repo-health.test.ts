@@ -167,6 +167,63 @@ describe("fetchContributionGuidelines", () => {
     expect(guidelines!.linter).toBe("ESLint");
   });
 
+  it("does not flag CLA from incidental substrings like class/clang/clarify", async () => {
+    const content =
+      "# Contributing\n\nAdd a test class for each module. We use clang-format. " +
+      "Please clarify your change in the PR declaration.";
+    const octokit = {
+      repos: {
+        getContent: vi.fn().mockResolvedValue({
+          data: { content: Buffer.from(content).toString("base64") },
+        }),
+      },
+    } as unknown as Octokit;
+
+    const guidelines = await fetchContributionGuidelines(
+      octokit,
+      "cla-substr-org",
+      "cla-substr-repo",
+    );
+    expect(guidelines!.claRequired).toBeUndefined();
+  });
+
+  it("flags CLA when CLA appears as a standalone word", async () => {
+    const content = "# Contributing\n\nYou must sign the CLA before we merge.";
+    const octokit = {
+      repos: {
+        getContent: vi.fn().mockResolvedValue({
+          data: { content: Buffer.from(content).toString("base64") },
+        }),
+      },
+    } as unknown as Octokit;
+
+    const guidelines = await fetchContributionGuidelines(
+      octokit,
+      "cla-word-org",
+      "cla-word-repo",
+    );
+    expect(guidelines!.claRequired).toBe(true);
+  });
+
+  it("flags CLA on the full contributor license agreement phrase", async () => {
+    const content =
+      "# Contributing\n\nSign our Contributor License Agreement first.";
+    const octokit = {
+      repos: {
+        getContent: vi.fn().mockResolvedValue({
+          data: { content: Buffer.from(content).toString("base64") },
+        }),
+      },
+    } as unknown as Octokit;
+
+    const guidelines = await fetchContributionGuidelines(
+      octokit,
+      "cla-phrase-org",
+      "cla-phrase-repo",
+    );
+    expect(guidelines!.claRequired).toBe(true);
+  });
+
   it("returns undefined when no CONTRIBUTING.md found (404)", async () => {
     const err = new Error("Not Found") as Error & { status: number };
     err.status = 404;
