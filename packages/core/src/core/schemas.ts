@@ -48,13 +48,13 @@ export const CONCRETE_STRATEGIES = [
 
 // ── Leaf schemas ────────────────────────────────────────────────────
 
-export const RepoSignalsSchema = z.object({
+export const RepoSignalsSchema = z.looseObject({
   hasActiveMaintainers: z.boolean(),
   isResponsive: z.boolean(),
   hasHostileComments: z.boolean(),
 });
 
-export const RepoScoreSchema = z.object({
+export const RepoScoreSchema = z.looseObject({
   repo: z.string(),
   score: z.number(),
   mergedPRCount: z.number(),
@@ -67,19 +67,19 @@ export const RepoScoreSchema = z.object({
   language: z.string().nullable().optional(),
 });
 
-export const StoredMergedPRSchema = z.object({
+export const StoredMergedPRSchema = z.looseObject({
   url: z.string(),
   title: z.string(),
   mergedAt: z.string(),
 });
 
-export const StoredClosedPRSchema = z.object({
+export const StoredClosedPRSchema = z.looseObject({
   url: z.string(),
   title: z.string(),
   closedAt: z.string(),
 });
 
-export const StoredOpenPRSchema = z.object({
+export const StoredOpenPRSchema = z.looseObject({
   url: z.string(),
   title: z.string(),
   openedAt: z.string(),
@@ -148,7 +148,7 @@ export const TrackedIssueSchema = z.object({
 
 // ── Skipped issue schema ──────────────────────────────────────────
 
-export const SkippedIssueSchema = z.object({
+export const SkippedIssueSchema = z.looseObject({
   url: z.string(),
   repo: z.string(),
   number: z.number(),
@@ -160,7 +160,7 @@ export const SkippedIssueSchema = z.object({
 
 export const HorizonSchema = z.enum(["quick-win", "bigger-bet"]);
 
-export const SavedCandidateSchema = z.object({
+export const SavedCandidateSchema = z.looseObject({
   issueUrl: z.string(),
   repo: z.string(),
   number: z.number(),
@@ -179,7 +179,7 @@ export const SavedCandidateSchema = z.object({
 
 export const PersistenceModeSchema = z.enum(["local", "gist"]);
 
-export const ScoutPreferencesSchema = z.object({
+export const ScoutPreferencesSchema = z.looseObject({
   githubUsername: z.string().default(""),
   languages: z.array(z.string()).default(["any"]),
   labels: z.array(z.string()).default(["good first issue", "help wanted"]),
@@ -231,7 +231,10 @@ export const ScoutPreferencesSchema = z.object({
 
 // ── Root state schema ───────────────────────────────────────────────
 
-export const ScoutStateSchema = z.object({
+// Persisted schemas are loose (unknown keys round-trip) so an older binary
+// loading state written by a newer one cannot silently strip and then
+// persist away the newer fields (#137).
+export const ScoutStateSchema = z.looseObject({
   version: z.literal(1),
 
   preferences: ScoutPreferencesSchema.default(() =>
@@ -255,6 +258,17 @@ export const ScoutStateSchema = z.object({
 
   gistId: z.string().optional(),
 });
+
+/**
+ * Single entry point for parsing persisted state (local file, gist, gist
+ * cache). Version migrations belong here: when a version 2 ships, transform
+ * older raw shapes before validation so no load site ever sees unmigrated
+ * data. Unknown keys round-trip via the loose schemas above.
+ */
+export function parseScoutState(raw: unknown): ScoutState {
+  // No migrations yet; version 1 is current.
+  return ScoutStateSchema.parse(raw);
+}
 
 // ── Inferred types ──────────────────────────────────────────────────
 

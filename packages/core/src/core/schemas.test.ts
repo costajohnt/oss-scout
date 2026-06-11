@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   ScoutStateSchema,
   ScoutPreferencesSchema,
+  parseScoutState,
   RepoScoreSchema,
   SavedCandidateSchema,
   HorizonSchema,
@@ -323,5 +324,52 @@ describe("SavedCandidateSchema horizon field", () => {
     expect(() =>
       SavedCandidateSchema.parse({ ...base, horizon: "quick-win" }),
     ).not.toThrow();
+  });
+});
+
+// ── parseScoutState / unknown-key round-trip (#137) ─────────────────
+
+describe("parseScoutState", () => {
+  it("round-trips unknown top-level keys instead of stripping them", () => {
+    const parsed = parseScoutState({
+      version: 1,
+      futureTopLevelField: { from: "a newer binary" },
+    });
+    expect((parsed as Record<string, unknown>).futureTopLevelField).toEqual({
+      from: "a newer binary",
+    });
+  });
+
+  it("round-trips unknown keys on nested persisted objects", () => {
+    const parsed = parseScoutState({
+      version: 1,
+      preferences: { futurePref: true },
+      savedResults: [
+        {
+          issueUrl: "https://github.com/o/r/issues/1",
+          repo: "o/r",
+          number: 1,
+          title: "t",
+          labels: [],
+          recommendation: "approve",
+          viabilityScore: 80,
+          searchPriority: "normal",
+          firstSeenAt: "2026-05-08T00:00:00Z",
+          lastSeenAt: "2026-05-08T00:00:00Z",
+          lastScore: 80,
+          futureCandidateField: "kept",
+        },
+      ],
+    });
+    expect((parsed.preferences as Record<string, unknown>).futurePref).toBe(
+      true,
+    );
+    expect(
+      (parsed.savedResults[0] as Record<string, unknown>).futureCandidateField,
+    ).toBe("kept");
+  });
+
+  it("still rejects an unknown version", () => {
+    expect(() => parseScoutState({ version: 2 })).toThrow();
   });
 });

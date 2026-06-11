@@ -4,7 +4,7 @@
 
 import * as fs from "fs";
 import * as path from "path";
-import { ScoutStateSchema } from "./schemas.js";
+import { ScoutStateSchema, parseScoutState } from "./schemas.js";
 import type { ScoutState } from "./schemas.js";
 import { getDataDir } from "./utils.js";
 import { debug, warn } from "./logger.js";
@@ -30,7 +30,7 @@ export function loadLocalState(): ScoutState {
   const statePath = getStatePath();
   try {
     const raw = fs.readFileSync(statePath, "utf-8");
-    return ScoutStateSchema.parse(JSON.parse(raw));
+    return parseScoutState(JSON.parse(raw));
   } catch (err) {
     const code = (err as NodeJS.ErrnoException)?.code;
     if (code === "ENOENT") {
