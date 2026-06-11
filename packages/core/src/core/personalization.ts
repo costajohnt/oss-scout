@@ -51,7 +51,7 @@ export function annotateBoost(
     (preferLanguages ?? []).map((l) => l.trim().toLowerCase()).filter(Boolean),
   );
   const repoSet = new Set(
-    (preferRepos ?? []).map((r) => r.trim()).filter(Boolean),
+    (preferRepos ?? []).map((r) => r.trim().toLowerCase()).filter(Boolean),
   );
   if (langSet.size === 0 && repoSet.size === 0) return;
 
@@ -59,7 +59,7 @@ export function annotateBoost(
     let score = 0;
     const reasons: string[] = [];
 
-    if (repoSet.size > 0 && repoSet.has(c.issue.repo)) {
+    if (repoSet.size > 0 && repoSet.has(c.issue.repo.toLowerCase())) {
       score += REPO_BOOST;
       reasons.push(`repo affinity: ${c.issue.repo}`);
     }

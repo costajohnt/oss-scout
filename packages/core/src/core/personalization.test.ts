@@ -119,6 +119,17 @@ describe("annotateBoost", () => {
     ]);
   });
 
+  it("matches repo slug case-insensitively (#130)", () => {
+    const candidates = [makeCandidate("vercel/next.js", "TypeScript")];
+
+    annotateBoost(candidates, undefined, ["Vercel/Next.js"]);
+
+    expect(candidates[0].boostScore).toBe(REPO_BOOST);
+    expect(candidates[0].boostReasons).toEqual([
+      "repo affinity: vercel/next.js",
+    ]);
+  });
+
   it("stacks repo and language boosts when both match", () => {
     const candidates = [makeCandidate("vercel/next.js", "TypeScript")];
 

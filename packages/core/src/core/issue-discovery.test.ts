@@ -821,6 +821,24 @@ describe("IssueDiscovery", () => {
       );
     });
 
+    it("filterIssues matches excludeRepos case-insensitively (#130)", async () => {
+      const items: GitHubSearchItem[] = [
+        {
+          html_url: "https://github.com/excluded/repo/issues/1",
+          repository_url: "https://api.github.com/repos/excluded/repo",
+          updated_at: "2026-01-01T00:00:00Z",
+        },
+      ];
+      mockSearchAcrossLanguagesAndLabels.mockResolvedValue(items);
+
+      // User typed the slug with different casing than the API returns
+      const discovery = makeDiscovery({}, { excludeRepos: ["Excluded/Repo"] });
+
+      await expect(discovery.searchIssues({ maxResults: 5 })).rejects.toThrow(
+        "No issue candidates found",
+      );
+    });
+
     it("filterIssues excludes repos in aiPolicyBlocklist", async () => {
       // Provide a candidate so the search doesn't throw
       const c = makeCandidate("allowed/repo", "merged_pr");
@@ -888,10 +906,35 @@ describe("IssueDiscovery", () => {
         maxResults: 20,
       });
 
-      // broad should still be listed in strategiesUsed (strategy was enabled)
-      // but searchWithChunkedLabels should NOT have been called (Phase 2 body skipped)
-      expect(strategiesUsed).toContain("broad");
+      // Phase 2 body short-circuited by the skip threshold: no broad query
+      // ran, so "broad" must NOT be reported as used (#130)
+      expect(strategiesUsed).not.toContain("broad");
       expect(mockSearchAcrossLanguagesAndLabels).not.toHaveBeenCalled();
+    });
+
+    it("does not report starred when every starred repo was already covered by Phase 0", async () => {
+      const candidates = [makeCandidate("org/repo-0", "merged_pr")];
+      mockFetchIssuesFromKnownRepos.mockResolvedValue({
+        candidates,
+        allReposFailed: false,
+        rateLimitHit: false,
+      });
+      vi.mocked(applyPerRepoCap).mockImplementation((c) => c);
+
+      const discovery = makeDiscovery({
+        getReposWithMergedPRs: vi.fn(() => ["org/repo-0"]),
+        // Starred list is a subset of Phase 0 repos, so Phase 1 has nothing
+        // left to query
+        getStarredRepos: vi.fn(() => ["org/repo-0"]),
+      });
+
+      const { strategiesUsed } = await discovery.searchIssues({
+        maxResults: 5,
+        strategies: ["merged", "starred"],
+      });
+
+      expect(strategiesUsed).toContain("merged");
+      expect(strategiesUsed).not.toContain("starred");
     });
 
     it("applies broadPhaseDelayMs before Phase 2 when previous phases found some results", async () => {
