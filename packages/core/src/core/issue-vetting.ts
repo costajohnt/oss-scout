@@ -279,8 +279,14 @@ export class IssueVetter {
       reasonsToApprove.push("Has contribution guidelines");
 
     // Determine effective merged PR count: prefer local state (authoritative if present),
-    // fall back to live GitHub API count to detect contributions made before using oss-scout
-    const effectiveMergedCount = hasMergedPRsInRepo ? 1 : userMergedPRCount;
+    // fall back to live GitHub API count to detect contributions made before
+    // using oss-scout. null means the live check transiently failed: score as
+    // 0 but treat the result as inconclusive so it is not cached.
+    const mergedCountInconclusive =
+      !hasMergedPRsInRepo && userMergedPRCount === null;
+    const effectiveMergedCount = hasMergedPRsInRepo
+      ? 1
+      : (userMergedPRCount ?? 0);
     if (effectiveMergedCount > 0) {
       reasonsToApprove.push(
         `Trusted project (${effectiveMergedCount} PR${effectiveMergedCount > 1 ? "s" : ""} merged)`,
@@ -325,7 +331,8 @@ export class IssueVetter {
     const hasInconclusiveChecks =
       projectHealth.checkFailed ||
       existingPRCheck.inconclusive ||
-      claimCheck.inconclusive;
+      claimCheck.inconclusive ||
+      mergedCountInconclusive;
     if (recommendation === "approve" && hasInconclusiveChecks) {
       recommendation = "needs_review";
       vettingResult.notes.push(
@@ -400,8 +407,14 @@ export class IssueVetter {
       searchPriority,
     };
 
-    // Cache the vetting result to avoid redundant API calls on repeated searches
-    cache.set(cacheKey, "", result);
+    // Cache the vetting result to avoid redundant API calls on repeated
+    // searches — but never cache results built on inconclusive/failed checks
+    // (e.g. a transient 5xx): that would pin a degraded verdict for the whole
+    // TTL. Next vet retries instead. Mirrors the error-path rule in
+    // issue-eligibility's checkUserMergedPRsInRepo.
+    if (!hasInconclusiveChecks) {
+      cache.set(cacheKey, "", result);
+    }
 
     return result;
   }

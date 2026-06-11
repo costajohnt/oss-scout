@@ -201,6 +201,64 @@ describe("IssueVetter", () => {
   });
 
   describe("vetIssue", () => {
+    function installCacheSpy(): ReturnType<typeof vi.fn> {
+      const cacheSet = vi.fn();
+      vi.mocked(getHttpCache).mockReturnValue({
+        getIfFresh: vi.fn(() => null),
+        set: cacheSet,
+      } as unknown as ReturnType<typeof getHttpCache>);
+      return cacheSet;
+    }
+
+    it("caches the result when all checks are conclusive", async () => {
+      const cacheSet = installCacheSpy();
+      const vetter = makeVetter();
+      await vetter.vetIssue(VALID_ISSUE_URL);
+      expect(cacheSet).toHaveBeenCalledTimes(1);
+    });
+
+    it("does not cache a result built on an inconclusive claim check", async () => {
+      const cacheSet = installCacheSpy();
+      vi.mocked(checkNotClaimed).mockResolvedValueOnce({
+        passed: true,
+        inconclusive: true,
+        reason: "Network error",
+      });
+      const vetter = makeVetter();
+      const result = await vetter.vetIssue(VALID_ISSUE_URL);
+      // The degraded verdict must not be pinned for the cache TTL
+      expect(result.recommendation).toBe("needs_review");
+      expect(cacheSet).not.toHaveBeenCalled();
+    });
+
+    it("does not cache when the merged-PR count check transiently failed", async () => {
+      const cacheSet = installCacheSpy();
+      vi.mocked(checkUserMergedPRsInRepo).mockResolvedValueOnce(null);
+      const vetter = makeVetter();
+      const result = await vetter.vetIssue(VALID_ISSUE_URL);
+      // Scored as zero merged PRs, but the verdict must not be pinned
+      expect(result.recommendation).toBe("needs_review");
+      expect(cacheSet).not.toHaveBeenCalled();
+    });
+
+    it("does not cache a result when the project health check failed", async () => {
+      const cacheSet = installCacheSpy();
+      vi.mocked(checkProjectHealth).mockResolvedValueOnce({
+        repo: "owner/repo",
+        lastCommitAt: null,
+        daysSinceLastCommit: null,
+        openIssuesCount: 0,
+        avgIssueResponseDays: null,
+        ciStatus: "unknown",
+        isActive: false,
+        checkFailed: true,
+        failureReason: "Server error",
+      });
+      const vetter = makeVetter();
+      await vetter.vetIssue(VALID_ISSUE_URL);
+      expect(cacheSet).not.toHaveBeenCalled();
+    });
+
     it("recommends approve when all checks pass", async () => {
       const vetter = makeVetter();
       const result = await vetter.vetIssue(VALID_ISSUE_URL);
