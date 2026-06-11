@@ -3,11 +3,24 @@
   "packages": {
     "packages/core": {
       "release-type": "node",
-      "component": "core"
+      "component": "core",
+      "extra-files": [
+        {
+          "type": "json",
+          "path": "/.claude-plugin/plugin.json",
+          "jsonpath": "$.version"
+        }
+      ]
     },
     "packages/mcp-server": {
       "release-type": "node",
-      "component": "mcp-server"
+      "component": "mcp-server",
+      "extra-files": [
+        {
+          "type": "generic",
+          "path": "src/index.ts"
+        }
+      ]
     }
   }
 }
