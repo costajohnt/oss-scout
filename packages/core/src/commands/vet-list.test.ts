@@ -5,7 +5,11 @@ import type { IssueCandidate } from "../core/types.js";
 
 // Mock local-state module
 vi.mock("../core/local-state.js", () => {
-  let mockState: any = { version: 1, savedResults: [] };
+  let mockState: any = {
+    version: 1,
+    savedResults: [],
+    preferences: { persistence: "local" },
+  };
   return {
     loadLocalState: () => mockState,
     saveLocalState: (state: any) => {

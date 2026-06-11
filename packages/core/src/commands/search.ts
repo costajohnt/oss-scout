@@ -2,9 +2,9 @@
  * Search command — finds contributable issues using multi-strategy search.
  */
 
-import { createScout } from "../scout.js";
+import { buildCommandScout } from "./command-scout.js";
 import { requireGitHubToken } from "../core/utils.js";
-import { saveLocalState } from "../core/local-state.js";
+import { loadLocalState, saveLocalState } from "../core/local-state.js";
 import { isLinkedPRStalled } from "../core/linked-pr.js";
 import type { ScoutState, SearchStrategy } from "../core/schemas.js";
 
@@ -79,13 +79,8 @@ export async function runSearch(
   options: SearchCommandOptions,
 ): Promise<SearchOutput> {
   const token = requireGitHubToken();
-  const scout = options.state
-    ? await createScout({
-        githubToken: token,
-        persistence: "provided",
-        initialState: options.state,
-      })
-    : await createScout({ githubToken: token });
+  const state = options.state ?? loadLocalState();
+  const scout = await buildCommandScout(state, token);
   const result = await scout.search({
     maxResults: options.maxResults,
     strategies: options.strategies,

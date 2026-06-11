@@ -4,8 +4,8 @@
 
 import { loadLocalState, saveLocalState } from "../core/local-state.js";
 import type { SkippedIssue, ScoutState } from "../core/schemas.js";
-import { createScout } from "../scout.js";
 import { getGitHubToken } from "../core/utils.js";
+import { buildCommandScout } from "./command-scout.js";
 import {
   ISSUE_URL_PATTERN,
   validateGitHubUrl,
@@ -13,23 +13,11 @@ import {
 } from "./validation.js";
 
 /**
- * Create an OssScout instance for skip operations.
- * Uses gist persistence when a token is available, otherwise provided-state mode.
+ * Build a scout for skip operations, honoring the persistence preference.
+ * The old helper had two identical branches and hardcoded provided mode.
  */
-async function createSkipScout(state: ScoutState) {
-  const token = getGitHubToken() ?? "";
-  if (token) {
-    return createScout({
-      githubToken: token,
-      persistence: "provided",
-      initialState: state,
-    });
-  }
-  return createScout({
-    githubToken: "",
-    persistence: "provided",
-    initialState: state,
-  });
+function createSkipScout(state: ScoutState) {
+  return buildCommandScout(state, getGitHubToken() ?? "");
 }
 
 /**
