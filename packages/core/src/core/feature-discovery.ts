@@ -20,6 +20,7 @@ import { errorMessage, getHttpStatusCode, isRateLimitError } from "./errors.js";
 import { warn } from "./logger.js";
 import { sleep } from "./utils.js";
 import { fetchRoadmapIssueRefs } from "./roadmap.js";
+import { cachedSearchIssues } from "./search-phases.js";
 
 const MODULE = "feature-discovery";
 
@@ -377,13 +378,15 @@ const DEFAULT_BROAD_MAX_TO_VET = 30;
  * is independently testable without mocking the Search API.
  */
 export function buildBroadFeatureSearchQuery(opts: {
-  languages?: string[];
+  /** Single language per query; see buildBroadFeatureSearchQueries. */
+  language?: string;
   excludeRepos?: string[];
   excludeOrgs?: string[];
 }): string {
   const parts: string[] = ["is:issue", "is:open", "no:assignee"];
 
-  // Feature labels — any-of via parenthesized OR.
+  // Feature labels — any-of via parenthesized OR. The six labels spend
+  // exactly five OR operators, GitHub's entire per-query allowance.
   const labelClause = FEATURE_LABELS.map((l) => `label:"${l}"`).join(" OR ");
   parts.push(`(${labelClause})`);
 
@@ -392,14 +395,8 @@ export function buildBroadFeatureSearchQuery(opts: {
     parts.push(`-label:"${excl}"`);
   }
 
-  // Languages — skip the filter when "any" is the only preference, since
-  // GitHub Search has no `language:any` operator.
-  const languages = (opts.languages ?? []).filter(
-    (l) => l && l.toLowerCase() !== "any",
-  );
-  if (languages.length > 0) {
-    const langClause = languages.map((l) => `language:${l}`).join(" OR ");
-    parts.push(`(${langClause})`);
+  if (opts.language) {
+    parts.push(`language:${opts.language}`);
   }
 
   // User exclusions.
@@ -411,6 +408,32 @@ export function buildBroadFeatureSearchQuery(opts: {
   }
 
   return parts.join(" ");
+}
+
+/**
+ * One query per language. A combined `(language:a OR language:b)` clause
+ * pushed the query past GitHub's 5-operator limit (the label ORs already
+ * spend all five), so every 2+ language config drew a 422 that the caller
+ * swallowed into "no results" (#121). "any" disables the filter.
+ */
+export function buildBroadFeatureSearchQueries(opts: {
+  languages?: string[];
+  excludeRepos?: string[];
+  excludeOrgs?: string[];
+}): string[] {
+  const base = {
+    excludeRepos: opts.excludeRepos,
+    excludeOrgs: opts.excludeOrgs,
+  };
+  const languages = (opts.languages ?? []).filter(
+    (l) => l && l.toLowerCase() !== "any",
+  );
+  if (languages.length === 0) {
+    return [buildBroadFeatureSearchQuery(base)];
+  }
+  return languages.map((language) =>
+    buildBroadFeatureSearchQuery({ ...base, language }),
+  );
 }
 
 /**
@@ -429,7 +452,7 @@ export function buildBroadFeatureSearchQuery(opts: {
 export async function discoverFeaturesBroad(
   opts: DiscoverFeaturesBroadOptions,
 ): Promise<FeatureSearchResult> {
-  const query = buildBroadFeatureSearchQuery({
+  const queries = buildBroadFeatureSearchQueries({
     languages: opts.languages,
     excludeRepos: opts.excludeRepos,
     excludeOrgs: opts.excludeOrgs,
@@ -438,15 +461,28 @@ export async function discoverFeaturesBroad(
 
   let items: RawIssueItem[];
   try {
-    const response = await opts.octokit.search.issuesAndPullRequests({
-      q: query,
-      sort: "interactions",
-      order: "desc",
-      per_page: maxToVet,
-    });
-    items = (response.data.items as RawIssueItem[]).filter(
-      (it) => !it.pull_request && !it.assignee && isFeatureIssue(it),
-    );
+    // cachedSearchIssues pays the budget tracker and the 15-minute search
+    // cache; this was previously the only Search API call in the pipeline
+    // outside that infrastructure (#121). Runtime items keep the rich
+    // fields (milestone, reactions, ...) the narrow cache type omits.
+    const merged: RawIssueItem[] = [];
+    const seenUrls = new Set<string>();
+    for (const query of queries) {
+      const data = await cachedSearchIssues(opts.octokit, {
+        q: query,
+        sort: "interactions",
+        order: "desc",
+        per_page: maxToVet,
+      });
+      for (const raw of data.items as unknown as RawIssueItem[]) {
+        if (seenUrls.has(raw.html_url)) continue;
+        seenUrls.add(raw.html_url);
+        merged.push(raw);
+      }
+    }
+    items = merged
+      .filter((it) => !it.pull_request && !it.assignee && isFeatureIssue(it))
+      .slice(0, maxToVet);
   } catch (err: unknown) {
     if (getHttpStatusCode(err) === 401 || isRateLimitError(err)) throw err;
     warn(MODULE, `broad feature search failed: ${errorMessage(err)}`);
