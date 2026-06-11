@@ -151,14 +151,20 @@ describe("registerTools", () => {
       expect(parsed.candidates[0].issue.repo).toBe("test/repo");
     });
 
-    it("calls scout.search with parsed options", async () => {
+    it("calls scout.search with parsed options and zero inter-phase delays (#143)", async () => {
       const handler = getToolHandler(server, "search");
       await handler({ maxResults: 3, strategies: "broad,merged" }, {});
 
-      expect(scout.search).toHaveBeenCalledWith({
-        maxResults: 3,
-        strategies: ["broad", "merged"],
-      });
+      expect(scout.search).toHaveBeenCalledWith(
+        expect.objectContaining({
+          maxResults: 3,
+          strategies: ["broad", "merged"],
+          // MCP runs in a request/response context, so the fixed phase
+          // sleeps that would blow the tool timeout are disabled
+          interPhaseDelayMs: 0,
+          broadPhaseDelayMs: 0,
+        }),
+      );
     });
 
     it("saves results and checkpoints after search", async () => {

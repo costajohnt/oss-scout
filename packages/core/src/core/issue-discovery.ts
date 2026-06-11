@@ -504,6 +504,8 @@ export class IssueDiscovery {
       preferLanguages?: string[];
       preferRepos?: string[];
       diversityRatio?: number;
+      interPhaseDelayMs?: number;
+      broadPhaseDelayMs?: number;
     } = {},
   ): Promise<{
     candidates: IssueCandidate[];
@@ -517,7 +519,8 @@ export class IssueDiscovery {
       (scopes ? buildEffectiveLabels(scopes, config.labels) : config.labels);
     const maxResults = options.maxResults || 10;
     const minStars = config.minStars ?? 50;
-    const interPhaseDelay = config.interPhaseDelayMs ?? 30000;
+    const interPhaseDelay =
+      options.interPhaseDelayMs ?? config.interPhaseDelayMs ?? 30000;
 
     // Strategy selection. Empty arrays count as "unset" so a stored
     // defaultStrategy of [] can't silently produce zero-strategy searches.
@@ -691,7 +694,8 @@ export class IssueDiscovery {
     }
 
     // Phase 2: General search (with rate limit mitigation)
-    const broadDelay = config.broadPhaseDelayMs ?? 90000;
+    const broadDelay =
+      options.broadPhaseDelayMs ?? config.broadPhaseDelayMs ?? 90000;
     // Clamp to maxResults - 1: the phase gate below already skips the whole
     // phase at >= maxResults, so any larger threshold would be unsatisfiable
     // (the default 15 vs default maxResults 10 made this dead config). 0
