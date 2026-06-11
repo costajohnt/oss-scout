@@ -90,13 +90,16 @@ function buildIssueFilter(
     return items.filter((item) => {
       const repoFullName = extractRepoFromUrl(item.repository_url);
       if (!repoFullName) return false;
-      if (config.excludedRepos.has(repoFullName)) return false;
+      // Repo-name sets are lowercased at construction; compare lowercased so
+      // user-typed casing (Microsoft/TypeScript) still matches API casing.
+      const repoLower = repoFullName.toLowerCase();
+      if (config.excludedRepos.has(repoLower)) return false;
       if (config.excludeOrgs.size > 0) {
-        const orgName = repoFullName.split("/")[0]?.toLowerCase();
+        const orgName = repoLower.split("/")[0];
         if (orgName && config.excludeOrgs.has(orgName)) return false;
       }
-      if (config.aiBlocklisted.has(repoFullName)) return false;
-      if (config.lowScoringRepos.has(repoFullName)) return false;
+      if (config.aiBlocklisted.has(repoLower)) return false;
+      if (config.lowScoringRepos.has(repoLower)) return false;
       if (config.skippedUrls.has(item.html_url)) return false;
       const updatedAt = new Date(item.updated_at);
       const ageDays = daysBetween(updatedAt, config.now);
@@ -588,7 +591,9 @@ export class IssueDiscovery {
     const starredRepos = this.getStarredRepos();
     const starredRepoSet = new Set(starredRepos);
     const lowScoringRepos = new Set(
-      this.deriveLowScoringRepos(config.minRepoScoreThreshold),
+      this.deriveLowScoringRepos(config.minRepoScoreThreshold).map((r) =>
+        r.toLowerCase(),
+      ),
     );
 
     // Build query parts
@@ -597,8 +602,10 @@ export class IssueDiscovery {
       ? ""
       : languages.map((l) => `language:${l}`).join(" ");
 
-    // Build reusable filter
-    const aiBlocklisted = new Set(config.aiPolicyBlocklist);
+    // Build reusable filter (repo-name sets lowercased; see buildIssueFilter)
+    const aiBlocklisted = new Set(
+      config.aiPolicyBlocklist.map((r) => r.toLowerCase()),
+    );
     if (aiBlocklisted.size > 0) {
       debug(
         MODULE,
@@ -606,7 +613,7 @@ export class IssueDiscovery {
       );
     }
     const filterIssues = buildIssueFilter({
-      excludedRepos: new Set(config.excludeRepos),
+      excludedRepos: new Set(config.excludeRepos.map((r) => r.toLowerCase())),
       excludeOrgs: new Set(
         (config.excludeOrgs ?? []).map((o) => o.toLowerCase()),
       ),
@@ -677,9 +684,10 @@ export class IssueDiscovery {
           allCandidates.push(...result.candidates);
           phaseErrors["1"] = result.error;
           if (result.rateLimitHit) rateLimitHitDuringSearch = true;
+          // Recorded only when the phase actually queried (#130)
+          strategiesUsed.push("starred");
         }
       }
-      strategiesUsed.push("starred");
     }
 
     // Phase 2: General search (with rate limit mitigation)
@@ -748,8 +756,10 @@ export class IssueDiscovery {
         allCandidates.push(...result.candidates);
         phaseErrors["2"] = result.error;
         if (result.rateLimitHit) rateLimitHitDuringSearch = true;
+        // Recorded only when the phase actually queried, not when the
+        // skip-threshold branch short-circuited it (#130)
+        strategiesUsed.push("broad");
       }
-      strategiesUsed.push("broad");
     }
 
     // Phase 3: Actively maintained repos
