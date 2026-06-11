@@ -262,6 +262,37 @@ describe("Strategy Selection", () => {
     expect(fetchIssuesFromKnownRepos).toHaveBeenCalledTimes(1);
   });
 
+  it("treats an empty defaultStrategy as unset and falls back to all", async () => {
+    const prefs = {
+      ...basePreferences,
+      defaultStrategy: [] as SearchStrategy[],
+    };
+    const stateReader = {
+      ...baseStateReader,
+      getReposWithMergedPRs: () => ["owner/repo"],
+      getStarredRepos: () => ["owner/starred"],
+    };
+    const discovery = new IssueDiscovery("token", prefs, stateReader);
+    const result = await discovery.searchIssues({});
+    // [] must not produce a zero-strategy (silently empty) search
+    expect(result.strategiesUsed.length).toBeGreaterThan(0);
+  });
+
+  it("treats empty options.strategies as unset and applies defaultStrategy", async () => {
+    const prefs = {
+      ...basePreferences,
+      defaultStrategy: ["merged"] as SearchStrategy[],
+    };
+    const stateReader = {
+      ...baseStateReader,
+      getReposWithMergedPRs: () => ["owner/repo"],
+      getStarredRepos: () => ["owner/starred"],
+    };
+    const discovery = new IssueDiscovery("token", prefs, stateReader);
+    const result = await discovery.searchIssues({ strategies: [] });
+    expect(result.strategiesUsed).toEqual(["merged"]);
+  });
+
   it("can combine multiple strategies", async () => {
     const stateReader = {
       ...baseStateReader,

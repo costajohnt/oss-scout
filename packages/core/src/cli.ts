@@ -105,8 +105,7 @@ program
   .option("--json", "Output as JSON")
   .option(
     "--strategy <strategies>",
-    `Search strategies (${CONCRETE_STRATEGIES.join(",")},all)`,
-    "all",
+    `Search strategies (${CONCRETE_STRATEGIES.join(",")},all). Defaults to the defaultStrategy preference, or all.`,
   )
   .option(
     "--prefer-languages <list>",
@@ -153,25 +152,29 @@ program
             "Run `oss-scout bootstrap` to import your starred repos and PR history for better results.\n",
           );
         }
-        // Parse --strategy option
-        const strategyTokens = (options.strategy ?? "all")
-          .split(",")
-          .map((s) => s.trim())
-          .filter(Boolean);
-        const strategies: SearchStrategy[] = [];
-        for (const token of strategyTokens) {
-          const parsed = SearchStrategySchema.safeParse(token);
-          if (!parsed.success) {
-            const valid = [...CONCRETE_STRATEGIES, "all"].join(", ");
-            console.error(
-              'Error: unknown strategy "' +
-                token +
-                '". Valid strategies: ' +
-                valid,
-            );
-            process.exit(1);
+        // Parse --strategy. Absent means undefined so the stored
+        // defaultStrategy preference applies (discovery falls back to "all").
+        let strategies: SearchStrategy[] | undefined;
+        if (options.strategy !== undefined) {
+          const strategyTokens = options.strategy
+            .split(",")
+            .map((s) => s.trim())
+            .filter(Boolean);
+          strategies = [];
+          for (const token of strategyTokens) {
+            const parsed = SearchStrategySchema.safeParse(token);
+            if (!parsed.success) {
+              const valid = [...CONCRETE_STRATEGIES, "all"].join(", ");
+              console.error(
+                'Error: unknown strategy "' +
+                  token +
+                  '". Valid strategies: ' +
+                  valid,
+              );
+              process.exit(1);
+            }
+            strategies.push(parsed.data);
           }
-          strategies.push(parsed.data);
         }
 
         const splitCsv = (raw: string | undefined): string[] | undefined => {
