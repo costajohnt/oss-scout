@@ -9,7 +9,9 @@ import {
   validateUrl,
 } from "@oss-scout/core";
 
-const TOOL_TIMEOUT_MS = 60000;
+// Generous ceiling: even with inter-phase delays zeroed, vetting many issues
+// under the budget tracker's sliding-window pacing can take minutes (#143).
+const TOOL_TIMEOUT_MS = 300000;
 
 function withTimeout<T>(
   promise: Promise<T>,
@@ -82,6 +84,10 @@ export function registerTools(server: McpServer, scout: OssScout): void {
             preferLanguages,
             preferRepos,
             diversityRatio,
+            // No fixed inter-phase sleeps in the request/response MCP context;
+            // the budget tracker still paces the GitHub calls (#143)
+            interPhaseDelayMs: 0,
+            broadPhaseDelayMs: 0,
           }),
         );
 

@@ -961,6 +961,36 @@ describe("IssueDiscovery", () => {
       expect(sleep).toHaveBeenCalledWith(60000);
     });
 
+    it("per-call delay overrides take precedence over preferences (#143)", async () => {
+      const phase0Candidates = [
+        makeCandidate("org/merged-1", "merged_pr"),
+        makeCandidate("org/merged-2", "merged_pr"),
+      ];
+      mockFetchIssuesFromKnownRepos.mockResolvedValue({
+        candidates: phase0Candidates,
+        allReposFailed: false,
+        rateLimitHit: false,
+      });
+      vi.mocked(applyPerRepoCap).mockImplementation((c) => c);
+
+      // Preferences say 30s/90s, but the per-call override is 0/0
+      const discovery = makeDiscovery(
+        { getReposWithMergedPRs: vi.fn(() => ["org/merged-1"]) },
+        { interPhaseDelayMs: 30000, broadPhaseDelayMs: 90000 },
+      );
+
+      await discovery.searchIssues({
+        maxResults: 10,
+        interPhaseDelayMs: 0,
+        broadPhaseDelayMs: 0,
+      });
+
+      // No delay sleep fired with either the preference value or the broad value
+      const sleepArgs = vi.mocked(sleep).mock.calls.map((c) => c[0]);
+      expect(sleepArgs).not.toContain(30000);
+      expect(sleepArgs).not.toContain(90000);
+    });
+
     it("skips delay when previous phases found 0 results", async () => {
       // No Phase 0/1 candidates, so Phase 2 should run without the broad delay
       mockFetchIssuesFromKnownRepos.mockResolvedValue({

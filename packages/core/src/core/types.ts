@@ -244,6 +244,19 @@ export interface SearchOptions {
    * clamped to [0, 1].
    */
   diversityRatio?: number;
+  /**
+   * Per-call override for the delay between search phases (ms). Defaults to
+   * the `interPhaseDelayMs` preference (30s). Latency-sensitive callers like
+   * the MCP server pass 0; the sliding-window budget tracker still paces the
+   * actual API calls, so the fixed sleep is the only thing removed (#143).
+   */
+  interPhaseDelayMs?: number;
+  /**
+   * Per-call override for the extra cooldown before the broad phase (ms).
+   * Defaults to the `broadPhaseDelayMs` preference (90s). See
+   * `interPhaseDelayMs` for the rationale (#143).
+   */
+  broadPhaseDelayMs?: number;
 }
 
 /** Result of a search operation. */
