@@ -65,17 +65,10 @@ export interface BootstrapResult {
 
 /** Classify an unknown error into a DegradedReason for user-facing messaging. */
 function classifyDegradedReason(err: unknown): DegradedReason {
+  // isRateLimitError covers 429, 403 + "rate limit" (including secondary),
+  // and 403 + "abuse detection" (#138) — single source of truth.
   if (isRateLimitError(err)) return "rate_limit";
   const status = getHttpStatusCode(err);
-  // GitHub's abuse-detection responses arrive as 403 with "abuse detection"
-  // in the message but no "rate limit" substring — match resolveErrorCode's
-  // logic in errors.ts so we don't misclassify as 'unknown'.
-  if (
-    status === 403 &&
-    errorMessage(err).toLowerCase().includes("abuse detection")
-  ) {
-    return "rate_limit";
-  }
   if (status !== undefined && status >= 500 && status < 600) return "server";
   if (err && typeof err === "object" && "code" in err) {
     const code = (err as { code: unknown }).code;
