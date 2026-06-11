@@ -34,30 +34,38 @@ Then STOP.
 
 ## Step 2: Check Current Setup
 
+`setup` is interactive and cannot act as a status probe (it exits with a
+CONFIGURATION error in non-TTY contexts). Read the preferences instead:
+
 ```bash
-GITHUB_TOKEN=$(gh auth token 2>/dev/null || echo "$GITHUB_TOKEN") node "${CLAUDE_PLUGIN_ROOT}/packages/core/dist/cli.bundle.cjs" setup --json 2>/dev/null
+GITHUB_TOKEN=$(gh auth token 2>/dev/null || echo "$GITHUB_TOKEN") node "${CLAUDE_PLUGIN_ROOT}/packages/core/dist/cli.bundle.cjs" config --json 2>/dev/null
 ```
 
-If setup is already complete, ask:
+Setup is complete when `data.githubUsername` is non-empty. If it is, ask:
 > "Setup is already configured. Would you like to reconfigure your settings?"
 
 Options: "Yes, reconfigure" or "No, keep current settings"
 
 If they choose to keep current settings, show current config and exit.
 
-## Step 3: Run Interactive Setup
+## Step 3: Configure Preferences
 
-The CLI has an interactive setup command. Run it:
+Drive configuration through `config set` from this conversation (the
+interactive `setup` command requires a real terminal and exits with a
+CONFIGURATION error when run through the Bash tool). Ask the user for each
+preference, then apply it. The CLI stores configuration in
+`~/.oss-scout/state.json`.
 
-```bash
-GITHUB_TOKEN=$(gh auth token 2>/dev/null || echo "$GITHUB_TOKEN") node "${CLAUDE_PLUGIN_ROOT}/packages/core/dist/cli.bundle.cjs" setup
-```
-
-Alternatively, walk the user through setting individual preferences using the config command. The CLI stores configuration in `~/.oss-scout/state.json`.
+If the user would rather use the interactive flow, tell them to run
+`oss-scout setup` themselves in their own terminal.
 
 ### Manual Configuration
 
-If the user prefers to set values individually:
+**GitHub username** (set this FIRST — it doubles as the setup-complete
+signal that Step 2 checks; source it from the authenticated account):
+```bash
+GITHUB_TOKEN=$(gh auth token) node "${CLAUDE_PLUGIN_ROOT}/packages/core/dist/cli.bundle.cjs" config set githubUsername "$(gh api user --jq .login)" --json
+```
 
 **Languages** (what to search for):
 ```bash
