@@ -12,11 +12,12 @@ vi.mock("./utils.js", () => ({
 }));
 
 vi.mock("./logger.js", () => ({
-  debug: () => {},
-  warn: () => {},
+  debug: vi.fn(),
+  warn: vi.fn(),
 }));
 
 const { GistStateStore, mergeStates } = await import("./gist-state-store.js");
+const logger = await import("./logger.js");
 
 function makeState(overrides: Partial<ScoutState> = {}): ScoutState {
   return ScoutStateSchema.parse({ version: 1, ...overrides });
@@ -132,33 +133,47 @@ describe("GistStateStore", () => {
       expect(octokit.gists.list).toHaveBeenCalled();
     });
 
-    it("paginates gist search up to 5 pages", async () => {
+    it("stops searching after a short page (account fully scanned)", async () => {
       const octokit = makeOctokit({
-        list: vi
-          .fn()
-          .mockResolvedValueOnce({
-            data: [{ id: "g1", description: "other1" }],
-          })
-          .mockResolvedValueOnce({
-            data: [{ id: "g2", description: "other2" }],
-          })
-          .mockResolvedValueOnce({
-            data: [{ id: "g3", description: "other3" }],
-          })
-          .mockResolvedValueOnce({
-            data: [{ id: "g4", description: "other4" }],
-          })
-          .mockResolvedValueOnce({
-            data: [{ id: "g5", description: "other5" }],
-          }),
+        list: vi.fn().mockResolvedValue({
+          data: [{ id: "g1", description: "other1" }],
+        }),
         create: vi.fn().mockResolvedValue({ data: { id: "new-id" } }),
       });
 
       const store = new GistStateStore(octokit);
       const result = await store.bootstrap();
 
-      expect(octokit.gists.list).toHaveBeenCalledTimes(5);
+      // One short page proves every gist was seen; no duplicate-risk warning
+      expect(octokit.gists.list).toHaveBeenCalledTimes(1);
       expect(result.created).toBe(true);
+      expect(vi.mocked(logger.warn)).not.toHaveBeenCalledWith(
+        expect.any(String),
+        expect.stringContaining("the account has more"),
+      );
+    });
+
+    it("scans 10 full pages, then warns about duplicate risk before creating", async () => {
+      const fullPage = {
+        data: Array.from({ length: 100 }, (_, i) => ({
+          id: `g${i}`,
+          description: "other",
+        })),
+      };
+      const octokit = makeOctokit({
+        list: vi.fn().mockResolvedValue(fullPage),
+        create: vi.fn().mockResolvedValue({ data: { id: "new-id" } }),
+      });
+
+      const store = new GistStateStore(octokit);
+      const result = await store.bootstrap();
+
+      expect(octokit.gists.list).toHaveBeenCalledTimes(10);
+      expect(result.created).toBe(true);
+      expect(vi.mocked(logger.warn)).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.stringContaining("the account has more"),
+      );
     });
 
     it("writes gist ID to local cache on bootstrap", async () => {
