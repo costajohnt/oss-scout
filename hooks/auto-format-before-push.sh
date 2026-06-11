@@ -14,14 +14,18 @@ warn_and_exit() {
   cat <<WARN_EOF
 {
   "hookSpecificOutput": {
+    "hookEventName": "PreToolUse",
     "permissionDecision": "allow",
-    "updatedInput": {}
+    "permissionDecisionReason": "Auto-format hook: ${msg}"
   },
   "systemMessage": "Auto-format hook: ${msg}"
 }
 WARN_EOF
   exit 0
 }
+
+# jq is required to parse the hook payload (#144); degrade to a no-op
+command -v jq >/dev/null 2>&1 || exit 0
 
 input=$(cat)
 command=$(echo "$input" | jq -r '.tool_input.command // empty')
@@ -133,8 +137,9 @@ fi
 cat <<EOF
 {
   "hookSpecificOutput": {
+    "hookEventName": "PreToolUse",
     "permissionDecision": "allow",
-    "updatedInput": {}
+    "permissionDecisionReason": "Auto-formatted changed files (${format_result}) and committed before the push."
   },
   "systemMessage": "Auto-formatted changed files (${format_result}) and committed as 'style: auto-format before push'. The push will include this formatting commit."
 }

@@ -9,6 +9,10 @@
 
 set -euo pipefail
 
+# jq is required to parse the hook payload; without it every Bash call in a
+# session would surface a hook failure (#144). Degrade to a no-op instead.
+command -v jq >/dev/null 2>&1 || exit 0
+
 input=$(cat)
 
 command=$(echo "$input" | jq -r '.tool_input.command // empty')
@@ -23,10 +27,11 @@ if echo "$command" | grep -qE 'git\s+push\b' && echo "$command" | grep -qE '(\s-
   cat <<'EOF'
 {
   "hookSpecificOutput": {
+    "hookEventName": "PreToolUse",
     "permissionDecision": "deny",
-    "updatedInput": {}
+    "permissionDecisionReason": "Never use `git push --force`. Use `git push --force-with-lease` instead — it prevents overwriting commits pushed by others. Before pushing, always fetch the remote branch first: `git fetch <remote> <branch>`."
   },
-  "systemMessage": "BLOCKED: Never use `git push --force`. Use `git push --force-with-lease` instead — it prevents overwriting commits pushed by others. Before pushing, always fetch the remote branch first: `git fetch <remote> <branch>`."
+  "systemMessage": "BLOCKED: bare git push --force. Use --force-with-lease after fetching the remote branch."
 }
 EOF
   exit 0
@@ -37,10 +42,10 @@ if echo "$command" | grep -qE 'git\s+rebase\b'; then
   cat <<'EOF'
 {
   "hookSpecificOutput": {
+    "hookEventName": "PreToolUse",
     "permissionDecision": "ask",
-    "updatedInput": {}
-  },
-  "systemMessage": "Before rebasing, you MUST fetch the remote tracking branch to avoid overwriting commits pushed by others (e.g. maintainer cleanup commits). Run `git fetch <remote> <branch>` first and verify no new remote commits exist. If the remote has commits you don't have locally, incorporate them before rebasing."
+    "permissionDecisionReason": "Before rebasing, you MUST fetch the remote tracking branch to avoid overwriting commits pushed by others (e.g. maintainer cleanup commits). Run `git fetch <remote> <branch>` first and verify no new remote commits exist. If the remote has commits you don't have locally, incorporate them before rebasing."
+  }
 }
 EOF
   exit 0
@@ -51,10 +56,10 @@ if echo "$command" | grep -qE 'git\s+push\b.*--force-with-lease'; then
   cat <<'EOF'
 {
   "hookSpecificOutput": {
+    "hookEventName": "PreToolUse",
     "permissionDecision": "ask",
-    "updatedInput": {}
-  },
-  "systemMessage": "Before force-pushing (even with --force-with-lease), verify you fetched the remote branch and incorporated any new commits. Maintainers may push directly to your PR branch. If you haven't fetched, --force-with-lease may still overwrite their work if your local remote-tracking ref is stale."
+    "permissionDecisionReason": "Before force-pushing (even with --force-with-lease), verify you fetched the remote branch and incorporated any new commits. Maintainers may push directly to your PR branch. If you haven't fetched, --force-with-lease may still overwrite their work if your local remote-tracking ref is stale."
+  }
 }
 EOF
   exit 0
