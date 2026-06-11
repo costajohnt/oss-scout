@@ -1,100 +1,100 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { formatJsonError } from "./formatters/json.js";
-import {
-  errorMessage,
-  resolveErrorCode,
-  ValidationError,
-} from "./core/errors.js";
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { spawnSync } from "child_process";
+import { fileURLToPath } from "url";
+import * as fs from "fs";
+import * as path from "path";
+import * as os from "os";
 
 /**
- * CLI tests — verify handleCommandError behavior and module loading.
+ * CLI smoke tests (#160).
  *
- * Since handleCommandError is module-private, we test the same logic
- * by composing the public functions it uses: formatJsonError, errorMessage,
- * resolveErrorCode. We also verify the CLI module loads without crashing.
+ * The old cli.test.ts never imported ./cli.js — it re-implemented
+ * handleCommandError inside the test body and ran typeof checks on other
+ * modules, so it could not fail. These tests instead run the real CLI as a
+ * child process (via the local tsx binary against the TS source, so no build
+ * step is required) and assert on exit codes and stdout, exercising argv
+ * parsing, command dispatch, handleCommandError, and the --json contract.
  */
 
-describe("CLI error handling logic", () => {
-  let logSpy: ReturnType<typeof vi.spyOn>;
-  let errorSpy: ReturnType<typeof vi.spyOn>;
+const cliPath = fileURLToPath(new URL("./cli.ts", import.meta.url));
+const tsxBin = fileURLToPath(
+  new URL("../node_modules/.bin/tsx", import.meta.url),
+);
 
-  beforeEach(() => {
-    logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
-    errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-  });
+let homeDir: string;
 
-  afterEach(() => {
-    logSpy.mockRestore();
-    errorSpy.mockRestore();
-  });
-
-  describe("handleCommandError with JSON option", () => {
-    it("formats error as JSON with success: false", () => {
-      const err = new Error("something broke");
-      const jsonOutput = formatJsonError(
-        errorMessage(err),
-        resolveErrorCode(err),
-      );
-      const parsed = JSON.parse(jsonOutput);
-
-      expect(parsed.success).toBe(false);
-      expect(parsed.error).toBe("something broke");
-      expect(parsed.errorCode).toBe("UNKNOWN");
-      expect(parsed.timestamp).toBeDefined();
-    });
-
-    it("formats ValidationError with VALIDATION error code", () => {
-      const err = new ValidationError("bad input");
-      const jsonOutput = formatJsonError(
-        errorMessage(err),
-        resolveErrorCode(err),
-      );
-      const parsed = JSON.parse(jsonOutput);
-
-      expect(parsed.success).toBe(false);
-      expect(parsed.error).toBe("bad input");
-      expect(parsed.errorCode).toBe("VALIDATION");
-    });
-  });
-
-  describe("handleCommandError without JSON option", () => {
-    it("outputs error message to stderr", () => {
-      const err = new Error("command failed");
-      // Replicate the non-JSON branch of handleCommandError:
-      console.error("Error:", errorMessage(err));
-
-      expect(errorSpy).toHaveBeenCalledWith("Error:", "command failed");
-    });
-
-    it("handles non-Error values", () => {
-      const err = "string error";
-      console.error("Error:", errorMessage(err));
-
-      expect(errorSpy).toHaveBeenCalledWith("Error:", "string error");
-    });
-  });
+beforeAll(() => {
+  // Point HOME at an empty dir so the CLI reads default preferences and never
+  // touches the developer's real ~/.oss-scout state.
+  homeDir = fs.mkdtempSync(path.join(os.tmpdir(), "oss-scout-cli-test-"));
 });
 
-describe("CLI module structure", () => {
-  it("exports the expected formatter functions", async () => {
-    const json = await import("./formatters/json.js");
-    expect(typeof json.formatJsonSuccess).toBe("function");
-    expect(typeof json.formatJsonError).toBe("function");
-  });
+afterAll(() => {
+  fs.rmSync(homeDir, { recursive: true, force: true });
+});
 
-  it("exports the expected error functions", async () => {
-    const errors = await import("./core/errors.js");
-    expect(typeof errors.errorMessage).toBe("function");
-    expect(typeof errors.resolveErrorCode).toBe("function");
-    expect(typeof errors.ValidationError).toBe("function");
-    expect(typeof errors.ConfigurationError).toBe("function");
+function runCli(args: string[]): {
+  status: number | null;
+  stdout: string;
+  stderr: string;
+} {
+  const result = spawnSync(tsxBin, [cliPath, ...args], {
+    encoding: "utf-8",
+    env: {
+      ...process.env,
+      HOME: homeDir,
+      USERPROFILE: homeDir,
+      GITHUB_TOKEN: "",
+    },
   });
+  return {
+    status: result.status,
+    stdout: result.stdout ?? "",
+    stderr: result.stderr ?? "",
+  };
+}
 
-  it("exports logger functions used by CLI", async () => {
-    const logger = await import("./core/logger.js");
-    expect(typeof logger.enableDebug).toBe("function");
-    expect(typeof logger.debug).toBe("function");
-    expect(typeof logger.info).toBe("function");
-    expect(typeof logger.warn).toBe("function");
-  });
+describe("oss-scout CLI", () => {
+  it("prints usage for --help and exits 0", () => {
+    const { status, stdout } = runCli(["--help"]);
+    expect(status).toBe(0);
+    expect(stdout).toContain("Usage:");
+    expect(stdout).toContain("oss-scout");
+    expect(stdout).toContain("config");
+  }, 30000);
+
+  it("prints a version for --version and exits 0", () => {
+    const { status, stdout } = runCli(["--version"]);
+    expect(status).toBe(0);
+    expect(stdout.trim()).toMatch(/^\d+\.\d+\.\d+/);
+  }, 30000);
+
+  it("config --json emits a success envelope and exits 0", () => {
+    const { status, stdout } = runCli(["config", "--json"]);
+    expect(status).toBe(0);
+    const parsed = JSON.parse(stdout);
+    expect(parsed.success).toBe(true);
+    expect(parsed.data).toBeDefined();
+  }, 30000);
+
+  it("surfaces a ValidationError as a --json error envelope with exit 1", () => {
+    const { status, stdout } = runCli(["search", "abc", "--json"]);
+    expect(status).toBe(1);
+    const parsed = JSON.parse(stdout);
+    expect(parsed.success).toBe(false);
+    expect(parsed.errorCode).toBe("VALIDATION");
+  }, 30000);
+
+  it("rejects a malformed issue URL on skip add (--json error, exit 1)", () => {
+    const { status, stdout } = runCli(["skip", "add", "not-a-url", "--json"]);
+    expect(status).toBe(1);
+    const parsed = JSON.parse(stdout);
+    expect(parsed.success).toBe(false);
+  }, 30000);
+
+  it("exits non-zero on an unknown command", () => {
+    const { status, stderr } = runCli(["frobnicate"]);
+    expect(status).not.toBe(0);
+    expect(stderr.toLowerCase()).toContain("unknown command");
+  }, 30000);
 });

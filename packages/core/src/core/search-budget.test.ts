@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   SearchBudgetTracker,
   getSearchBudgetTracker,
@@ -23,6 +23,12 @@ describe("SearchBudgetTracker", () => {
 
   beforeEach(() => {
     tracker = new SearchBudgetTracker();
+  });
+
+  // Tests below spy on Date.now; restore after each so an assertion failure
+  // mid-test can't leak the frozen clock into later tests in this file (#160).
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   it("starts with zero calls", () => {
