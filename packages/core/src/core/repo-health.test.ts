@@ -167,6 +167,48 @@ describe("fetchContributionGuidelines", () => {
     expect(guidelines!.linter).toBe("ESLint");
   });
 
+  it("extracts a branch-naming convention from a quoted pattern", async () => {
+    const content =
+      "# Contributing\n\nBranches should be named `feature/short-description`.";
+    const octokit = {
+      repos: {
+        getContent: vi.fn().mockResolvedValue({
+          data: { content: Buffer.from(content).toString("base64") },
+        }),
+      },
+    } as unknown as Octokit;
+    const guidelines = await fetchContributionGuidelines(
+      octokit,
+      "branch-org",
+      "branch-repo",
+    );
+    expect(guidelines!.branchNamingConvention).toBe(
+      "feature/short-description",
+    );
+  });
+
+  it("scans an attacker-controlled long unterminated line quickly (#152)", async () => {
+    // Keywords present, an opening quote, then a very long quote-less tail:
+    // the old unbounded [^\\n]* pair was a ReDoS candidate on this shape
+    const content = "branch named `" + "x".repeat(500_000);
+    const octokit = {
+      repos: {
+        getContent: vi.fn().mockResolvedValue({
+          data: { content: Buffer.from(content).toString("base64") },
+        }),
+      },
+    } as unknown as Octokit;
+    const start = Date.now();
+    const guidelines = await fetchContributionGuidelines(
+      octokit,
+      "redos-org",
+      "redos-repo",
+    );
+    expect(Date.now() - start).toBeLessThan(1000);
+    // No closing quote, so no convention is extracted
+    expect(guidelines!.branchNamingConvention).toBeUndefined();
+  });
+
   it("does not flag CLA from incidental substrings like class/clang/clarify", async () => {
     const content =
       "# Contributing\n\nAdd a test class for each module. We use clang-format. " +

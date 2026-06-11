@@ -258,10 +258,14 @@ function parseContributionGuidelines(content: string): ContributionGuidelines {
 
   const lowerContent = content.toLowerCase();
 
-  // Detect branch naming conventions
+  // Detect branch naming conventions. CONTRIBUTING.md is attacker-controlled
+  // (it belongs to the repo being vetted): the unbounded [^\n]* pair forced
+  // quadratic backtracking on a long quote-less line, stalling the vet
+  // (#152). Bounded quantifiers keep the scan linear-ish; real conventions
+  // sit well inside 200 chars of their keyword.
   if (lowerContent.includes("branch")) {
     const branchMatch = content.match(
-      /branch[^\n]*(?:named?|format|convention)[^\n]*[`"]([^`"]+)[`"]/i,
+      /branch[^\n]{0,200}?(?:named?|format|convention)[^\n]{0,200}?[`"]([^`"\n]{1,100})[`"]/i,
     );
     if (branchMatch) {
       guidelines.branchNamingConvention = branchMatch[1];
@@ -272,7 +276,9 @@ function parseContributionGuidelines(content: string): ContributionGuidelines {
   if (lowerContent.includes("conventional commit")) {
     guidelines.commitMessageFormat = "conventional commits";
   } else if (lowerContent.includes("commit message")) {
-    const commitMatch = content.match(/commit message[^\n]*[`"]([^`"]+)[`"]/i);
+    const commitMatch = content.match(
+      /commit message[^\n]{0,200}?[`"]([^`"\n]{1,100})[`"]/i,
+    );
     if (commitMatch) {
       guidelines.commitMessageFormat = commitMatch[1];
     }
