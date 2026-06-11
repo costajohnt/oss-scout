@@ -8,7 +8,11 @@ import { Command } from "commander";
 import { enableDebug } from "./core/logger.js";
 import { getCLIVersion } from "./core/utils.js";
 import { formatJsonSuccess, formatJsonError } from "./formatters/json.js";
-import { errorMessage, resolveErrorCode } from "./core/errors.js";
+import {
+  ValidationError,
+  errorMessage,
+  resolveErrorCode,
+} from "./core/errors.js";
 import {
   hasLocalState,
   loadLocalState,
@@ -131,7 +135,8 @@ program
       },
     ) => {
       try {
-        if (!hasLocalState()) {
+        if (!hasLocalState() && !options.json) {
+          // Human hint only: stdout must stay pure JSON under --json (#131)
           console.log(
             "💡 Run `oss-scout setup` to configure your preferences for personalized search results.\n",
           );
@@ -139,14 +144,14 @@ program
         const { runSearch } = await import("./commands/search.js");
         const maxResults = count ? parseInt(count, 10) : 10;
         if (isNaN(maxResults) || maxResults < 1) {
-          console.error("Error: count must be a positive integer");
-          process.exit(1);
+          throw new ValidationError("count must be a positive integer");
         }
         const state = loadLocalState();
         if (
           state.mergedPRs.length === 0 &&
           state.starredRepos.length === 0 &&
-          state.preferences.githubUsername
+          state.preferences.githubUsername &&
+          !options.json
         ) {
           console.log(
             "Run `oss-scout bootstrap` to import your starred repos and PR history for better results.\n",
@@ -165,13 +170,9 @@ program
             const parsed = SearchStrategySchema.safeParse(token);
             if (!parsed.success) {
               const valid = [...CONCRETE_STRATEGIES, "all"].join(", ");
-              console.error(
-                'Error: unknown strategy "' +
-                  token +
-                  '". Valid strategies: ' +
-                  valid,
+              throw new ValidationError(
+                `unknown strategy "${token}". Valid strategies: ${valid}`,
               );
-              process.exit(1);
             }
             strategies.push(parsed.data);
           }
@@ -189,10 +190,9 @@ program
         if (options.diversityRatio !== undefined) {
           const parsed = Number(options.diversityRatio);
           if (!Number.isFinite(parsed) || parsed < 0 || parsed > 1) {
-            console.error(
-              `Error: --diversity-ratio must be a number in [0, 1] (got "${options.diversityRatio}")`,
+            throw new ValidationError(
+              `--diversity-ratio must be a number in [0, 1] (got "${options.diversityRatio}")`,
             );
-            process.exit(1);
           }
           diversityRatio = parsed;
         }
@@ -278,17 +278,17 @@ program
         const { runFeatures } = await import("./commands/features.js");
         const maxResults = count ? parseInt(count, 10) : 10;
         if (isNaN(maxResults) || maxResults < 1 || maxResults > 50) {
-          console.error("Error: count must be an integer between 1 and 50");
-          process.exit(1);
+          throw new ValidationError(
+            "count must be an integer between 1 and 50",
+          );
         }
         let anchorThreshold: number | undefined;
         if (options.anchorThreshold !== undefined) {
           const parsed = parseInt(options.anchorThreshold, 10);
           if (isNaN(parsed) || parsed < 1 || parsed > 50) {
-            console.error(
-              "Error: --anchor-threshold must be an integer between 1 and 50",
+            throw new ValidationError(
+              "--anchor-threshold must be an integer between 1 and 50",
             );
-            process.exit(1);
           }
           anchorThreshold = parsed;
         }
@@ -296,10 +296,9 @@ program
         if (options.splitRatio !== undefined) {
           const parsed = Number.parseFloat(options.splitRatio);
           if (isNaN(parsed) || parsed < 0 || parsed > 1) {
-            console.error(
-              "Error: --split-ratio must be a number between 0 and 1",
+            throw new ValidationError(
+              "--split-ratio must be a number between 0 and 1",
             );
-            process.exit(1);
           }
           splitRatio = parsed;
         }
@@ -508,8 +507,7 @@ program
           options.concurrency !== undefined &&
           (isNaN(options.concurrency) || options.concurrency < 1)
         ) {
-          console.error("Error: --concurrency must be a positive integer");
-          process.exit(1);
+          throw new ValidationError("--concurrency must be a positive integer");
         }
         const { runVetList } = await import("./commands/vet-list.js");
         const state = loadLocalState();

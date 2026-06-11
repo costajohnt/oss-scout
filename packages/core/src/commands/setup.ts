@@ -14,6 +14,7 @@ import {
   ProjectCategorySchema,
   IssueScopeSchema,
 } from "../core/schemas.js";
+import { ConfigurationError } from "../core/errors.js";
 
 const ALL_CATEGORIES =
   ProjectCategorySchema.options as readonly ProjectCategory[];
@@ -22,18 +23,40 @@ const ALL_SCOPES = IssueScopeSchema.options as readonly IssueScope[];
 interface ReadlineInterface {
   question(query: string, callback: (answer: string) => void): void;
   close(): void;
+  on?(event: "close", listener: () => void): unknown;
+  off?(event: "close", listener: () => void): unknown;
 }
 
 function createReadlineInterface(): ReadlineInterface {
+  // Prompts echo on stderr so stdout stays pure for --json output (#131)
   return readline.createInterface({
     input: process.stdin,
-    output: process.stdout,
+    output: process.stderr,
   });
 }
 
 function ask(rl: ReadlineInterface, query: string): Promise<string> {
-  return new Promise((resolve) => {
-    rl.question(query, (answer) => resolve(answer.trim()));
+  return new Promise((resolve, reject) => {
+    // Piped stdin that ends early used to leave the pending question
+    // unresolved: the event loop drained and the process exited 0 without
+    // saving anything (#131). Reject on close instead.
+    let settled = false;
+    const onClose = () => {
+      if (settled) return;
+      settled = true;
+      reject(
+        new ConfigurationError(
+          "Input ended before setup finished; preferences were not saved",
+        ),
+      );
+    };
+    rl.on?.("close", onClose);
+    rl.question(query, (answer) => {
+      if (settled) return;
+      settled = true;
+      rl.off?.("close", onClose);
+      resolve(answer.trim());
+    });
   });
 }
 
@@ -83,14 +106,23 @@ export interface SetupOptions {
 export async function runSetup(
   options?: SetupOptions,
 ): Promise<ScoutPreferences> {
+  // Fail fast in non-interactive contexts (CI, piped stdin): prompting
+  // would hang or silently save defaults (#131). Injected rl (tests, hosts)
+  // opts out of the guard.
+  if (!options?.rl && !process.stdin.isTTY) {
+    throw new ConfigurationError(
+      "setup is interactive and requires a terminal. Use `oss-scout config set <key> <value>` for non-interactive configuration.",
+    );
+  }
   const rl = options?.rl ?? createReadlineInterface();
   const detect = options?.detectUsername ?? detectGitHubUsername;
 
   try {
-    console.log("\n🔧 oss-scout setup\n");
+    // Interactive chrome goes to stderr; stdout stays pure for --json (#131)
+    console.error("\n🔧 oss-scout setup\n");
 
     // Detect GitHub username
-    console.log("Detecting GitHub username...");
+    console.error("Detecting GitHub username...");
     const detectedUsername = await detect();
     const usernameDefault = detectedUsername || "";
     const usernamePrompt = detectedUsername
@@ -156,7 +188,7 @@ export async function runSetup(
       minStars: isNaN(minStars) ? 50 : minStars,
     });
 
-    console.log("\n✅ Setup complete! Preferences saved.\n");
+    console.error("\n✅ Setup complete! Preferences saved.\n");
     return prefs;
   } finally {
     if (!options?.rl) {
