@@ -382,41 +382,87 @@ describe("checkNotClaimed", () => {
     expect(result.passed).toBe(true);
   });
 
-  it('returns passed:false when a comment says "i\'m working on this"', async () => {
-    const octokit = makeMockOctokit({
-      paginate: vi
-        .fn()
-        .mockResolvedValue([{ body: "I'm working on this already" }]),
+  function makeCommentsOctokit(
+    listComments: ReturnType<typeof vi.fn>,
+  ): Octokit {
+    return makeMockOctokit({
+      issues: {
+        listEventsForTimeline: vi.fn().mockResolvedValue({ data: [] }),
+        listComments,
+      },
     });
+  }
+
+  it('returns passed:false when a comment says "i\'m working on this"', async () => {
+    const octokit = makeCommentsOctokit(
+      vi.fn().mockResolvedValue({
+        data: [{ body: "I'm working on this already" }],
+      }),
+    );
     const result = await checkNotClaimed(octokit, "owner", "repo", 1, 3);
     expect(result.passed).toBe(false);
   });
 
   it('returns passed:false when a comment says "i\'ll take this"', async () => {
-    const octokit = makeMockOctokit({
-      paginate: vi.fn().mockResolvedValue([{ body: "I'll take this issue" }]),
-    });
+    const octokit = makeCommentsOctokit(
+      vi.fn().mockResolvedValue({ data: [{ body: "I'll take this issue" }] }),
+    );
     const result = await checkNotClaimed(octokit, "owner", "repo", 1, 2);
     expect(result.passed).toBe(false);
   });
 
   it("returns passed:true when comments are normal discussion", async () => {
-    const octokit = makeMockOctokit({
-      paginate: vi
-        .fn()
-        .mockResolvedValue([
+    const octokit = makeCommentsOctokit(
+      vi.fn().mockResolvedValue({
+        data: [
           { body: "This would be a nice feature." },
           { body: "I agree, we should add this." },
-        ]),
-    });
+        ],
+      }),
+    );
     const result = await checkNotClaimed(octokit, "owner", "repo", 1, 2);
     expect(result.passed).toBe(true);
   });
 
+  it("fetches only the first page for small comment counts", async () => {
+    const listComments = vi.fn().mockResolvedValue({ data: [] });
+    const octokit = makeCommentsOctokit(listComments);
+    await checkNotClaimed(octokit, "owner", "repo", 1, 50);
+    expect(listComments).toHaveBeenCalledTimes(1);
+    expect(listComments).toHaveBeenCalledWith(
+      expect.objectContaining({ page: 1, per_page: 100 }),
+    );
+  });
+
+  it("fetches only the two newest pages for large comment counts", async () => {
+    const listComments = vi.fn().mockResolvedValue({ data: [] });
+    const octokit = makeCommentsOctokit(listComments);
+    await checkNotClaimed(octokit, "owner", "repo", 1, 250);
+    expect(listComments).toHaveBeenCalledTimes(2);
+    expect(listComments).toHaveBeenCalledWith(
+      expect.objectContaining({ page: 2 }),
+    );
+    expect(listComments).toHaveBeenCalledWith(
+      expect.objectContaining({ page: 3 }),
+    );
+  });
+
+  it("detects a claim on the second-to-last page", async () => {
+    const listComments = vi
+      .fn()
+      .mockResolvedValueOnce({
+        data: [{ body: "I'm working on this already" }],
+      })
+      .mockResolvedValueOnce({ data: [{ body: "Any update?" }] });
+    const octokit = makeCommentsOctokit(listComments);
+    const result = await checkNotClaimed(octokit, "owner", "repo", 1, 150);
+    expect(result.passed).toBe(false);
+  });
+
   it("returns passed:true and inconclusive:true on API error", async () => {
-    const octokit = makeMockOctokit({
-      paginate: vi.fn().mockRejectedValue(new Error("Network error")),
-    });
+    const octokit = makeCommentsOctokit(
+      vi.fn().mockRejectedValue(new Error("Network error")),
+    );
     const result = await checkNotClaimed(octokit, "owner", "repo", 1, 5);
     expect(result.passed).toBe(true);
     expect(result.inconclusive).toBe(true);
@@ -424,39 +470,37 @@ describe("checkNotClaimed", () => {
   });
 
   it("propagates 401 auth errors instead of swallowing", async () => {
-    const octokit = makeMockOctokit({
-      paginate: vi.fn().mockRejectedValue(httpError(401, "Unauthorized")),
-    });
+    const octokit = makeCommentsOctokit(
+      vi.fn().mockRejectedValue(httpError(401, "Unauthorized")),
+    );
     await expect(
       checkNotClaimed(octokit, "owner", "repo", 1, 3),
     ).rejects.toThrow("Unauthorized");
   });
 
   it("propagates 429 rate-limit errors instead of swallowing", async () => {
-    const octokit = makeMockOctokit({
-      paginate: vi
-        .fn()
-        .mockRejectedValue(httpError(429, "API rate limit exceeded")),
-    });
+    const octokit = makeCommentsOctokit(
+      vi.fn().mockRejectedValue(httpError(429, "API rate limit exceeded")),
+    );
     await expect(
       checkNotClaimed(octokit, "owner", "repo", 1, 3),
     ).rejects.toThrow("rate limit");
   });
 
   it("returns passed:true when commentCount is zero (skips API)", async () => {
-    const paginateFn = vi.fn();
-    const octokit = makeMockOctokit({ paginate: paginateFn });
+    const listComments = vi.fn();
+    const octokit = makeCommentsOctokit(listComments);
     const result = await checkNotClaimed(octokit, "owner", "repo", 1, 0);
     expect(result.passed).toBe(true);
-    expect(paginateFn).not.toHaveBeenCalled();
+    expect(listComments).not.toHaveBeenCalled();
   });
 
   it("performs case insensitive matching on claim phrases", async () => {
-    const octokit = makeMockOctokit({
-      paginate: vi
+    const octokit = makeCommentsOctokit(
+      vi
         .fn()
-        .mockResolvedValue([{ body: "WORKING ON IT right now" }]),
-    });
+        .mockResolvedValue({ data: [{ body: "WORKING ON IT right now" }] }),
+    );
     const result = await checkNotClaimed(octokit, "owner", "repo", 1, 1);
     expect(result.passed).toBe(false);
   });
