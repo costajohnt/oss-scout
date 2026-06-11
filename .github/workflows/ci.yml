@@ -25,9 +25,6 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      - name: Security audit
-        run: pnpm audit --audit-level=high
-
       - name: Lint
         run: pnpm run lint
 
@@ -42,3 +39,23 @@ jobs:
 
       - name: Bundle
         run: pnpm --filter @oss-scout/core run bundle
+
+  # Advisory-only: a new transitive advisory should not block unrelated PRs.
+  # Failures surface as a red job here without failing required checks.
+  audit:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v5
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Security audit
+        run: pnpm audit --audit-level=high
