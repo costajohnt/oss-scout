@@ -57,6 +57,34 @@ describe("extractRepoFromUrl", () => {
   it("returns null for malformed URL", () => {
     expect(extractRepoFromUrl("not-a-url")).toBeNull();
   });
+
+  it("rejects hosts that merely contain github.com", () => {
+    expect(extractRepoFromUrl("https://notgithub.com/owner/repo")).toBeNull();
+    expect(
+      extractRepoFromUrl("https://github.com.evil.com/owner/repo"),
+    ).toBeNull();
+    expect(
+      extractRepoFromUrl("https://evil.com/github.com/owner/repo"),
+    ).toBeNull();
+  });
+
+  it("does not leak query or fragment into the repo segment", () => {
+    expect(extractRepoFromUrl("https://github.com/owner/repo?tab=readme")).toBe(
+      "owner/repo",
+    );
+    expect(extractRepoFromUrl("https://github.com/owner/repo#readme")).toBe(
+      "owner/repo",
+    );
+    expect(
+      extractRepoFromUrl("https://api.github.com/repos/owner/repo?page=2"),
+    ).toBe("owner/repo");
+  });
+
+  it("accepts the www form", () => {
+    expect(extractRepoFromUrl("https://www.github.com/owner/repo")).toBe(
+      "owner/repo",
+    );
+  });
 });
 
 // ── parseGitHubUrl ──
@@ -93,6 +121,39 @@ describe("parseGitHubUrl", () => {
   it("returns null for invalid owner characters", () => {
     expect(
       parseGitHubUrl("https://github.com/bad owner/repo/issues/1"),
+    ).toBeNull();
+  });
+
+  it.each([
+    ["http://github.com/owner/repo/issues/7"],
+    ["https://www.github.com/owner/repo/issues/7"],
+    ["github.com/owner/repo/issues/7"],
+    ["www.github.com/owner/repo/issues/7"],
+    ["https://github.com/owner/repo/issues/7/"],
+  ])("accepts pasteable variant %s", (url) => {
+    expect(parseGitHubUrl(url)).toEqual({
+      owner: "owner",
+      repo: "repo",
+      number: 7,
+      type: "issues",
+    });
+  });
+
+  it("rejects a malformed number segment instead of half-parsing it", () => {
+    expect(
+      parseGitHubUrl("https://github.com/owner/repo/pull/123abc"),
+    ).toBeNull();
+  });
+
+  it("rejects extra path segments after the number", () => {
+    expect(
+      parseGitHubUrl("https://github.com/owner/repo/pull/123/files"),
+    ).toBeNull();
+  });
+
+  it("rejects spoofed hosts", () => {
+    expect(
+      parseGitHubUrl("https://github.com.evil.com/owner/repo/issues/1"),
     ).toBeNull();
   });
 });

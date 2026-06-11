@@ -43,13 +43,30 @@ export function getCacheDir(): string {
  * - https://api.github.com/repos/owner/repo/...
  */
 export function extractRepoFromUrl(url: string): string | null {
+  // Real URL parsing: the previous regexes were unanchored (any host
+  // containing "github.com" matched) and leaked query/fragment text into
+  // the repo segment ("repo?tab=readme").
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return null;
+  }
+  const host = parsed.hostname.toLowerCase().replace(/^www\./, "");
+  const segments = parsed.pathname.split("/").filter(Boolean);
+
   // API URLs: https://api.github.com/repos/owner/repo[/...]
-  const apiMatch = url.match(/api\.github\.com\/repos\/([^/]+\/[^/]+)/);
-  if (apiMatch) return apiMatch[1];
+  if (host === "api.github.com") {
+    if (segments[0] === "repos" && segments.length >= 3) {
+      return `${segments[1]}/${segments[2]}`;
+    }
+    return null;
+  }
 
   // Web URLs: https://github.com/owner/repo[/...]
-  const webMatch = url.match(/github\.com\/([^/]+\/[^/]+)/);
-  if (webMatch) return webMatch[1];
+  if (host === "github.com" && segments.length >= 2) {
+    return `${segments[0]}/${segments[1]}`;
+  }
 
   return null;
 }
@@ -69,25 +86,32 @@ function isValidOwnerRepo(owner: string, repo: string): boolean {
 }
 
 export function parseGitHubUrl(url: string): ParsedGitHubUrl | null {
-  if (!url.startsWith("https://github.com/")) return null;
-
-  const prMatch = url.match(/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/);
-  if (prMatch) {
-    const owner = prMatch[1];
-    const repo = prMatch[2];
-    if (!isValidOwnerRepo(owner, repo)) return null;
-    return { owner, repo, number: parseInt(prMatch[3], 10), type: "pull" };
+  // Accept pasteable variants: http://, www., and bare github.com/... forms
+  // normalize to a parseable URL. Strict canonical-form validation for
+  // command input lives in commands/validation.ts; this parser is lenient.
+  const normalized = /^(?:www\.)?github\.com\//i.test(url)
+    ? `https://${url}`
+    : url;
+  let parsed: URL;
+  try {
+    parsed = new URL(normalized);
+  } catch {
+    return null;
   }
+  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return null;
+  const host = parsed.hostname.toLowerCase().replace(/^www\./, "");
+  if (host !== "github.com") return null;
 
-  const issueMatch = url.match(/github\.com\/([^/]+)\/([^/]+)\/issues\/(\d+)/);
-  if (issueMatch) {
-    const owner = issueMatch[1];
-    const repo = issueMatch[2];
-    if (!isValidOwnerRepo(owner, repo)) return null;
-    return { owner, repo, number: parseInt(issueMatch[3], 10), type: "issues" };
-  }
-
-  return null;
+  // Exactly owner/repo/(pull|issues)/<digits>; trailing slash tolerated via
+  // filter(Boolean), query/fragment excluded by pathname. A malformed number
+  // segment ("123abc") no longer half-parses to 123.
+  const segments = parsed.pathname.split("/").filter(Boolean);
+  if (segments.length !== 4) return null;
+  const [owner, repo, type, num] = segments;
+  if (type !== "pull" && type !== "issues") return null;
+  if (!isValidOwnerRepo(owner, repo)) return null;
+  if (!/^\d+$/.test(num)) return null;
+  return { owner, repo, number: parseInt(num, 10), type };
 }
 
 export function daysBetween(from: Date, to: Date = new Date()): number {
