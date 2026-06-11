@@ -14,6 +14,19 @@ vi.mock("./core/feature-discovery.js", async (importOriginal) => {
 
 import { discoverFeatures } from "./core/feature-discovery.js";
 
+// Stub the shared cache singleton so cache-burning entry points
+// (search/features/vetList) never touch the real ~/.oss-scout/cache in tests.
+vi.mock("./core/http-cache.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./core/http-cache.js")>();
+  return {
+    ...actual,
+    getHttpCache: () =>
+      ({ evictStale: () => 0 }) as unknown as ReturnType<
+        typeof actual.getHttpCache
+      >,
+  };
+});
+
 function makeState(overrides: Partial<ScoutState> = {}): ScoutState {
   return ScoutStateSchema.parse({ version: 1, ...overrides });
 }

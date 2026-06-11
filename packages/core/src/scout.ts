@@ -51,6 +51,7 @@ import {
   getHttpStatusCode,
   isRateLimitError,
 } from "./core/errors.js";
+import { getHttpCache } from "./core/http-cache.js";
 
 /** Cause-specific user-facing message for degraded (offline) mode. */
 function offlineModeMessage(reason: DegradedReason | undefined): string {
@@ -181,10 +182,21 @@ export class OssScout implements ScoutStateReader {
   // ── Search ──────────────────────────────────────────────────────────
 
   /**
+   * Drop stale disk-cache entries. Called at the top of every cache-burning
+   * entry point (search, features, vetList); without it ~/.oss-scout/cache
+   * grows without bound. evictStale never throws (fs errors degrade to warn).
+   */
+  private evictStaleCacheEntries(): void {
+    getHttpCache().evictStale();
+  }
+
+  /**
    * Multi-strategy issue search. Returns scored, sorted candidates.
    * Automatically culls expired skip entries and filters skipped issues.
    */
   async search(options?: SearchOptions): Promise<SearchResult> {
+    this.evictStaleCacheEntries();
+
     // Auto-cull expired skips before searching
     this.cullExpiredSkips();
 
@@ -249,6 +261,7 @@ export class OssScout implements ScoutStateReader {
     splitRatio?: number;
     broad?: boolean;
   }): Promise<FeatureSearchResult> {
+    this.evictStaleCacheEntries();
     const count = options?.count ?? 10;
     const octokit = getOctokit(this.githubToken);
     const vetter = new IssueVetter(octokit, this);
@@ -290,6 +303,7 @@ export class OssScout implements ScoutStateReader {
    * Optionally prunes unavailable issues from saved results.
    */
   async vetList(options?: VetListOptions): Promise<VetListResult> {
+    this.evictStaleCacheEntries();
     const saved = this.getSavedResults();
     const concurrency = options?.concurrency ?? 5;
     const results: VetListEntry[] = [];

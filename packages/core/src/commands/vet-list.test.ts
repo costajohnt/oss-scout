@@ -19,6 +19,19 @@ vi.mock("../core/local-state.js", () => {
   };
 });
 
+// Stub the shared cache singleton so vetList's stale-entry eviction never
+// touches the real ~/.oss-scout/cache in tests.
+vi.mock("../core/http-cache.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../core/http-cache.js")>();
+  return {
+    ...actual,
+    getHttpCache: () =>
+      ({ evictStale: () => 0 }) as unknown as ReturnType<
+        typeof actual.getHttpCache
+      >,
+  };
+});
+
 async function setMockState(state: any) {
   const mod = (await import("../core/local-state.js")) as any;
   mod._setMockState(state);
