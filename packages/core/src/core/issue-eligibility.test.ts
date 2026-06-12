@@ -15,12 +15,18 @@ vi.mock("./search-budget.js", () => ({
   })),
 }));
 
+// A single shared cache instance (#162): the old mock returned a fresh object
+// per getHttpCache() call, so a test could never assert that a value written by
+// one call was read by the next. Hoisting one instance makes the cache contract
+// (cache-hit short-circuits the API; errors are not cached) assertable.
+const sharedCache = vi.hoisted(() => ({
+  getIfFresh: vi.fn((): unknown => null),
+  set: vi.fn(),
+}));
+
 vi.mock("./http-cache.js", () => ({
   versionedCacheKey: (key: string) => key,
-  getHttpCache: vi.fn(() => ({
-    getIfFresh: vi.fn(() => null),
-    set: vi.fn(),
-  })),
+  getHttpCache: vi.fn(() => sharedCache),
   // Passthrough: dedup behavior itself is covered in http-cache.test.ts
   withInflightDedup: vi.fn(
     async (_cache: unknown, _key: string, fn: () => Promise<unknown>) => fn(),
@@ -516,6 +522,48 @@ describe("checkNotClaimed", () => {
 describe("checkUserMergedPRsInRepo", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Default to a cache miss so the existing tests exercise the API path.
+    sharedCache.getIfFresh.mockReturnValue(null);
+  });
+
+  it("short-circuits on a cache hit without calling the Search API (#162)", async () => {
+    sharedCache.getIfFresh.mockReturnValue(7);
+    const search = vi.fn();
+    const octokit = makeMockOctokit({
+      search: { issuesAndPullRequests: search },
+    });
+    const result = await checkUserMergedPRsInRepo(octokit, "owner", "repo");
+    expect(result).toBe(7);
+    expect(search).not.toHaveBeenCalled();
+  });
+
+  it("caches a successful count under the versioned key (#162)", async () => {
+    const octokit = makeMockOctokit({
+      search: {
+        issuesAndPullRequests: vi.fn().mockResolvedValue({
+          data: { total_count: 3, items: [{}, {}, {}] },
+        }),
+      },
+    });
+    await checkUserMergedPRsInRepo(octokit, "owner", "repo");
+    expect(sharedCache.set).toHaveBeenCalledWith(
+      "merged-prs:owner/repo",
+      "",
+      3,
+    );
+  });
+
+  it("does not cache the result on a non-fatal API error (#162)", async () => {
+    const octokit = makeMockOctokit({
+      search: {
+        issuesAndPullRequests: vi
+          .fn()
+          .mockRejectedValue(new Error("Search failed")),
+      },
+    });
+    const result = await checkUserMergedPRsInRepo(octokit, "owner", "repo");
+    expect(result).toBeNull();
+    expect(sharedCache.set).not.toHaveBeenCalled();
   });
 
   it("returns the count when merged PRs are found", async () => {

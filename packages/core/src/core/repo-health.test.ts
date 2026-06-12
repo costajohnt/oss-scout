@@ -349,6 +349,56 @@ describe("fetchContributionGuidelines", () => {
   });
 });
 
+describe("parseContributionGuidelines branches (#162)", () => {
+  function octokitWithContent(content: string): Octokit {
+    return {
+      repos: {
+        getContent: vi.fn().mockResolvedValue({
+          data: { content: Buffer.from(content).toString("base64") },
+        }),
+      },
+    } as unknown as Octokit;
+  }
+
+  // repo-health keeps a module-level guideline cache keyed by owner/repo, so
+  // each case must use a distinct repo slug or it would read a prior result.
+  async function parse(content: string, repo: string) {
+    return fetchContributionGuidelines(octokitWithContent(content), "o", repo);
+  }
+
+  it.each([
+    ["jest", "testFramework", "Jest"],
+    ["rspec", "testFramework", "RSpec"],
+    ["pytest", "testFramework", "pytest"],
+    ["mocha", "testFramework", "Mocha"],
+    ["rubocop", "linter", "RuboCop"],
+    ["prettier", "formatter", "Prettier"],
+  ] as const)("detects %s as %s=%s", async (keyword, field, expected) => {
+    const g = await parse(`# Contributing\n\nWe use ${keyword} here.`, keyword);
+    expect(g?.[field as keyof typeof g]).toBe(expected);
+  });
+
+  it("extracts a quoted non-conventional commit message format", async () => {
+    const g = await parse(
+      "# Contributing\n\nYour commit message must match `[JIRA-123] summary`.",
+      "commit-fmt",
+    );
+    expect(g?.commitMessageFormat).toBe("[JIRA-123] summary");
+  });
+
+  it("leaves parser fields undefined when no keywords are present", async () => {
+    const g = await parse(
+      "# Contributing\n\nBe nice and open a PR.",
+      "no-keywords",
+    );
+    expect(g?.testFramework).toBeUndefined();
+    expect(g?.linter).toBeUndefined();
+    expect(g?.formatter).toBeUndefined();
+    expect(g?.commitMessageFormat).toBeUndefined();
+    expect(g?.claRequired).toBeUndefined();
+  });
+});
+
 describe("fetchContributionGuidelines in-flight dedup (#124)", () => {
   it("concurrent same-repo callers share one probe round", async () => {
     const resolvers: Array<(v: unknown) => void> = [];
