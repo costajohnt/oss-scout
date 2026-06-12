@@ -9,6 +9,15 @@ import { enableDebug } from "./core/logger.js";
 import { getCLIVersion } from "./core/utils.js";
 import { formatJsonSuccess, formatJsonError } from "./formatters/json.js";
 import {
+  renderSearch,
+  renderFeatures,
+  renderResults,
+  renderVetList,
+  renderVet,
+  RESULTS_EMPTY_MESSAGE,
+  VET_LIST_EMPTY_MESSAGE,
+} from "./formatters/human.js";
+import {
   ValidationError,
   errorMessage,
   resolveErrorCode,
@@ -43,15 +52,6 @@ async function runAction(
   } catch (err) {
     handleCommandError(err, options);
   }
-}
-
-/** Emoji for a vetting recommendation, shared by the search and vet renderers. */
-function recommendationIcon(
-  recommendation: "approve" | "skip" | "needs_review",
-): string {
-  if (recommendation === "approve") return "✅";
-  if (recommendation === "skip") return "❌";
-  return "⚠️";
 }
 
 const program = new Command();
@@ -261,38 +261,10 @@ program
           console.log(formatJsonSuccess(results));
         } else {
           // Human-readable output
-          console.log(
-            `\nFound ${results.candidates.length} issue candidates:\n`,
-          );
-          for (const c of results.candidates) {
-            const icon = recommendationIcon(c.recommendation);
-            const stalledTag = c.linkedPR?.isStalled
-              ? " (stalled PR, revive opportunity)"
-              : "";
-            // Personalization tag (#1244). A candidate is either boosted
-            // (matched a preference) or a diversity slot (matched none and
-            // filled a reserved slot); never both.
-            let personalizationTag = "";
-            if (c.boostReasons && c.boostReasons.length > 0) {
-              // Net score can be negative when avoidRepos applied (#168).
-              const verb =
-                (c.boostScore ?? 0) >= 0 ? "boosted" : "deprioritized";
-              personalizationTag = ` [${verb}: ${c.boostReasons.join("; ")}]`;
-            } else if (c.diversitySlot) {
-              personalizationTag = " [diversity slot]";
-            }
-            console.log(
-              `  ${icon} ${c.issue.repo}#${c.issue.number} [${c.viabilityScore}/100]${personalizationTag}${stalledTag}`,
-            );
-            console.log(`     ${c.issue.title}`);
-            console.log(`     ${c.issue.url}`);
-            if (c.repoScore) {
-              console.log(
-                `     Repo: ${c.repoScore.score}/10, ${c.repoScore.mergedPRCount} merged PRs`,
-              );
-            }
-            console.log();
-          }
+          console.log(renderSearch(results));
+          // Rate-limit warning stays on stderr (NOT folded into the stdout
+          // render), so --json stdout purity and the stdout/stderr split are
+          // both preserved.
           if (results.rateLimitWarning) {
             console.error(`\n⚠️  ${results.rateLimitWarning}`);
           }
@@ -361,50 +333,10 @@ program
         if (options.json) {
           console.log(formatJsonSuccess(result));
         } else {
-          const total = result.quickWins.length + result.biggerBets.length;
-          if (result.message) {
-            console.log(`\n${result.message}\n`);
-          }
-          if (total === 0) return;
-          const headerScope = options.broad
-            ? "across the ecosystem"
-            : "in your anchor repos";
-          console.log(
-            `\n🎯 Feature opportunities ${headerScope} (${result.quickWins.length} quick wins + ${result.biggerBets.length} bigger bets)\n`,
-          );
-          if (!options.broad) {
-            console.log(`Anchor repos: ${result.anchorRepos.join(", ")}\n`);
-          }
-          if (result.quickWins.length) {
-            console.log(
-              "── Quick wins ─────────────────────────────────────────",
-            );
-            for (const c of result.quickWins) {
-              const stalledTag = c.linkedPR?.isStalled
-                ? " (stalled PR, revive opportunity)"
-                : "";
-              console.log(
-                `  ${c.issue.repo}#${c.issue.number} [${c.viabilityScore}/100] ${c.issue.title}${stalledTag}`,
-              );
-              console.log(`     ${c.issue.url}`);
-            }
-            console.log("");
-          }
-          if (result.biggerBets.length) {
-            console.log(
-              "── Bigger bets ────────────────────────────────────────",
-            );
-            for (const c of result.biggerBets) {
-              const stalledTag = c.linkedPR?.isStalled
-                ? " (stalled PR, revive opportunity)"
-                : "";
-              console.log(
-                `  ${c.issue.repo}#${c.issue.number} [${c.viabilityScore}/100] ${c.issue.title}${stalledTag}`,
-              );
-              console.log(`     ${c.issue.url}`);
-            }
-            console.log("");
-          }
+          // renderFeatures returns "" only when there is no message AND
+          // nothing to list; guard so the caller never logs a blank line.
+          const out = renderFeatures(result, { broad: options.broad });
+          if (out) console.log(out);
         }
       }),
   );
@@ -443,28 +375,10 @@ resultsCmd
           return;
         }
         if (results.length === 0) {
-          console.log(
-            "\nNo saved results. Run `oss-scout search` to find issues.\n",
-          );
+          console.log(RESULTS_EMPTY_MESSAGE);
           return;
         }
-        console.log(`\nSaved results (${results.length}):\n`);
-        console.log(
-          "  Score  Repo                              Issue   Recommendation  Title",
-        );
-        console.log(
-          "  ─────  ────────────────────────────────  ──────  ──────────────  ─────",
-        );
-        for (const r of results) {
-          const score = String(r.viabilityScore).padStart(3);
-          const repo = r.repo.padEnd(32).slice(0, 32);
-          const issue = `#${r.number}`.padEnd(6);
-          const rec = r.recommendation.padEnd(14);
-          const title =
-            r.title.length > 50 ? r.title.slice(0, 47) + "..." : r.title;
-          console.log(`  ${score}    ${repo}  ${issue}  ${rec}  ${title}`);
-        }
-        console.log();
+        console.log(renderResults(results));
       }),
   );
 
@@ -572,46 +486,10 @@ program
           console.log(formatJsonSuccess(result));
         } else {
           if (result.results.length === 0) {
-            console.log(
-              "\nNo saved results to vet. Run `oss-scout search` first.\n",
-            );
+            console.log(VET_LIST_EMPTY_MESSAGE);
             return;
           }
-          console.log(`\nVet-list results (${result.summary.total}):\n`);
-          for (const r of result.results) {
-            const icon =
-              r.status === "still_available"
-                ? "✅"
-                : r.status === "claimed"
-                  ? "🔒"
-                  : r.status === "has_pr"
-                    ? "🔀"
-                    : r.status === "closed"
-                      ? "🚫"
-                      : "❌";
-            const score = r.ok ? ` [${r.viabilityScore}/100]` : "";
-            console.log(
-              `  ${icon} ${r.repo}#${r.number} — ${r.status}${score}`,
-            );
-            console.log(`     ${r.title}`);
-          }
-          if (result.transitions.length > 0) {
-            console.log(
-              `\n🔔 Changes since last check (${result.transitions.length}):`,
-            );
-            for (const t of result.transitions) {
-              console.log(`  ${t.repo}#${t.number}: ${t.from} → ${t.to}`);
-            }
-          }
-          console.log(
-            `\nSummary: ${result.summary.stillAvailable} available, ${result.summary.claimed} claimed, ${result.summary.hasPR} has PR, ${result.summary.closed} closed, ${result.summary.errors} errors`,
-          );
-          if (result.prunedCount != null) {
-            console.log(
-              `Pruned ${result.prunedCount} unavailable issues from saved results.`,
-            );
-          }
-          console.log();
+          console.log(renderVetList(result));
         }
       }),
   );
@@ -730,33 +608,7 @@ program
       if (options.json) {
         console.log(formatJsonSuccess(result));
       } else {
-        const icon = recommendationIcon(result.recommendation);
-        console.log(
-          `\n${icon} ${result.issue.repo}#${result.issue.number}: ${result.recommendation.toUpperCase()}`,
-        );
-        console.log(`   ${result.issue.title}`);
-        console.log(`   ${result.issue.url}\n`);
-        if (result.reasonsToApprove.length > 0) {
-          console.log("Reasons to approve:");
-          for (const r of result.reasonsToApprove) console.log(`  + ${r}`);
-        }
-        if (result.reasonsToSkip.length > 0) {
-          console.log("Reasons to skip:");
-          for (const r of result.reasonsToSkip) console.log(`  - ${r}`);
-        }
-        if (result.projectHealth.checkFailed) {
-          console.log(
-            `\nProject health: unknown (check failed: ${result.projectHealth.failureReason})`,
-          );
-        } else {
-          console.log(
-            `\nProject health: ${result.projectHealth.isActive ? "Active" : "Inactive"}`,
-          );
-          console.log(
-            `  Last commit: ${result.projectHealth.daysSinceLastCommit} days ago`,
-          );
-          console.log(`  CI status: ${result.projectHealth.ciStatus}`);
-        }
+        console.log(renderVet(result));
       }
     }),
   );
