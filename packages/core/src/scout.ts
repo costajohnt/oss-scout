@@ -246,6 +246,13 @@ export class OssScout implements ScoutStateReader, ScoutStateWriter {
       (prefLangs.length > 0 ? prefLangs : undefined);
     const preferRepos =
       options?.preferRepos ?? (prefRepos.length > 0 ? prefRepos : undefined);
+    const prefAvoid = prefs.avoidRepos ?? [];
+    const prefBoostTypes = prefs.boostIssueTypes ?? [];
+    const avoidRepos =
+      options?.avoidRepos ?? (prefAvoid.length > 0 ? prefAvoid : undefined);
+    const boostIssueTypes =
+      options?.boostIssueTypes ??
+      (prefBoostTypes.length > 0 ? prefBoostTypes : undefined);
     const diversityRatio = options?.diversityRatio ?? prefs.diversityRatio ?? 0;
 
     const { candidates, strategiesUsed } = await discovery.searchIssues({
@@ -254,6 +261,8 @@ export class OssScout implements ScoutStateReader, ScoutStateWriter {
       skippedUrls,
       preferLanguages,
       preferRepos,
+      avoidRepos,
+      boostIssueTypes,
       diversityRatio,
       interPhaseDelayMs: options?.interPhaseDelayMs,
       broadPhaseDelayMs: options?.broadPhaseDelayMs,

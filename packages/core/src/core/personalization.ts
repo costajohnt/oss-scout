@@ -29,12 +29,27 @@ import type { IssueCandidate } from "./types.js";
  */
 export const REPO_BOOST = 20;
 export const LANGUAGE_BOOST = 10;
+/** Soft boost for an issue-label ("issue type") match (#168). Language-tier. */
+export const ISSUE_TYPE_BOOST = 10;
+/**
+ * Soft penalty for an avoidRepos match (#168). Milder than the hard
+ * excludeRepos filter: it pushes the candidate down but a strong boost (e.g. a
+ * preferRepos affinity, +20) can still outweigh it.
+ */
+export const AVOID_PENALTY = 15;
+
+/** Per-call personalization bias lists (#168). All optional; empty = no effect. */
+export interface PersonalizationBias {
+  preferLanguages?: string[];
+  preferRepos?: string[];
+  avoidRepos?: string[];
+  boostIssueTypes?: string[];
+}
 
 /**
- * The personalization sort weight of a candidate: its boost score, or 0 when it
- * is not boosted (unboosted or a diversity slot). Reads the structural
- * `personalization` field (#158) so callers never poke at the old loose
- * `boostScore` field.
+ * The personalization sort weight of a candidate: its net score, or 0 when it
+ * carries no personalization marker. Reads the structural `personalization`
+ * field (#158). The score can be negative when avoidRepos applied (#168).
  */
 export function boostScoreOf(candidate: IssueCandidate): number {
   return candidate.personalization?.kind === "boosted"
@@ -42,34 +57,46 @@ export function boostScoreOf(candidate: IssueCandidate): number {
     : 0;
 }
 
+function normalizeSet(values: string[] | undefined): Set<string> {
+  return new Set(
+    (values ?? []).map((v) => v.trim().toLowerCase()).filter(Boolean),
+  );
+}
+
 /**
- * Return a new candidate list where each candidate that matches a
- * caller-supplied preference carries `personalization: { kind: "boosted", ... }`.
- * Does NOT mutate the input candidates (#158) — matched candidates are shallow
- * copies with the field set; unmatched candidates are passed through unchanged.
- * The caller re-sorts the returned array.
+ * Return a new candidate list where each candidate matching a caller-supplied
+ * bias carries a `personalization` marker with a NET score (#168): preferRepos,
+ * preferLanguages and boostIssueTypes add; avoidRepos subtracts. The score may
+ * be negative (avoid-only) — boostScoreOf sorts those below neutral candidates.
+ * Does NOT mutate the input (#158): matched candidates are shallow copies,
+ * unmatched ones pass through unchanged.
  *
- * No-op when both preference lists are empty or undefined: the input array is
- * returned as-is and the sort tier collapses to 0 for every candidate.
+ * No-op when every bias list is empty/undefined: the input array is returned
+ * as-is and the sort tier collapses to 0 for every candidate.
  */
 export function annotateBoost(
   candidates: IssueCandidate[],
-  preferLanguages?: string[],
-  preferRepos?: string[],
+  bias: PersonalizationBias = {},
 ): IssueCandidate[] {
-  const langSet = new Set(
-    (preferLanguages ?? []).map((l) => l.trim().toLowerCase()).filter(Boolean),
-  );
-  const repoSet = new Set(
-    (preferRepos ?? []).map((r) => r.trim().toLowerCase()).filter(Boolean),
-  );
-  if (langSet.size === 0 && repoSet.size === 0) return candidates;
+  const langSet = normalizeSet(bias.preferLanguages);
+  const repoSet = normalizeSet(bias.preferRepos);
+  const avoidSet = normalizeSet(bias.avoidRepos);
+  const typeSet = normalizeSet(bias.boostIssueTypes);
+  if (
+    langSet.size === 0 &&
+    repoSet.size === 0 &&
+    avoidSet.size === 0 &&
+    typeSet.size === 0
+  ) {
+    return candidates;
+  }
 
   return candidates.map((c) => {
     let score = 0;
     const reasons: string[] = [];
+    const repoLower = c.issue.repo.toLowerCase();
 
-    if (repoSet.size > 0 && repoSet.has(c.issue.repo.toLowerCase())) {
+    if (repoSet.size > 0 && repoSet.has(repoLower)) {
       score += REPO_BOOST;
       reasons.push(`repo affinity: ${c.issue.repo}`);
     }
@@ -80,7 +107,20 @@ export function annotateBoost(
       reasons.push(`language match: ${lang}`);
     }
 
-    if (score === 0) return c;
+    if (typeSet.size > 0) {
+      const matched = c.issue.labels.find((l) => typeSet.has(l.toLowerCase()));
+      if (matched) {
+        score += ISSUE_TYPE_BOOST;
+        reasons.push(`issue type: ${matched}`);
+      }
+    }
+
+    if (avoidSet.size > 0 && avoidSet.has(repoLower)) {
+      score -= AVOID_PENALTY;
+      reasons.push(`avoided repo: ${c.issue.repo}`);
+    }
+
+    if (reasons.length === 0) return c;
     return { ...c, personalization: { kind: "boosted", score, reasons } };
   });
 }
@@ -134,7 +174,10 @@ export function applyDiversityRatio(
   for (const c of candidates) {
     if (picks.length >= maxResults) break;
     if (seen.has(c.issue.url)) continue;
-    if (boostScoreOf(c) > 0) continue;
+    // Diversity slots are for candidates that matched NO personalization bias.
+    // Exclude both boosted (>0) and avoided (<0) candidates — resurfacing an
+    // avoided repo via a diversity slot would defeat the avoid (#168).
+    if (boostScoreOf(c) !== 0) continue;
     // Tag a shallow copy rather than mutating the shared candidate (#158).
     picks.push({ ...c, personalization: { kind: "diversity" } });
     seen.add(c.issue.url);

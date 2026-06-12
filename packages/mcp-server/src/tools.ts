@@ -71,6 +71,18 @@ export function registerTools(server: McpServer, scout: OssScout): void {
         .describe(
           "Soft-boost ranking for candidates in one of these `owner/repo` slugs. Stronger weight than language match (#1244). Not a filter; only reorders.",
         ),
+      avoidRepos: z
+        .array(z.string())
+        .optional()
+        .describe(
+          "Soft PENALTY (milder than excludeRepos) for candidates in one of these `owner/repo` slugs (#168). Pushes them down the ranking but does not remove them; a strong boost can still outweigh it.",
+        ),
+      boostIssueTypes: z
+        .array(z.string())
+        .optional()
+        .describe(
+          'Soft-boost ranking for candidates whose issue labels match one of these types, case-insensitive (e.g. "bug", "good first issue") (#168). Not a filter; only reorders.',
+        ),
       diversityRatio: z
         .number()
         .min(0)
@@ -85,6 +97,8 @@ export function registerTools(server: McpServer, scout: OssScout): void {
       strategies,
       preferLanguages,
       preferRepos,
+      avoidRepos,
+      boostIssueTypes,
       diversityRatio,
     }) => {
       try {
@@ -100,6 +114,8 @@ export function registerTools(server: McpServer, scout: OssScout): void {
             strategies: parsedStrategies,
             preferLanguages,
             preferRepos,
+            avoidRepos,
+            boostIssueTypes,
             diversityRatio,
             // No fixed inter-phase sleeps in the request/response MCP context;
             // the budget tracker still paces the GitHub calls (#143)

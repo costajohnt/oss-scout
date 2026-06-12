@@ -218,6 +218,12 @@ export const ScoutPreferencesSchema = z.looseObject({
   preferLanguages: z.array(z.string()).default([]),
   preferRepos: z.array(z.string()).default([]),
   diversityRatio: z.number().min(0).max(1).default(0),
+  // Soft penalty (milder than the hard excludeRepos filter): candidates in
+  // these `owner/repo` slugs are pushed down the ranking but not removed (#168).
+  avoidRepos: z.array(z.string()).default([]),
+  // Soft boost for candidates whose issue labels match one of these types,
+  // case-insensitive (e.g. "bug", "good first issue") (#168).
+  boostIssueTypes: z.array(z.string()).default([]),
   broadPhaseDelayMs: z.number().min(0).max(300000).default(90000),
   /**
    * Skip the expensive broad phase once this many candidates were found by
