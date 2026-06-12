@@ -161,6 +161,14 @@ program
     "Comma-separated `owner/repo` slugs to soft-boost in ranking (#1244). Stronger weight than language match. Does not filter results.",
   )
   .option(
+    "--avoid-repos <list>",
+    "Comma-separated `owner/repo` slugs to soft-penalize in ranking (#168). Milder than excludeRepos: pushes them down but does not filter them out.",
+  )
+  .option(
+    "--boost-issue-types <list>",
+    "Comma-separated issue label types to soft-boost in ranking (#168), case-insensitive (e.g. `bug,good first issue`). Does not filter results.",
+  )
+  .option(
     "--diversity-ratio <n>",
     "Fraction of result slots (0-1) reserved for candidates that matched NEITHER preference list (#1244). Counterweights echo-chamber bias as boosts accumulate. Default 0 (disabled).",
   )
@@ -172,6 +180,8 @@ program
         strategy?: string;
         preferLanguages?: string;
         preferRepos?: string;
+        avoidRepos?: string;
+        boostIssueTypes?: string;
         diversityRatio?: string;
       },
     ) =>
@@ -243,6 +253,8 @@ program
           strategies,
           preferLanguages: splitCsv(options.preferLanguages),
           preferRepos: splitCsv(options.preferRepos),
+          avoidRepos: splitCsv(options.avoidRepos),
+          boostIssueTypes: splitCsv(options.boostIssueTypes),
           diversityRatio,
         });
         if (options.json) {
@@ -261,8 +273,11 @@ program
             // (matched a preference) or a diversity slot (matched none and
             // filled a reserved slot); never both.
             let personalizationTag = "";
-            if (c.boostScore && c.boostReasons && c.boostReasons.length > 0) {
-              personalizationTag = ` [boosted: ${c.boostReasons.join("; ")}]`;
+            if (c.boostReasons && c.boostReasons.length > 0) {
+              // Net score can be negative when avoidRepos applied (#168).
+              const verb =
+                (c.boostScore ?? 0) >= 0 ? "boosted" : "deprioritized";
+              personalizationTag = ` [${verb}: ${c.boostReasons.join("; ")}]`;
             } else if (c.diversitySlot) {
               personalizationTag = " [diversity slot]";
             }

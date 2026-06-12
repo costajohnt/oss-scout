@@ -69,6 +69,10 @@ interface SearchCommandOptions {
   preferLanguages?: string[];
   /** Soft sort boost for candidates in these `owner/repo` slugs (#1244). */
   preferRepos?: string[];
+  /** Soft sort penalty for candidates in these `owner/repo` slugs (#168). */
+  avoidRepos?: string[];
+  /** Soft sort boost for candidates whose labels match these types (#168). */
+  boostIssueTypes?: string[];
   /** Diversity counterweight: fraction of slots reserved for unboosted candidates (#1244). */
   diversityRatio?: number;
 }
@@ -84,6 +88,8 @@ export async function runSearch(
         strategies: options.strategies,
         preferLanguages: options.preferLanguages,
         preferRepos: options.preferRepos,
+        avoidRepos: options.avoidRepos,
+        boostIssueTypes: options.boostIssueTypes,
         diversityRatio: options.diversityRatio,
       });
 

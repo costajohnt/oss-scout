@@ -49,6 +49,8 @@ export const FIELD_CONFIGS: Record<string, FieldConfig> = {
   preferLanguages: { type: "array" },
   preferRepos: { type: "array" },
   diversityRatio: { type: "float" },
+  avoidRepos: { type: "array" },
+  boostIssueTypes: { type: "array" },
   slmTriageModel: { type: "string" },
   slmTriageHost: { type: "string" },
   featuresAnchorThreshold: { type: "number" },

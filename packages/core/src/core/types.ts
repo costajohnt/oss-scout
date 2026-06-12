@@ -310,6 +310,21 @@ export interface SearchOptions {
    */
   preferRepos?: string[];
   /**
+   * Per-call personalization bias: a SOFT penalty (milder than the hard
+   * `excludeRepos` filter) for candidates in one of these `owner/repo` slugs
+   * (#168). They are pushed below equally-recommended non-matches but not
+   * removed; a strong boost can still outweigh the penalty. Empty / undefined
+   * disables it.
+   */
+  avoidRepos?: string[];
+  /**
+   * Per-call personalization bias: a soft boost for candidates whose issue
+   * labels match one of these types, case-insensitive (e.g. "bug",
+   * "good first issue") (#168). Same tier as a language match. Does not filter
+   * results, does not change `viabilityScore`. Empty / undefined disables it.
+   */
+  boostIssueTypes?: string[];
+  /**
    * Counterweight against echo-chamber bias as `preferLanguages` /
    * `preferRepos` boosts accumulate over time (#1244). A value of 0.2
    * means "reserve roughly 20% of the final slots for candidates that

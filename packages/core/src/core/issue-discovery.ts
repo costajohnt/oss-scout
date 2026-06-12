@@ -507,6 +507,8 @@ export class IssueDiscovery {
       skippedUrls?: Set<string>;
       preferLanguages?: string[];
       preferRepos?: string[];
+      avoidRepos?: string[];
+      boostIssueTypes?: string[];
       diversityRatio?: number;
       interPhaseDelayMs?: number;
       broadPhaseDelayMs?: number;
@@ -848,15 +850,17 @@ export class IssueDiscovery {
         `Try again after the rate limit resets for complete results.`;
     }
 
-    // Personalization annotation (#1244): tag matched candidates with a
-    // `personalization` marker before sorting so the new sort tier has values
-    // to read. Returns a new array (no in-place candidate mutation, #158);
-    // a no-op when neither preference list is supplied.
-    const ranked = annotateBoost(
-      allCandidates,
-      options.preferLanguages,
-      options.preferRepos,
-    );
+    // Personalization annotation (#1244, extended #168): tag candidates with a
+    // net `personalization` marker (preferRepos/preferLanguages/boostIssueTypes
+    // add, avoidRepos subtracts) before sorting so the sort tier has values to
+    // read. Returns a new array (no in-place candidate mutation, #158); a no-op
+    // when none of the bias lists are supplied.
+    const ranked = annotateBoost(allCandidates, {
+      preferLanguages: options.preferLanguages,
+      preferRepos: options.preferRepos,
+      avoidRepos: options.avoidRepos,
+      boostIssueTypes: options.boostIssueTypes,
+    });
 
     // Sort by priority, recommendation, boost (#1244), then viability score
     ranked.sort((a, b) => {

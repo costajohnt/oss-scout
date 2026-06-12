@@ -13,6 +13,8 @@ import {
   applyDiversityRatio,
   LANGUAGE_BOOST,
   REPO_BOOST,
+  ISSUE_TYPE_BOOST,
+  AVOID_PENALTY,
 } from "./personalization.js";
 import type { IssueCandidate } from "./types.js";
 
@@ -38,6 +40,7 @@ function isDiversity(c: IssueCandidate): boolean {
 function makeCandidate(
   repo: string,
   language: string | null | undefined,
+  labels: string[] = [],
 ): IssueCandidate {
   return {
     issue: {
@@ -47,7 +50,7 @@ function makeCandidate(
       number: 1,
       title: "Test issue",
       status: "candidate",
-      labels: [],
+      labels,
       createdAt: "2026-01-01T00:00:00Z",
       updatedAt: "2026-03-01T00:00:00Z",
       vetted: true,
@@ -102,7 +105,7 @@ describe("annotateBoost", () => {
       makeCandidate("rails/rails", "Ruby"),
     ];
 
-    const out = annotateBoost(candidates, undefined, undefined);
+    const out = annotateBoost(candidates, {});
 
     for (const c of out) {
       expect(c.personalization).toBeUndefined();
@@ -112,7 +115,10 @@ describe("annotateBoost", () => {
   it("is a no-op when preference lists are empty", () => {
     const candidates = [makeCandidate("vercel/next.js", "TypeScript")];
 
-    const out = annotateBoost(candidates, [], []);
+    const out = annotateBoost(candidates, {
+      preferLanguages: [],
+      preferRepos: [],
+    });
 
     expect(out[0].personalization).toBeUndefined();
   });
@@ -120,51 +126,47 @@ describe("annotateBoost", () => {
   it("does not mutate the input candidates", () => {
     const candidates = [makeCandidate("vercel/next.js", "TypeScript")];
 
-    annotateBoost(candidates, ["typescript"], ["vercel/next.js"]);
+    annotateBoost(candidates, {
+      preferLanguages: ["typescript"],
+      preferRepos: ["vercel/next.js"],
+    });
 
     // The original object is untouched; the boost lives on the returned copy.
     expect(candidates[0].personalization).toBeUndefined();
   });
 
   it("matches language case-insensitively and tags reason", () => {
-    const out = annotateBoost(
-      [makeCandidate("vercel/next.js", "TypeScript")],
-      ["typescript"],
-      undefined,
-    );
+    const out = annotateBoost([makeCandidate("vercel/next.js", "TypeScript")], {
+      preferLanguages: ["typescript"],
+    });
 
     expect(boostScore(out[0])).toBe(LANGUAGE_BOOST);
     expect(boostReasons(out[0])).toEqual(["language match: TypeScript"]);
   });
 
   it("matches repo slug exactly and tags reason", () => {
-    const out = annotateBoost(
-      [makeCandidate("vercel/next.js", "TypeScript")],
-      undefined,
-      ["vercel/next.js"],
-    );
+    const out = annotateBoost([makeCandidate("vercel/next.js", "TypeScript")], {
+      preferRepos: ["vercel/next.js"],
+    });
 
     expect(boostScore(out[0])).toBe(REPO_BOOST);
     expect(boostReasons(out[0])).toEqual(["repo affinity: vercel/next.js"]);
   });
 
   it("matches repo slug case-insensitively (#130)", () => {
-    const out = annotateBoost(
-      [makeCandidate("vercel/next.js", "TypeScript")],
-      undefined,
-      ["Vercel/Next.js"],
-    );
+    const out = annotateBoost([makeCandidate("vercel/next.js", "TypeScript")], {
+      preferRepos: ["Vercel/Next.js"],
+    });
 
     expect(boostScore(out[0])).toBe(REPO_BOOST);
     expect(boostReasons(out[0])).toEqual(["repo affinity: vercel/next.js"]);
   });
 
   it("stacks repo and language boosts when both match", () => {
-    const out = annotateBoost(
-      [makeCandidate("vercel/next.js", "TypeScript")],
-      ["typescript"],
-      ["vercel/next.js"],
-    );
+    const out = annotateBoost([makeCandidate("vercel/next.js", "TypeScript")], {
+      preferLanguages: ["typescript"],
+      preferRepos: ["vercel/next.js"],
+    });
 
     expect(boostScore(out[0])).toBe(REPO_BOOST + LANGUAGE_BOOST);
     expect(boostReasons(out[0])).toEqual([
@@ -179,8 +181,10 @@ describe("annotateBoost", () => {
         makeCandidate("rails/rails", "Ruby"),
         makeCandidate("vercel/next.js", "TypeScript"),
       ],
-      ["typescript"],
-      ["vercel/next.js"],
+      {
+        preferLanguages: ["typescript"],
+        preferRepos: ["vercel/next.js"],
+      },
     );
 
     expect(out[0].personalization).toBeUndefined();
@@ -190,8 +194,7 @@ describe("annotateBoost", () => {
   it("handles candidates with null/undefined language without crashing", () => {
     const out = annotateBoost(
       [makeCandidate("foo/bar", null), makeCandidate("baz/qux", undefined)],
-      ["typescript"],
-      undefined,
+      { preferLanguages: ["typescript"] },
     );
 
     expect(out[0].personalization).toBeUndefined();
@@ -199,13 +202,58 @@ describe("annotateBoost", () => {
   });
 
   it("trims whitespace and ignores empty entries in preference lists", () => {
-    const out = annotateBoost(
-      [makeCandidate("vercel/next.js", "TypeScript")],
-      [" typescript ", "", "  "],
-      [" ", "vercel/next.js"],
-    );
+    const out = annotateBoost([makeCandidate("vercel/next.js", "TypeScript")], {
+      preferLanguages: [" typescript ", "", "  "],
+      preferRepos: [" ", "vercel/next.js"],
+    });
 
     expect(boostScore(out[0])).toBe(REPO_BOOST + LANGUAGE_BOOST);
+  });
+
+  // ── avoidRepos + boostIssueTypes (#168) ──────────────────────────
+
+  it("boosts a candidate whose label matches a boostIssueType (#168)", () => {
+    const out = annotateBoost(
+      [makeCandidate("a/b", "Go", ["bug", "help wanted"])],
+      { boostIssueTypes: ["BUG"] },
+    );
+    expect(boostScore(out[0])).toBe(ISSUE_TYPE_BOOST);
+    expect(boostReasons(out[0])).toEqual(["issue type: bug"]);
+  });
+
+  it("does not boost when no label matches a boostIssueType (#168)", () => {
+    const out = annotateBoost([makeCandidate("a/b", "Go", ["docs"])], {
+      boostIssueTypes: ["bug"],
+    });
+    expect(out[0].personalization).toBeUndefined();
+  });
+
+  it("penalizes a candidate in an avoidRepos slug (#168)", () => {
+    const out = annotateBoost([makeCandidate("spam/repo", "Go")], {
+      avoidRepos: ["spam/repo"],
+    });
+    expect(boostScore(out[0])).toBe(-AVOID_PENALTY);
+    expect(boostReasons(out[0])).toEqual(["avoided repo: spam/repo"]);
+  });
+
+  it("avoidRepos is case-insensitive (#168)", () => {
+    const out = annotateBoost([makeCandidate("Spam/Repo", "Go")], {
+      avoidRepos: ["spam/repo"],
+    });
+    expect(boostScore(out[0])).toBe(-AVOID_PENALTY);
+  });
+
+  it("nets a preferRepos boost against an avoidRepos penalty (#168)", () => {
+    // A strong repo affinity (+20) outweighs the avoid penalty (-15) → +5 net.
+    const out = annotateBoost([makeCandidate("a/b", "Go")], {
+      preferRepos: ["a/b"],
+      avoidRepos: ["a/b"],
+    });
+    expect(boostScore(out[0])).toBe(REPO_BOOST - AVOID_PENALTY);
+    expect(boostReasons(out[0])).toEqual([
+      "repo affinity: a/b",
+      "avoided repo: a/b",
+    ]);
   });
 });
 
@@ -233,6 +281,31 @@ describe("applyDiversityRatio", () => {
     expect(picks[0].issue.repo).toBe("a/b");
     expect(picks[1].issue.repo).toBe("c/d");
     expect(picks.some(isDiversity)).toBe(false);
+  });
+
+  function avoided(repo: string): IssueCandidate {
+    const c = makeCandidate(repo, "Go");
+    c.personalization = {
+      kind: "boosted",
+      score: -AVOID_PENALTY,
+      reasons: [`avoided repo: ${repo}`],
+    };
+    return c;
+  }
+
+  it("does not fill a diversity slot with an avoided candidate (#168)", () => {
+    // Only the truly-neutral candidate should take the reserved slot; the
+    // avoided one must not be resurfaced via diversity.
+    const candidates = [
+      boosted("a/b"),
+      avoided("spam/x"),
+      makeCandidate("neutral/y", "Rust"),
+    ];
+    const picks = applyDiversityRatio(candidates, 2, 0.5);
+    expect(picks).toHaveLength(2);
+    const diversityPick = picks.find(isDiversity);
+    expect(diversityPick?.issue.repo).toBe("neutral/y");
+    expect(picks.map((p) => p.issue.repo)).not.toContain("spam/x");
   });
 
   it("reserves diversity slots for unboosted candidates", () => {
