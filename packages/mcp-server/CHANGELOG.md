@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.10.0](https://github.com/costajohnt/oss-scout/compare/mcp-server-v0.9.0...mcp-server-v0.10.0) (2026-06-12)
+
+
+### Features
+
+* **personalization:** implement avoidRepos and boostIssueTypes ([#168](https://github.com/costajohnt/oss-scout/issues/168)) ([#239](https://github.com/costajohnt/oss-scout/issues/239)) ([1f24ea8](https://github.com/costajohnt/oss-scout/commit/1f24ea8cb739025099ce992ebd5ecc8a12634678))
+
+
+### Bug Fixes
+
+* **mcp:** surface checkpoint persistence failures in search/features/config-set ([#212](https://github.com/costajohnt/oss-scout/issues/212)) ([#234](https://github.com/costajohnt/oss-scout/issues/234)) ([10a959e](https://github.com/costajohnt/oss-scout/commit/10a959eb972b37a811c5c43721f80b855b538c15))
+
 ## [0.9.0](https://github.com/costajohnt/oss-scout/compare/mcp-server-v0.8.0...mcp-server-v0.9.0) (2026-06-11)
 
 
