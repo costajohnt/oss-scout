@@ -14,7 +14,10 @@
 
 import { Octokit } from "@octokit/rest";
 import { getOctokit, checkRateLimit } from "./github.js";
-import { getSearchBudgetTracker } from "./search-budget.js";
+import {
+  getSearchBudgetTracker,
+  type SearchBudgetTracker,
+} from "./search-budget.js";
 import { daysBetween, extractRepoFromUrl, sleep } from "./utils.js";
 import {
   type SearchPriority,
@@ -196,6 +199,7 @@ async function runPhase2(
   starredRepoSet: Set<string>,
   existingCandidates: IssueCandidate[],
   filterIssues: (items: GitHubSearchItem[]) => GitHubSearchItem[],
+  tracker: SearchBudgetTracker,
 ): Promise<PhaseResult> {
   info(MODULE, "Phase 2: General issue search...");
   const seenRepos = new Set(existingCandidates.map((c) => c.issue.repo));
@@ -237,6 +241,7 @@ async function runPhase2(
         (langQ) =>
           `is:issue is:open ${langQ} no:assignee`.replace(/  +/g, " ").trim(),
         budgetPerTier * 3,
+        tracker,
       );
 
       info(MODULE, `Phase 2 [${tier}]: processing ${allItems.length} items...`);
@@ -307,6 +312,7 @@ async function runPhase3(
   starredRepos: string[],
   existingCandidates: IssueCandidate[],
   filterIssues: (items: GitHubSearchItem[]) => GitHubSearchItem[],
+  tracker: SearchBudgetTracker,
 ): Promise<PhaseResult> {
   info(MODULE, "Phase 3: Searching actively maintained repos...");
 
@@ -382,12 +388,16 @@ async function runPhase3(
       .trim();
 
   try {
-    const data = await cachedSearchIssues(octokit, {
-      q: phase3Query,
-      sort: "updated",
-      order: "desc",
-      per_page: maxResults * 3,
-    });
+    const data = await cachedSearchIssues(
+      octokit,
+      {
+        q: phase3Query,
+        sort: "updated",
+        order: "desc",
+        per_page: maxResults * 3,
+      },
+      tracker,
+    );
 
     info(
       MODULE,
@@ -447,6 +457,7 @@ export class IssueDiscovery {
   private octokit: Octokit;
   private githubToken: string;
   private vetter: IssueVetter;
+  private budgetTracker: SearchBudgetTracker;
 
   /** Set after searchIssues() runs if rate limits affected the search (low pre-flight quota or mid-search rate limit hits). */
   rateLimitWarning: string | null = null;
@@ -455,15 +466,28 @@ export class IssueDiscovery {
    * @param githubToken  - GitHub personal access token or token from `gh auth token`
    * @param preferences  - User's search preferences (languages, labels, scopes, etc.)
    * @param stateReader  - Read-only interface for accessing scout state (merged PRs, starred repos, etc.)
+   * @param budgetTracker - Search budget tracker. Defaults to the shared
+   *   singleton so existing callers behave identically. A long-lived host
+   *   serving concurrent searches can inject a per-search instance so one
+   *   search's init() no longer resets the budget state of another (the
+   *   shared-singleton concurrency hazard, #156).
    */
   constructor(
     githubToken: string,
     private preferences: ScoutPreferences,
     private stateReader: ScoutStateReader,
+    budgetTracker: SearchBudgetTracker = getSearchBudgetTracker(),
   ) {
     this.githubToken = githubToken;
     this.octokit = getOctokit(githubToken);
-    this.vetter = new IssueVetter(this.octokit, this.stateReader);
+    this.budgetTracker = budgetTracker;
+    // Thread the same tracker into the vetter so the merged-PR Search API
+    // call (checkUserMergedPRsInRepo) pays the same budget as the search phases.
+    this.vetter = new IssueVetter(
+      this.octokit,
+      this.stateReader,
+      this.budgetTracker,
+    );
   }
 
   /**
@@ -572,7 +596,7 @@ export class IssueDiscovery {
 
     // Pre-flight rate limit check
     this.rateLimitWarning = null;
-    const tracker = getSearchBudgetTracker();
+    const tracker = this.budgetTracker;
     let searchBudget = LOW_BUDGET_THRESHOLD - 1;
     try {
       const rateLimit = await checkRateLimit(this.githubToken);
@@ -768,6 +792,7 @@ export class IssueDiscovery {
           starredRepoSet,
           allCandidates,
           filterIssues,
+          tracker,
         );
         recordPhaseResult("2", result);
         // Recorded only when the phase actually queried, not when the
@@ -796,6 +821,7 @@ export class IssueDiscovery {
         starredRepos,
         allCandidates,
         filterIssues,
+        tracker,
       );
       recordPhaseResult("3", result);
       strategiesUsed.push("maintained");

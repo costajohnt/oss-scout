@@ -51,6 +51,10 @@ import {
 } from "./issue-graphql.js";
 import { getHttpCache, versionedCacheKey } from "./http-cache.js";
 import {
+  getSearchBudgetTracker,
+  type SearchBudgetTracker,
+} from "./search-budget.js";
+import {
   triageWithSLM,
   buildTriageInput,
   type SLMTriageOptions,
@@ -304,10 +308,23 @@ export function deriveRecommendation(
 export class IssueVetter {
   private octokit: Octokit;
   private stateReader: ScoutStateReader;
+  private budgetTracker: SearchBudgetTracker;
 
-  constructor(octokit: Octokit, stateReader: ScoutStateReader) {
+  /**
+   * @param octokit      - Authenticated Octokit instance
+   * @param stateReader  - Read-only scout state interface
+   * @param budgetTracker - Search budget tracker. Defaults to the shared
+   *   singleton so existing callers behave identically; inject a per-search
+   *   instance to isolate budget accounting in a long-lived concurrent host.
+   */
+  constructor(
+    octokit: Octokit,
+    stateReader: ScoutStateReader,
+    budgetTracker: SearchBudgetTracker = getSearchBudgetTracker(),
+  ) {
     this.octokit = octokit;
     this.stateReader = stateReader;
+    this.budgetTracker = budgetTracker;
   }
 
   /**
@@ -383,7 +400,12 @@ export class IssueVetter {
       fetchContributionGuidelines(this.octokit, owner, repo),
       hasMergedPRsInRepo
         ? Promise.resolve(0)
-        : checkUserMergedPRsInRepo(this.octokit, owner, repo),
+        : checkUserMergedPRsInRepo(
+            this.octokit,
+            owner,
+            repo,
+            this.budgetTracker,
+          ),
     ]);
 
     // Anti-LLM scan reuses the CONTRIBUTING text just fetched above —

@@ -15,7 +15,10 @@ import {
   withInflightDedup,
   versionedCacheKey,
 } from "./http-cache.js";
-import { getSearchBudgetTracker } from "./search-budget.js";
+import {
+  getSearchBudgetTracker,
+  type SearchBudgetTracker,
+} from "./search-budget.js";
 import type { CheckResult, LinkedPR } from "./types.js";
 
 /**
@@ -230,6 +233,10 @@ export async function checkUserMergedPRsInRepo(
   octokit: Octokit,
   owner: string,
   repo: string,
+  // Optional injected budget tracker. Defaults to the shared singleton so
+  // existing callers keep the same global budget accounting; a host wanting
+  // per-search isolation threads its own tracker down from IssueVetter.
+  tracker: SearchBudgetTracker = getSearchBudgetTracker(),
 ): Promise<number | null> {
   const cache = getHttpCache();
   const cacheKey = versionedCacheKey(`merged-prs:${owner}/${repo}`);
@@ -248,7 +255,6 @@ export async function checkUserMergedPRsInRepo(
     }
 
     try {
-      const tracker = getSearchBudgetTracker();
       await tracker.waitForBudget();
       try {
         // Use @me to search as the authenticated user
