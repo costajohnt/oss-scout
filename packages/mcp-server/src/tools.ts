@@ -14,6 +14,22 @@ import {
 // under the budget tracker's sliding-window pacing can take minutes (#143).
 const TOOL_TIMEOUT_MS = 300000;
 
+// Surfaced on the JSON envelope when scout.checkpoint() returns false (#212).
+// The skip tool reports this inline because it returns a short status line;
+// the JSON tools (search, scout-features, config-set) carry it as a top-level
+// field so a persist failure isn't silently swallowed.
+const PERSIST_WARNING =
+  "Checkpoint failed: changes were applied in memory but could not be persisted. They may be lost when the server restarts.";
+
+/**
+ * Serialize a tool result, attaching a top-level `persistWarning` field when
+ * the preceding checkpoint failed (#212). Spreads onto the existing object so
+ * the happy-path payload is byte-for-byte unchanged.
+ */
+function withPersistWarning<T extends object>(payload: T, persisted: boolean) {
+  return persisted ? payload : { ...payload, persistWarning: PERSIST_WARNING };
+}
+
 function withTimeout<T>(
   promise: Promise<T>,
   ms: number = TOOL_TIMEOUT_MS,
@@ -93,10 +109,19 @@ export function registerTools(server: McpServer, scout: OssScout): void {
         );
 
         scout.saveResults(result.candidates);
-        await scout.checkpoint();
+        const persisted = await scout.checkpoint();
 
         return {
-          content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(
+                withPersistWarning(result, persisted),
+                null,
+                2,
+              ),
+            },
+          ],
         };
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -140,9 +165,18 @@ export function registerTools(server: McpServer, scout: OssScout): void {
           }),
         );
         scout.saveResults([...result.quickWins, ...result.biggerBets]);
-        await scout.checkpoint();
+        const persisted = await scout.checkpoint();
         return {
-          content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(
+                withPersistWarning(result, persisted),
+                null,
+                2,
+              ),
+            },
+          ],
         };
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -362,10 +396,19 @@ export function registerTools(server: McpServer, scout: OssScout): void {
       scout.updatePreferences({
         [key]: validated[key as keyof typeof validated],
       });
-      await scout.checkpoint();
+      const persisted = await scout.checkpoint();
       const updated = scout.getPreferences();
       return {
-        content: [{ type: "text", text: JSON.stringify(updated, null, 2) }],
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              withPersistWarning(updated, persisted),
+              null,
+              2,
+            ),
+          },
+        ],
       };
     },
   );
