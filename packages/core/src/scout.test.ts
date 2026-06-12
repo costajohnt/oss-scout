@@ -1,7 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { createScout, OssScout } from "./scout.js";
+import { createScout, OssScout, toGistOctokit } from "./scout.js";
+import { GistStateStore } from "./core/gist-state-store.js";
+import type { BootstrapResult } from "./core/gist-state-store.js";
 import { ScoutStateSchema } from "./core/schemas.js";
 import type { ScoutState } from "./core/schemas.js";
+import type { IssueCandidate } from "./core/types.js";
+import type { Octokit } from "@octokit/rest";
 
 vi.mock("./core/feature-discovery.js", async (importOriginal) => {
   const actual =
@@ -40,6 +44,14 @@ vi.mock("./core/http-cache.js", async (importOriginal) => {
         typeof actual.getHttpCache
       >,
   };
+});
+
+// Replace only the GistStateStore class so createScout's gist path is testable
+// (#162); mergeStates and the rest of the module stay real.
+vi.mock("./core/gist-state-store.js", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("./core/gist-state-store.js")>();
+  return { ...actual, GistStateStore: vi.fn() };
 });
 
 function makeState(overrides: Partial<ScoutState> = {}): ScoutState {
@@ -641,5 +653,229 @@ describe("OssScout checkpoint + scoring branches (#162)", () => {
         }),
       ).toBe(1);
     });
+  });
+});
+
+describe("createScout gist mode (#162)", () => {
+  function stubBootstrap(result: BootstrapResult): void {
+    // Must be a real function (not an arrow) so `new GistStateStore()` works.
+    vi.mocked(GistStateStore).mockImplementation(function () {
+      return {
+        bootstrap: vi.fn().mockResolvedValue(result),
+      } as unknown as GistStateStore;
+    });
+  }
+
+  beforeEach(() => {
+    localStateStore.current = ScoutStateSchema.parse({ version: 1 });
+    vi.mocked(GistStateStore).mockReset();
+  });
+
+  it("adopts the bootstrapped gistId when no override is supplied", async () => {
+    stubBootstrap({
+      gistId: "boot-gist",
+      state: ScoutStateSchema.parse({ version: 1 }),
+      created: false,
+    });
+    const scout = await createScout({
+      githubToken: "test-token",
+      persistence: "gist",
+    });
+    expect(scout.getState().gistId).toBe("boot-gist");
+  });
+
+  it("config.gistId overrides the bootstrapped gistId", async () => {
+    stubBootstrap({
+      gistId: "boot-gist",
+      state: ScoutStateSchema.parse({ version: 1 }),
+      created: false,
+    });
+    const scout = await createScout({
+      githubToken: "test-token",
+      persistence: "gist",
+      gistId: "explicit-gist",
+    });
+    expect(scout.getState().gistId).toBe("explicit-gist");
+  });
+
+  it("merges the bootstrapped gist state with local state (array union)", async () => {
+    const skip = (n: number) => ({
+      url: `https://github.com/o/r/issues/${n}`,
+      repo: "o/r",
+      number: n,
+      title: `skip ${n}`,
+      skippedAt: "2026-06-01T00:00:00Z",
+    });
+    // A local-only skip and a gist-only skip must both survive the merge —
+    // proving mergeStates(local, gist) actually ran rather than the gist
+    // state being adopted wholesale.
+    localStateStore.current = ScoutStateSchema.parse({
+      version: 1,
+      skippedIssues: [skip(1)],
+    });
+    stubBootstrap({
+      gistId: "g",
+      state: ScoutStateSchema.parse({ version: 1, skippedIssues: [skip(2)] }),
+      created: false,
+    });
+    const scout = await createScout({
+      githubToken: "test-token",
+      persistence: "gist",
+    });
+    const urls = scout.getSkippedIssues().map((s) => s.url);
+    expect(urls).toContain("https://github.com/o/r/issues/1");
+    expect(urls).toContain("https://github.com/o/r/issues/2");
+  });
+
+  it("still builds a scout when bootstrap reports a degraded (offline) result", async () => {
+    stubBootstrap({
+      gistId: "g",
+      state: ScoutStateSchema.parse({ version: 1 }),
+      created: false,
+      degraded: true,
+      degradedReason: "rate_limit",
+    });
+    const scout = await createScout({
+      githubToken: "test-token",
+      persistence: "gist",
+    });
+    expect(scout).toBeInstanceOf(OssScout);
+  });
+});
+
+describe("toGistOctokit adapter (#162)", () => {
+  function fakeOctokit(gists: Record<string, unknown>): Octokit {
+    return { gists } as unknown as Octokit;
+  }
+
+  it("get maps files and drops undefined file entries", async () => {
+    const adapter = toGistOctokit(
+      fakeOctokit({
+        get: async () => ({
+          data: {
+            id: "g1",
+            files: { "state.json": { content: "{}" }, dropme: null },
+          },
+        }),
+      }),
+    );
+    const { data } = await adapter.gists.get({ gist_id: "g1" });
+    expect(data.id).toBe("g1");
+    expect(data.files).toEqual({
+      "state.json": { content: "{}" },
+      dropme: undefined,
+    });
+  });
+
+  it("get passes through null files", async () => {
+    const adapter = toGistOctokit(
+      fakeOctokit({ get: async () => ({ data: { id: "g1", files: null } }) }),
+    );
+    const { data } = await adapter.gists.get({ gist_id: "g1" });
+    expect(data.files).toBeNull();
+  });
+
+  it("get throws when the response has no id", async () => {
+    const adapter = toGistOctokit(
+      fakeOctokit({
+        get: async () => ({ data: { id: undefined, files: null } }),
+      }),
+    );
+    await expect(adapter.gists.get({ gist_id: "g1" })).rejects.toThrow(/no id/);
+  });
+
+  it("create returns the id and throws without one", async () => {
+    const ok = toGistOctokit(
+      fakeOctokit({ create: async () => ({ data: { id: "new" } }) }),
+    );
+    expect((await ok.gists.create({ files: {} })).data.id).toBe("new");
+
+    const bad = toGistOctokit(
+      fakeOctokit({ create: async () => ({ data: { id: undefined } }) }),
+    );
+    await expect(bad.gists.create({ files: {} })).rejects.toThrow(/no id/);
+  });
+
+  it("update returns the id and throws without one", async () => {
+    const ok = toGistOctokit(
+      fakeOctokit({ update: async () => ({ data: { id: "g1" } }) }),
+    );
+    expect((await ok.gists.update({ gist_id: "g1", files: {} })).data.id).toBe(
+      "g1",
+    );
+
+    const bad = toGistOctokit(
+      fakeOctokit({ update: async () => ({ data: { id: undefined } }) }),
+    );
+    await expect(
+      bad.gists.update({ gist_id: "g1", files: {} }),
+    ).rejects.toThrow(/no id/);
+  });
+
+  it("list filters out id-less gists and defaults description to null", async () => {
+    const adapter = toGistOctokit(
+      fakeOctokit({
+        list: async () => ({
+          data: [
+            { id: "g1", description: "mine" },
+            { id: undefined, description: "skip" },
+            { id: "g2" },
+          ],
+        }),
+      }),
+    );
+    const { data } = await adapter.gists.list({});
+    expect(data).toEqual([
+      { id: "g1", description: "mine" },
+      { id: "g2", description: null },
+    ]);
+  });
+});
+
+describe("OssScout.vetList partial-results discard (#162)", () => {
+  function savedCandidate(n: number) {
+    return {
+      issueUrl: `https://github.com/o/r/issues/${n}`,
+      repo: "o/r",
+      number: n,
+      title: `Issue ${n}`,
+      labels: [],
+      recommendation: "approve" as const,
+      viabilityScore: 80,
+      searchPriority: "normal" as const,
+      firstSeenAt: "2026-06-01T00:00:00Z",
+      lastSeenAt: "2026-06-01T00:00:00Z",
+      lastScore: 80,
+    };
+  }
+
+  it("discards a successful partial result and rethrows when a 401 lands mid-batch", async () => {
+    const scout = new OssScout(
+      "test-token",
+      ScoutStateSchema.parse({
+        version: 1,
+        savedResults: [savedCandidate(1), savedCandidate(2)],
+      }),
+    );
+
+    const okCandidate = {
+      issueState: "open",
+      vettingResult: { checks: { noExistingPR: true, notClaimed: true } },
+      recommendation: "approve",
+      viabilityScore: 80,
+    } as unknown as IssueCandidate;
+    const authErr = Object.assign(new Error("Bad credentials"), {
+      status: 401,
+    });
+
+    // concurrency:1 forces the first issue to fully resolve (a real success
+    // that gets discarded) before the second throws the fatal 401.
+    vi.spyOn(scout, "vetIssue")
+      .mockResolvedValueOnce(okCandidate)
+      .mockRejectedValueOnce(authErr);
+
+    await expect(scout.vetList({ concurrency: 1 })).rejects.toThrow(
+      "Bad credentials",
+    );
   });
 });
