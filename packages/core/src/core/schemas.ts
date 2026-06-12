@@ -50,6 +50,9 @@ export const CONCRETE_STRATEGIES = [
 
 export const RepoSignalsSchema = z.looseObject({
   hasActiveMaintainers: z.boolean(),
+  // Retained for backward compatibility but no longer affects the repo score
+  // (#167): nothing computes it, and hasActiveMaintainers is the live activity
+  // proxy. Kept so old persisted state and the search JSON output still parse.
   isResponsive: z.boolean(),
   hasHostileComments: z.boolean(),
 });
