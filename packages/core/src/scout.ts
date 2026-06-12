@@ -75,8 +75,12 @@ function offlineModeMessage(reason: DegradedReason | undefined): string {
   }
 }
 
-/** Wrap a real Octokit instance as GistOctokitLike without unsafe double casts. */
-function toGistOctokit(octokit: Octokit): GistOctokitLike {
+/**
+ * Wrap a real Octokit instance as GistOctokitLike without unsafe double casts.
+ * Exported (not via the package index) so the response-narrowing logic — the
+ * "no id" guards and the files/list mapping — is unit-testable (#162).
+ */
+export function toGistOctokit(octokit: Octokit): GistOctokitLike {
   return {
     gists: {
       async get(params) {
