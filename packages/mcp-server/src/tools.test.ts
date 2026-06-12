@@ -113,6 +113,49 @@ describe("registerTools", () => {
       };
       expect(result.content[0].text).toContain("failed to persist");
     });
+
+    // #212: the JSON tools (search, scout-features, config-set) used to await
+    // checkpoint() and discard the boolean, silently swallowing a persist
+    // failure. They now carry a top-level persistWarning field on failure.
+    it.each([
+      ["search", { maxResults: 5 }],
+      ["scout-features", { maxResults: 5 }],
+      ["config-set", { key: "minStars", value: "100" }],
+    ] as const)(
+      "%s surfaces persistWarning in the JSON envelope when checkpoint fails (#212)",
+      async (toolName, args) => {
+        const local = createMockScout({
+          checkpoint: vi.fn().mockResolvedValue(false),
+        } as Partial<OssScout>);
+        const localServer = new McpServer({ name: "t", version: "0.0.1" });
+        vi.spyOn(localServer, "tool");
+        registerTools(localServer, local);
+        const handler = getToolHandler(localServer, toolName);
+        const result = (await handler(args, {})) as {
+          content: Array<{ text: string }>;
+          isError?: boolean;
+        };
+        expect(result.isError).toBeUndefined();
+        const parsed = JSON.parse(result.content[0].text);
+        expect(parsed.persistWarning).toMatch(/could not be persisted/);
+      },
+    );
+
+    it.each([
+      ["search", { maxResults: 5 }],
+      ["scout-features", { maxResults: 5 }],
+      ["config-set", { key: "minStars", value: "100" }],
+    ] as const)(
+      "%s omits persistWarning when checkpoint succeeds (#212)",
+      async (toolName, args) => {
+        const handler = getToolHandler(server, toolName);
+        const result = (await handler(args, {})) as {
+          content: Array<{ text: string }>;
+        };
+        const parsed = JSON.parse(result.content[0].text);
+        expect(parsed.persistWarning).toBeUndefined();
+      },
+    );
   });
 
   describe("skip tool execution", () => {
