@@ -19,7 +19,7 @@
 
 Most issue finders search GitHub for `good first issue` labels and hand you a list. You could do that yourself in 30 seconds.
 
-**oss-scout is different.** It knows which repos you've contributed to, which maintainers have merged your work before, and which projects are actually responsive. It searches strategically, vets every result, and tells you where your next PR has the highest chance of getting merged.
+**oss-scout is different.** It knows which repos you've contributed to, which maintainers have merged your work before, and which projects are actively maintained. It searches strategically, vets every result, and tells you where your next PR has the highest chance of getting merged.
 
 ## Getting Started
 

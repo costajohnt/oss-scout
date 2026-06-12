@@ -283,14 +283,13 @@ export class OssScout implements ScoutStateReader, ScoutStateWriter {
    * calculateScore's +1 active-maintainers weight was inert; `isActive`
    * (recent commit activity) is a real, already-computed proxy.
    *
-   * `isResponsive` and `avgResponseDays` are deliberately NOT set here:
-   * `projectHealth.avgIssueResponseDays` is a hardcoded `0` placeholder
-   * (repo-health.ts), so deriving responsiveness from it would award +1 to
-   * every repo — a fake signal worse than the inert one. Real responsiveness
-   * needs an actual response-time measurement (extra API calls), deferred.
-   * `hasHostileComments` likewise stays a host-settable capability (it needs
-   * comment sentiment, out of scope). A failed health check is skipped so its
-   * neutral-default fields don't pollute the score.
+   * `isResponsive` and `avgResponseDays` are deliberately NOT set here, and
+   * `isResponsive` no longer carries a score weight at all (#167): real
+   * responsiveness needs an actual response-time measurement (extra API calls)
+   * that is out of scope, and `hasActiveMaintainers` already covers the
+   * activity proxy. `hasHostileComments` stays a host-settable capability (it
+   * needs comment sentiment, out of scope). A failed health check is skipped so
+   * its neutral-default fields don't pollute the score.
    */
   private updateRepoSignalsFromHealth(health: ProjectHealth): void {
     if (health.checkFailed) return;
@@ -980,15 +979,21 @@ export class OssScout implements ScoutStateReader, ScoutStateWriter {
   }
 
   /**
-   * Calculate repo score (1-10) from observed data.
+   * Calculate repo score from observed data.
    * base 5, +1 per merged PR (max +3), -1 per closed-without-merge (max -3),
-   * +1 responsive, +1 active maintainers, -2 hostile comments, clamped 1-10
+   * +1 active maintainers, -2 hostile comments, clamped to [1, 10].
+   *
+   * `isResponsive` is intentionally NOT scored (#167): nothing in oss-scout
+   * ever computes it, so awarding +1 for it was dead weight that the
+   * now-computed `hasActiveMaintainers` signal already covers as the activity
+   * proxy. The field is retained on RepoSignals for backward compatibility but
+   * no longer affects the score. With the current signals the reachable range
+   * is [1, 9]; the upper clamp stays as defensive hygiene.
    */
   private calculateScore(repoScore: RepoScore): number {
     let score = 5;
     score += Math.min(repoScore.mergedPRCount, 3);
     score -= Math.min(repoScore.closedWithoutMergeCount, 3);
-    if (repoScore.signals.isResponsive) score += 1;
     if (repoScore.signals.hasActiveMaintainers) score += 1;
     if (repoScore.signals.hasHostileComments) score -= 2;
     return Math.max(1, Math.min(10, score));

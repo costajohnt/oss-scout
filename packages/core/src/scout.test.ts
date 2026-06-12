@@ -628,21 +628,24 @@ describe("OssScout checkpoint + scoring branches (#162)", () => {
       expect(scoreAfter({ signals: { hasHostileComments: true } })).toBe(3);
     });
 
-    it("adds 1 each for responsive and active maintainers", () => {
-      expect(
-        scoreAfter({
-          signals: { isResponsive: true, hasActiveMaintainers: true },
-        }),
-      ).toBe(7);
+    it("adds 1 for active maintainers", () => {
+      expect(scoreAfter({ signals: { hasActiveMaintainers: true } })).toBe(6);
     });
 
-    it("clamps the upper bound at 10", () => {
+    it("does not score isResponsive (#167: dead weight dropped)", () => {
+      // isResponsive no longer affects the score: base 5 with no other signal.
+      expect(scoreAfter({ signals: { isResponsive: true } })).toBe(5);
+    });
+
+    it("tops out at 9 with all positive signals (isResponsive unscored)", () => {
+      // base 5 + merged(+3) + active(+1) = 9; the [1,10] clamp is now
+      // defensive only since isResponsive's +1 was removed (#167).
       expect(
         scoreAfter({
           mergedPRCount: 3,
           signals: { isResponsive: true, hasActiveMaintainers: true },
         }),
-      ).toBe(10);
+      ).toBe(9);
     });
 
     it("clamps the lower bound at 1", () => {
