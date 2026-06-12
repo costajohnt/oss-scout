@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.0](https://github.com/costajohnt/oss-scout/compare/core-v1.0.0...core-v1.1.0) (2026-06-12)
+
+
+### Features
+
+* **personalization:** implement avoidRepos and boostIssueTypes ([#168](https://github.com/costajohnt/oss-scout/issues/168)) ([#239](https://github.com/costajohnt/oss-scout/issues/239)) ([1f24ea8](https://github.com/costajohnt/oss-scout/commit/1f24ea8cb739025099ce992ebd5ecc8a12634678))
+
 ## [1.0.0](https://github.com/costajohnt/oss-scout/compare/core-v0.11.0...core-v1.0.0) (2026-06-11)
 
 

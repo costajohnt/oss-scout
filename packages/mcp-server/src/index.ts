@@ -17,7 +17,7 @@ export { registerResources } from "./resources.js";
 /** Server identity, kept in one place for the bin and any embedding host. */
 export const SERVER_INFO = {
   name: "oss-scout-mcp",
-  version: "0.9.0", // x-release-please-version
+  version: "0.10.0", // x-release-please-version
 } as const;
 
 /**
