@@ -21,7 +21,10 @@ import {
 } from "./issue-filtering.js";
 import { IssueVetter } from "./issue-vetting.js";
 import { extractRepoFromUrl, sleep } from "./utils.js";
-import { getSearchBudgetTracker } from "./search-budget.js";
+import {
+  getSearchBudgetTracker,
+  type SearchBudgetTracker,
+} from "./search-budget.js";
 
 const MODULE = "search-phases";
 
@@ -117,6 +120,10 @@ export async function cachedSearchIssues(
     order: "asc" | "desc";
     per_page: number;
   },
+  // Optional injected budget tracker. Defaults to the shared singleton so
+  // existing callers keep the exact same global budget accounting; a host
+  // serving concurrent searches can inject a per-search tracker for isolation.
+  tracker: SearchBudgetTracker = getSearchBudgetTracker(),
 ): Promise<{ total_count: number; items: GitHubSearchItem[] }> {
   const cacheKey = versionedCacheKey(
     `search:${params.q}:${params.sort}:${params.order}:${params.per_page}`,
@@ -131,7 +138,6 @@ export async function cachedSearchIssues(
   }
 
   // Fetch from API
-  const tracker = getSearchBudgetTracker();
   await tracker.waitForBudget();
   let data: { total_count: number; items: GitHubSearchItem[] };
   try {
@@ -374,6 +380,7 @@ export async function searchWithChunkedLabels(
   reservedOps: number,
   buildQuery: (labelQuery: string) => string,
   perPage: number,
+  tracker: SearchBudgetTracker = getSearchBudgetTracker(),
 ): Promise<GitHubSearchItem[]> {
   const labelChunks = chunkLabels(labels, reservedOps);
   const seenUrls = new Set<string>();
@@ -383,12 +390,16 @@ export async function searchWithChunkedLabels(
     if (i > 0) await sleep(INTER_QUERY_DELAY_MS);
 
     const query = buildQuery(buildLabelQuery(labelChunks[i]));
-    const data = await cachedSearchIssues(octokit, {
-      q: query,
-      sort: "created",
-      order: "desc",
-      per_page: perPage,
-    });
+    const data = await cachedSearchIssues(
+      octokit,
+      {
+        q: query,
+        sort: "created",
+        order: "desc",
+        per_page: perPage,
+      },
+      tracker,
+    );
 
     for (const item of data.items) {
       if (!seenUrls.has(item.html_url)) {
@@ -441,6 +452,7 @@ export async function searchAcrossLanguagesAndLabels(
   labels: string[],
   buildBaseQuery: (langQuery: string) => string,
   perPage: number,
+  tracker: SearchBudgetTracker = getSearchBudgetTracker(),
 ): Promise<GitHubSearchItem[]> {
   const langVariants = buildLanguageVariants(
     languages,
@@ -461,6 +473,7 @@ export async function searchAcrossLanguagesAndLabels(
           .replace(/  +/g, " ")
           .trim(),
       perPage,
+      tracker,
     );
     for (const item of items) {
       if (!seenUrls.has(item.html_url)) {

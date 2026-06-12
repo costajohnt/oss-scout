@@ -243,6 +243,17 @@ function makeDiscovery(
   );
 }
 
+/** Minimal SearchBudgetTracker stand-in for injection assertions. */
+function makeFakeTracker() {
+  return {
+    init: vi.fn(),
+    recordCall: vi.fn(),
+    getTotalCalls: vi.fn(() => 7),
+    canAfford: vi.fn(() => true),
+    waitForBudget: vi.fn().mockResolvedValue(undefined),
+  };
+}
+
 // ── Tests ──────────────────────────────────────────────────────────
 
 describe("IssueDiscovery", () => {
@@ -1068,6 +1079,62 @@ describe("IssueDiscovery", () => {
 
       // Phase 2 should have run (searchWithChunkedLabels called)
       expect(mockSearchAcrossLanguagesAndLabels).toHaveBeenCalled();
+    });
+  });
+
+  describe("budget tracker injection (#156)", () => {
+    it("uses an injected tracker instead of the shared singleton", async () => {
+      const item: GitHubSearchItem = {
+        html_url: "https://github.com/broad/repo/issues/1",
+        repository_url: "https://api.github.com/repos/broad/repo",
+        updated_at: "2026-01-01T00:00:00Z",
+      };
+      mockSearchAcrossLanguagesAndLabels.mockResolvedValue([item]);
+      mockFilterVetAndScore.mockResolvedValue({
+        candidates: [makeCandidate("broad/repo", "normal")],
+        allVetFailed: false,
+        rateLimitHit: false,
+      });
+
+      const tracker = makeFakeTracker();
+      const discovery = new IssueDiscovery(
+        "test-token",
+        makePreferences(),
+        makeStateReader(),
+        tracker,
+      );
+      await discovery.searchIssues({ maxResults: 5 });
+
+      // Pre-flight init() ran on the injected instance, not the singleton.
+      expect(tracker.init).toHaveBeenCalledOnce();
+
+      // The same instance is threaded into the search-phases helper as its
+      // trailing argument, so concurrent searches no longer share budget state.
+      const phaseCall = mockSearchAcrossLanguagesAndLabels.mock.calls.at(-1)!;
+      expect(phaseCall.at(-1)).toBe(tracker);
+    });
+
+    it("falls back to the shared singleton when no tracker is injected", async () => {
+      mockSearchAcrossLanguagesAndLabels.mockResolvedValue([
+        {
+          html_url: "https://github.com/broad/repo/issues/1",
+          repository_url: "https://api.github.com/repos/broad/repo",
+          updated_at: "2026-01-01T00:00:00Z",
+        } as GitHubSearchItem,
+      ]);
+      mockFilterVetAndScore.mockResolvedValue({
+        candidates: [makeCandidate("broad/repo", "normal")],
+        allVetFailed: false,
+        rateLimitHit: false,
+      });
+
+      const discovery = makeDiscovery();
+      await discovery.searchIssues({ maxResults: 5 });
+
+      // Default path threads the mocked singleton (a defined tracker object),
+      // never undefined, into the search-phases helper.
+      const phaseCall = mockSearchAcrossLanguagesAndLabels.mock.calls.at(-1)!;
+      expect(phaseCall.at(-1)).toBeDefined();
     });
   });
 });
