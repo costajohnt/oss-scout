@@ -548,6 +548,28 @@ export class IssueDiscovery {
     const phaseErrors: Record<string, string | null> = {};
     let rateLimitHitDuringSearch = false;
 
+    // The standard inter-phase pause for rate-limit management. Phases 1, 2,
+    // and 3 all apply this identical delay before querying (Phase 0 is first,
+    // so it never waits). The broad phase wraps this with an extra cooldown.
+    const applyInterPhaseDelay = async (): Promise<void> => {
+      if (interPhaseDelay > 0) {
+        info(
+          MODULE,
+          `Waiting ${(interPhaseDelay / 1000).toFixed(0)}s between phases for rate limit management...`,
+        );
+        await sleep(interPhaseDelay);
+      }
+    };
+
+    // Fold a phase's result into the running totals. Every phase accumulates
+    // candidates, records its error under a stable key, and flips the
+    // rate-limit flag the same way; only the key and the result differ.
+    const recordPhaseResult = (key: string, result: PhaseResult): void => {
+      allCandidates.push(...result.candidates);
+      phaseErrors[key] = result.error;
+      if (result.rateLimitHit) rateLimitHitDuringSearch = true;
+    };
+
     // Pre-flight rate limit check
     this.rateLimitWarning = null;
     const tracker = getSearchBudgetTracker();
@@ -657,9 +679,7 @@ export class IssueDiscovery {
           remaining,
           filterIssues,
         );
-        allCandidates.push(...result.candidates);
-        phaseErrors["0"] = result.error;
-        if (result.rateLimitHit) rateLimitHitDuringSearch = true;
+        recordPhaseResult("0", result);
       }
       strategiesUsed.push("merged");
     }
@@ -671,13 +691,7 @@ export class IssueDiscovery {
       searchBudget >= CRITICAL_BUDGET_THRESHOLD &&
       enabledStrategies.has("starred")
     ) {
-      if (interPhaseDelay > 0) {
-        info(
-          MODULE,
-          `Waiting ${(interPhaseDelay / 1000).toFixed(0)}s between phases for rate limit management...`,
-        );
-        await sleep(interPhaseDelay);
-      }
+      await applyInterPhaseDelay();
       const reposToSearch = starredRepos.filter((r) => !phase0RepoSet.has(r));
       if (reposToSearch.length > 0) {
         const remaining = maxResults - allCandidates.length;
@@ -690,9 +704,7 @@ export class IssueDiscovery {
             remaining,
             filterIssues,
           );
-          allCandidates.push(...result.candidates);
-          phaseErrors["1"] = result.error;
-          if (result.rateLimitHit) rateLimitHitDuringSearch = true;
+          recordPhaseResult("1", result);
           // Recorded only when the phase actually queried (#130)
           strategiesUsed.push("starred");
         }
@@ -725,13 +737,7 @@ export class IssueDiscovery {
         );
       } else {
         // Always apply baseline inter-phase delay
-        if (interPhaseDelay > 0) {
-          info(
-            MODULE,
-            `Waiting ${(interPhaseDelay / 1000).toFixed(0)}s between phases for rate limit management...`,
-          );
-          await sleep(interPhaseDelay);
-        }
+        await applyInterPhaseDelay();
 
         // Apply additional broad-phase cooldown, but skip if previous phases found nothing
         if (allCandidates.length > 0 && broadDelay > 0) {
@@ -763,9 +769,7 @@ export class IssueDiscovery {
           allCandidates,
           filterIssues,
         );
-        allCandidates.push(...result.candidates);
-        phaseErrors["2"] = result.error;
-        if (result.rateLimitHit) rateLimitHitDuringSearch = true;
+        recordPhaseResult("2", result);
         // Recorded only when the phase actually queried, not when the
         // skip-threshold branch short-circuited it (#130)
         strategiesUsed.push("broad");
@@ -778,13 +782,7 @@ export class IssueDiscovery {
       searchBudget >= LOW_BUDGET_THRESHOLD &&
       enabledStrategies.has("maintained")
     ) {
-      if (interPhaseDelay > 0) {
-        info(
-          MODULE,
-          `Waiting ${(interPhaseDelay / 1000).toFixed(0)}s between phases for rate limit management...`,
-        );
-        await sleep(interPhaseDelay);
-      }
+      await applyInterPhaseDelay();
       const remaining = maxResults - allCandidates.length;
       const result = await runPhase3(
         this.octokit,
@@ -799,9 +797,7 @@ export class IssueDiscovery {
         allCandidates,
         filterIssues,
       );
-      allCandidates.push(...result.candidates);
-      phaseErrors["3"] = result.error;
-      if (result.rateLimitHit) rateLimitHitDuringSearch = true;
+      recordPhaseResult("3", result);
       strategiesUsed.push("maintained");
     }
 
