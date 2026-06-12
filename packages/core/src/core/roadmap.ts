@@ -12,10 +12,7 @@
  */
 
 import type { Octokit } from "@octokit/rest";
-import { errorMessage, getHttpStatusCode, rethrowIfFatal } from "./errors.js";
-import { warn } from "./logger.js";
-
-const MODULE = "roadmap";
+import { probeRepoFile } from "./probe-repo-file.js";
 
 /** TTL for roadmap fetch results (1 hour). */
 const CACHE_TTL_MS = 60 * 60 * 1000;
@@ -144,24 +141,15 @@ async function fetchRoadmapIssueRefsUncached(
   cacheKey: string,
 ): Promise<Set<number>> {
   for (const path of ROADMAP_PATHS) {
-    try {
-      const { data } = await octokit.repos.getContent({ owner, repo, path });
-      if (!("content" in data)) continue;
-      const content = Buffer.from(data.content, "base64").toString("utf-8");
-      const refs = parseRoadmapIssueRefs(content, owner, repo);
-      roadmapCache.set(cacheKey, { refs, fetchedAt: Date.now() });
-      pruneCache();
-      return refs;
-    } catch (err: unknown) {
-      rethrowIfFatal(err);
-      const status = getHttpStatusCode(err);
-      if (status === 404) continue; // path missing — try next
-      warn(
-        MODULE,
-        `Unexpected error fetching ${path} from ${owner}/${repo}: ${errorMessage(err)}`,
-      );
-      // Fall through and try next path.
-    }
+    // probeRepoFile rethrows 401/rate-limit, treats 404 and non-content
+    // payloads as a null text, and warns on 5xx — all of which we degrade past
+    // by trying the next path.
+    const { text } = await probeRepoFile(octokit, owner, repo, path);
+    if (!text) continue;
+    const refs = parseRoadmapIssueRefs(text, owner, repo);
+    roadmapCache.set(cacheKey, { refs, fetchedAt: Date.now() });
+    pruneCache();
+    return refs;
   }
 
   // No roadmap found (or all probes errored softly). Cache the empty result

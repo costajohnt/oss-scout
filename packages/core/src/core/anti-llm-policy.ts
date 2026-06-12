@@ -9,17 +9,10 @@
  */
 
 import { Octokit } from "@octokit/rest";
-import {
-  errorMessage,
-  getHttpStatusCode,
-  isRateLimitError,
-  rethrowIfFatal,
-} from "./errors.js";
-import { warn } from "./logger.js";
+import { getHttpStatusCode, isRateLimitError } from "./errors.js";
 import { getHttpCache, versionedCacheKey } from "./http-cache.js";
+import { probeRepoFile } from "./probe-repo-file.js";
 import type { AntiLLMPolicyResult, AntiLLMPolicySourceFile } from "./types.js";
-
-const MODULE = "anti-llm-policy";
 
 /** TTL for cached anti-LLM policy scan results (1 hour). Policy docs change rarely. */
 const POLICY_SCAN_CACHE_TTL_MS = 60 * 60 * 1000;
@@ -107,39 +100,6 @@ const SOURCE_FILE_FAMILIES: ReadonlyArray<{
 ];
 
 /**
- * Fetch one path's raw text content. The `transient` flag distinguishes a
- * clean miss (404 — file absent) from a degraded miss (5xx, network) so the
- * caller can decide whether to cache "no policy" or retry. Throws on
- * 401/auth and rate-limit per documented project error strategy.
- */
-async function fetchFileText(
-  octokit: Octokit,
-  owner: string,
-  repo: string,
-  path: string,
-): Promise<{ text: string | null; transient: boolean }> {
-  try {
-    const { data } = await octokit.repos.getContent({ owner, repo, path });
-    if ("content" in data && typeof data.content === "string") {
-      return {
-        text: Buffer.from(data.content, "base64").toString("utf-8"),
-        transient: false,
-      };
-    }
-    return { text: null, transient: false };
-  } catch (error) {
-    const status = getHttpStatusCode(error);
-    if (status === 404) return { text: null, transient: false };
-    rethrowIfFatal(error);
-    warn(
-      MODULE,
-      `Unexpected error fetching ${path} from ${owner}/${repo}: ${errorMessage(error)}`,
-    );
-    return { text: null, transient: true };
-  }
-}
-
-/**
  * Result of probing one source-file family. `hadTransientFailure` lets the
  * caller decide whether to skip caching a "no match" result that may have
  * been incomplete due to a 5xx / network blip.
@@ -161,7 +121,7 @@ async function fetchFamilyText(
   paths: readonly string[],
 ): Promise<FamilyFetchResult> {
   const results = await Promise.allSettled(
-    paths.map((p) => fetchFileText(octokit, owner, repo, p)),
+    paths.map((p) => probeRepoFile(octokit, owner, repo, p)),
   );
   let hadTransientFailure = false;
   for (const result of results) {
