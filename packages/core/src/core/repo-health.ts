@@ -16,6 +16,7 @@ import {
 } from "./errors.js";
 import { warn } from "./logger.js";
 import { getHttpCache, cachedRequest, cachedTimeBased } from "./http-cache.js";
+import { probeRepoFile } from "./probe-repo-file.js";
 
 const MODULE = "repo-health";
 
@@ -194,16 +195,12 @@ async function fetchContributionGuidelinesUncached(
     "contributing.md",
   ];
 
-  // Probe all paths in parallel — take the first success in priority order
+  // Probe all paths in parallel — take the first success in priority order.
+  // probeRepoFile rethrows 401/rate-limit, so those still surface here as
+  // rejected results for the pre-scan below; 404s and 5xx come back as a null
+  // text (the primitive warns on 5xx, so no extra warn is needed here).
   const results = await Promise.allSettled(
-    filesToCheck.map((file) =>
-      octokit.repos.getContent({ owner, repo, path: file }).then(({ data }) => {
-        if ("content" in data) {
-          return Buffer.from(data.content, "base64").toString("utf-8");
-        }
-        return null;
-      }),
-    ),
+    filesToCheck.map((file) => probeRepoFile(octokit, owner, repo, file)),
   );
 
   // Pre-scan: auth/rate-limit must propagate even if a faster probe succeeded —
@@ -219,22 +216,12 @@ async function fetchContributionGuidelinesUncached(
     }
   }
 
-  for (let i = 0; i < results.length; i++) {
-    const result = results[i];
-    if (result.status === "fulfilled" && result.value) {
-      const guidelines = parseContributionGuidelines(result.value);
+  for (const result of results) {
+    if (result.status === "fulfilled" && result.value.text) {
+      const guidelines = parseContributionGuidelines(result.value.text);
       guidelinesCache.set(cacheKey, { guidelines, fetchedAt: Date.now() });
       pruneCache();
       return guidelines;
-    }
-    if (result.status === "rejected") {
-      const status = getHttpStatusCode(result.reason);
-      if (status !== 404) {
-        warn(
-          MODULE,
-          `Unexpected error fetching ${filesToCheck[i]} from ${owner}/${repo}: ${errorMessage(result.reason)}`,
-        );
-      }
     }
   }
 
