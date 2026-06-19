@@ -513,6 +513,39 @@ describe("fetchIssuesFromKnownRepos", () => {
     expect(vetter.vetIssuesParallel).toHaveBeenCalledTimes(2);
   });
 
+  it("defaults to per_page 5 and honors an explicit perPage", async () => {
+    const octokitDefault = makeMockOctokitWithRest([]);
+    await fetchIssuesFromKnownRepos(
+      octokitDefault,
+      makeMockVetter([]),
+      ["a/b"],
+      [],
+      10,
+      "merged_pr",
+      (items) => items,
+    );
+    expect(
+      (octokitDefault as unknown as { issues: { listForRepo: ReturnType<typeof vi.fn> } })
+        .issues.listForRepo,
+    ).toHaveBeenCalledWith(expect.objectContaining({ per_page: 5 }));
+
+    const octokitDeep = makeMockOctokitWithRest([]);
+    await fetchIssuesFromKnownRepos(
+      octokitDeep,
+      makeMockVetter([]),
+      ["a/b"],
+      [],
+      10,
+      "merged_pr",
+      (items) => items,
+      30,
+    );
+    expect(
+      (octokitDeep as unknown as { issues: { listForRepo: ReturnType<typeof vi.fn> } })
+        .issues.listForRepo,
+    ).toHaveBeenCalledWith(expect.objectContaining({ per_page: 30 }));
+  });
+
   it("handles empty results", async () => {
     const octokit = makeMockOctokitWithRest([]);
     const vetter = makeMockVetter([]);

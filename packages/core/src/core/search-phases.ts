@@ -259,6 +259,7 @@ export async function fetchIssuesFromKnownRepos(
   maxResults: number,
   priority: SearchPriority,
   filterFn: (items: GitHubSearchItem[]) => GitHubSearchItem[],
+  perPage = 5,
 ): Promise<{
   candidates: IssueCandidate[];
   allReposFailed: boolean;
@@ -295,7 +296,7 @@ export async function fetchIssuesFromKnownRepos(
           state: "open",
           sort: "created",
           direction: "desc",
-          per_page: 5,
+          per_page: perPage,
           ...(label !== undefined ? { labels: label } : {}),
         });
         for (const issue of response.data) {
