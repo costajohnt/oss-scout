@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.0](https://github.com/costajohnt/oss-scout/compare/core-v1.1.0...core-v1.2.0) (2026-06-19)
+
+
+### Features
+
+* broaden contributed-repo discovery depth and age window ([#244](https://github.com/costajohnt/oss-scout/issues/244)) ([1ef851a](https://github.com/costajohnt/oss-scout/commit/1ef851a99a8e1c64eb1f7155ccd1c1354be5436b))
+
 ## [1.1.0](https://github.com/costajohnt/oss-scout/compare/core-v1.0.0...core-v1.1.0) (2026-06-12)
 
 
