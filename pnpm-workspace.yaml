@@ -3,3 +3,20 @@ packages:
 
 onlyBuiltDependencies:
   - esbuild
+
+# Security overrides for transitive CVEs. These live here, not in package.json
+# `pnpm.overrides`, because pnpm v10 no longer reads the `pnpm` field ("The
+# 'pnpm' field in package.json is no longer read by pnpm... keys ignored:
+# pnpm.overrides"), which had silently deactivated the pins.
+overrides:
+  # Dev-only, transitive via packages/core -> vite. `server.fs.deny` bypass on
+  # Windows alternate paths (high). Patched in 8.0.16.
+  vite: '>=8.0.16'
+  # Transitive via packages/mcp-server -> @modelcontextprotocol/sdk -> hono.
+  # CORS middleware wildcard-with-credentials reflection (high). Patched in
+  # 4.12.25.
+  hono: '>=4.12.25'
+  # Transitive via @modelcontextprotocol/sdk. Pinned alongside hono.
+  '@hono/node-server': '>=1.19.13'
+  # Transitive via @modelcontextprotocol/sdk -> ajv. Path-traversal advisory.
+  fast-uri: '>=3.1.2'
