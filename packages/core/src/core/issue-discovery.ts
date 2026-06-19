@@ -68,6 +68,22 @@ const LOW_BUDGET_THRESHOLD = 20;
 /** If remaining search quota is below this, only run Phase 0. */
 const CRITICAL_BUDGET_THRESHOLD = 10;
 
+/**
+ * Page size for Phase 0 (repos the user has contributed to). Larger than the
+ * default 5 so the backlog of open issues in known repos is reachable, not
+ * just the 5 newest-created. One `listForRepo` call regardless of page size,
+ * so this widens the candidate pool at no extra REST cost.
+ */
+const PHASE0_PER_PAGE = 30;
+
+/**
+ * Max issue age (by last activity) for Phase 0 contributed repos. Relaxed well
+ * past the default `maxIssueAgeDays` (90) because in a repo the user already
+ * knows, an older-but-still-open issue is still worth evaluating — the vetter
+ * screens staleness, existing PRs, and claims downstream.
+ */
+const CONTRIBUTED_REPO_MAX_AGE_DAYS = 365;
+
 // ── Extracted types and standalone functions ──────────────────────────
 
 /** Result from a single search phase. */
@@ -127,7 +143,7 @@ async function runPhase0(
 ): Promise<PhaseResult> {
   info(
     MODULE,
-    `Phase 0: Searching issues in ${repos.length} merged-PR repos (no label filter)...`,
+    `Phase 0: Searching issues in ${repos.length} merged-PR repos (no label filter, ${PHASE0_PER_PAGE}/repo)...`,
   );
 
   const { candidates, allReposFailed, rateLimitHit } =
@@ -139,6 +155,7 @@ async function runPhase0(
       maxResults,
       "merged_pr",
       filterIssues,
+      PHASE0_PER_PAGE,
     );
 
   info(MODULE, `Found ${candidates.length} candidates from merged-PR repos`);
@@ -667,17 +684,26 @@ export class IssueDiscovery {
         `[AI_POLICY_FILTER] Filtering issues from ${aiBlocklisted.size} blocklisted repo(s): ${[...aiBlocklisted].join(", ")}`,
       );
     }
-    const filterIssues = buildIssueFilter({
+    const baseFilterConfig = {
       excludedRepos: new Set(config.excludeRepos.map((r) => r.toLowerCase())),
       excludeOrgs: new Set(
         (config.excludeOrgs ?? []).map((o) => o.toLowerCase()),
       ),
       aiBlocklisted,
       lowScoringRepos,
-      skippedUrls: options.skippedUrls ?? new Set(),
-      maxAgeDays: config.maxIssueAgeDays || 90,
+      skippedUrls: options.skippedUrls ?? new Set<string>(),
       now: new Date(),
       includeDocIssues: config.includeDocIssues ?? true,
+    };
+    const filterIssues = buildIssueFilter({
+      ...baseFilterConfig,
+      maxAgeDays: config.maxIssueAgeDays || 90,
+    });
+    // Phase 0 (contributed repos) gets a relaxed age window so the existing
+    // backlog surfaces, not just issues active in the last 90 days.
+    const filterIssuesPhase0 = buildIssueFilter({
+      ...baseFilterConfig,
+      maxAgeDays: CONTRIBUTED_REPO_MAX_AGE_DAYS,
     });
 
     // Phase 0: Repos the user has engaged with — merged PRs first (strongest
@@ -701,7 +727,7 @@ export class IssueDiscovery {
           this.vetter,
           phase0Repos,
           remaining,
-          filterIssues,
+          filterIssuesPhase0,
         );
         recordPhaseResult("0", result);
       }

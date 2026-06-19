@@ -137,7 +137,7 @@ vi.mock("./search-phases.js", () => ({
 import { IssueDiscovery } from "./issue-discovery.js";
 import { checkRateLimit } from "./github.js";
 import { applyPerRepoCap } from "./issue-filtering.js";
-import { sleep } from "./utils.js";
+import { sleep, daysBetween } from "./utils.js";
 import type { ScoutStateReader } from "./issue-vetting.js";
 import type { ScoutPreferences } from "./schemas.js";
 
@@ -308,7 +308,56 @@ describe("IssueDiscovery", () => {
         expect.any(Number),
         "merged_pr",
         expect.any(Function),
+        30, // PHASE0_PER_PAGE — deeper than the default 5 so the backlog is reachable
       );
+    });
+
+    it("Phase 0: uses a relaxed age filter that admits issues older than the default 90-day cutoff", async () => {
+      const c = makeCandidate("org/merged-repo", "merged_pr");
+      mockFetchIssuesFromKnownRepos.mockResolvedValue({
+        candidates: [c],
+        allReposFailed: false,
+        rateLimitHit: false,
+      });
+
+      const discovery = makeDiscovery({
+        getReposWithMergedPRs: vi.fn(() => ["org/merged-repo"]),
+      });
+
+      await discovery.searchIssues({ maxResults: 5 });
+
+      // The 7th positional arg is the filter function passed to Phase 0.
+      const phase0Filter = mockFetchIssuesFromKnownRepos.mock.calls[0][6] as (
+        items: GitHubSearchItem[],
+      ) => GitHubSearchItem[];
+
+      // utils.daysBetween is globally stubbed to 5 in this file; use the real
+      // day math so the age window is actually exercised, then restore.
+      vi.mocked(daysBetween).mockImplementation(
+        (from: Date, to: Date = new Date()) =>
+          Math.max(
+            0,
+            Math.floor((to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24)),
+          ),
+      );
+      try {
+        const daysAgo = (n: number): string =>
+          new Date(Date.now() - n * 24 * 60 * 60 * 1000).toISOString();
+        const item = (updatedAt: string): GitHubSearchItem => ({
+          html_url: "https://github.com/org/merged-repo/issues/1",
+          repository_url: "https://api.github.com/repos/org/merged-repo",
+          updated_at: updatedAt,
+          title: "An older but still-open issue",
+          labels: [],
+        });
+
+        // 150 days old: rejected by the default 90-day filter, admitted by Phase 0.
+        expect(phase0Filter([item(daysAgo(150))])).toHaveLength(1);
+        // Beyond the relaxed 365-day window it is still excluded.
+        expect(phase0Filter([item(daysAgo(400))])).toHaveLength(0);
+      } finally {
+        vi.mocked(daysBetween).mockReturnValue(5);
+      }
     });
 
     it("Phase 0: unions merged-PR and open-PR repos, deduped, merged first", async () => {
