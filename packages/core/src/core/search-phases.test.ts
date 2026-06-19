@@ -525,8 +525,11 @@ describe("fetchIssuesFromKnownRepos", () => {
       (items) => items,
     );
     expect(
-      (octokitDefault as unknown as { issues: { listForRepo: ReturnType<typeof vi.fn> } })
-        .issues.listForRepo,
+      (
+        octokitDefault as unknown as {
+          issues: { listForRepo: ReturnType<typeof vi.fn> };
+        }
+      ).issues.listForRepo,
     ).toHaveBeenCalledWith(expect.objectContaining({ per_page: 5 }));
 
     const octokitDeep = makeMockOctokitWithRest([]);
@@ -541,8 +544,11 @@ describe("fetchIssuesFromKnownRepos", () => {
       30,
     );
     expect(
-      (octokitDeep as unknown as { issues: { listForRepo: ReturnType<typeof vi.fn> } })
-        .issues.listForRepo,
+      (
+        octokitDeep as unknown as {
+          issues: { listForRepo: ReturnType<typeof vi.fn> };
+        }
+      ).issues.listForRepo,
     ).toHaveBeenCalledWith(expect.objectContaining({ per_page: 30 }));
   });
 
