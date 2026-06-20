@@ -84,6 +84,16 @@ const PHASE0_PER_PAGE = 30;
  */
 const CONTRIBUTED_REPO_MAX_AGE_DAYS = 365;
 
+/**
+ * Cap on Phase 0's share of `maxResults`. Phase 0 (contributed repos) fetches
+ * deeply (`PHASE0_PER_PAGE`) and can otherwise fill the entire result budget,
+ * which makes the `allCandidates.length < maxResults` gate false for every
+ * later phase so starred (Phase 1) and broad (Phases 2/3) never run. Reserving
+ * half the budget for the other strategies keeps each search round varied
+ * instead of returning only contributed-repo results.
+ */
+const PHASE0_MAX_SHARE = 0.5;
+
 // ── Extracted types and standalone functions ──────────────────────────
 
 /** Result from a single search phase. */
@@ -719,8 +729,21 @@ export class IssueDiscovery {
     }
     const phase0RepoSet = new Set(phase0Repos);
 
+    // Only cap Phase 0 when a later phase can actually consume the reserved
+    // budget — otherwise (no starred repos, broad/maintained disabled) the
+    // reservation would just shrink the result set with nothing to fill it.
+    const otherStrategiesCanRun =
+      (starredRepos.length > 0 && enabledStrategies.has("starred")) ||
+      enabledStrategies.has("broad") ||
+      enabledStrategies.has("maintained");
+
     if (phase0Repos.length > 0 && enabledStrategies.has("merged")) {
-      const remaining = maxResults - allCandidates.length;
+      // Cap Phase 0's share so it can't consume the whole budget and starve
+      // the starred/broad phases (which gate on allCandidates < maxResults).
+      const phase0Cap = otherStrategiesCanRun
+        ? Math.max(1, Math.ceil(maxResults * PHASE0_MAX_SHARE))
+        : maxResults;
+      const remaining = Math.min(maxResults - allCandidates.length, phase0Cap);
       if (remaining > 0) {
         const result = await runPhase0(
           this.octokit,
