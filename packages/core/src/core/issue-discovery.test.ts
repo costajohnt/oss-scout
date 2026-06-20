@@ -435,6 +435,78 @@ describe("IssueDiscovery", () => {
       expect(phase0Call![2].slice(0, 8)).toEqual(merged);
     });
 
+    it("caps Phase 0's share of maxResults so starred (Phase 1) still runs", async () => {
+      // Regression: Phase 0 previously took the whole budget, so the
+      // `allCandidates < maxResults` gate skipped Phase 1 even when starred
+      // repos existed. Phase 0 is now capped at ceil(maxResults * 0.5).
+      // The Phase 0 mock returns AS MANY as requested, so without the cap it
+      // would fill maxResults and gate Phase 1 out — making this non-vacuous.
+      const maxResults = 10;
+      mockFetchIssuesFromKnownRepos.mockImplementation(
+        async (
+          _octokit: unknown,
+          _vetter: unknown,
+          _repos: unknown,
+          _labels: unknown,
+          reqMax: number,
+          priority: string,
+        ) => {
+          const candidates =
+            priority === "merged_pr"
+              ? Array.from({ length: reqMax }, (_, i) =>
+                  makeCandidate(`org/merged-${i}`, "merged_pr"),
+                )
+              : [makeCandidate("org/starred-repo", "starred")];
+          return { candidates, allReposFailed: false, rateLimitHit: false };
+        },
+      );
+
+      const discovery = makeDiscovery({
+        getReposWithMergedPRs: vi.fn(() => ["org/merged-repo"]),
+        getStarredRepos: vi.fn(() => ["org/starred-repo"]),
+      });
+
+      await discovery.searchIssues({ maxResults });
+
+      // Phase 0 (first call) was capped at ceil(10 * 0.5) = 5, not 10.
+      const phase0Call = mockFetchIssuesFromKnownRepos.mock.calls[0];
+      expect(phase0Call[5]).toBe("merged_pr");
+      expect(phase0Call[4]).toBe(5);
+      // Phase 0 returned its capped 5, leaving room, so Phase 1 (starred) ran.
+      // Without the cap Phase 0 would have returned 10 and gated Phase 1 out.
+      const phase1Call = mockFetchIssuesFromKnownRepos.mock.calls.find(
+        (call) => call[5] === "starred",
+      );
+      expect(phase1Call).toBeDefined();
+    });
+
+    it("does NOT cap Phase 0 when no other strategy can run (no under-fill)", async () => {
+      // A contributed-only user (no starred repos; broad/maintained disabled)
+      // must still get the full budget from Phase 0 — the cap only applies
+      // when a later phase can actually consume the reserved share.
+      const c = makeCandidate("org/merged-repo", "merged_pr");
+      mockFetchIssuesFromKnownRepos.mockResolvedValue({
+        candidates: [c],
+        allReposFailed: false,
+        rateLimitHit: false,
+      });
+
+      const discovery = makeDiscovery(
+        {
+          getReposWithMergedPRs: vi.fn(() => ["org/merged-repo"]),
+          getStarredRepos: vi.fn(() => []),
+        },
+        { defaultStrategy: ["merged"] },
+      );
+
+      await discovery.searchIssues({ maxResults: 10 });
+
+      // Phase 0 got the full budget (10), not the halved cap (5).
+      const phase0Call = mockFetchIssuesFromKnownRepos.mock.calls[0];
+      expect(phase0Call[5]).toBe("merged_pr");
+      expect(phase0Call[4]).toBe(10);
+    });
+
     it("Phase 1: excludes starred repos that are already searched as open-PR repos in Phase 0", async () => {
       const c = makeCandidate("org/shared", "merged_pr");
       mockFetchIssuesFromKnownRepos.mockResolvedValue({
