@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.1](https://github.com/costajohnt/oss-scout/compare/core-v1.2.0...core-v1.2.1) (2026-06-20)
+
+
+### Bug Fixes
+
+* cap Phase 0's budget share so starred/broad phases run again ([#246](https://github.com/costajohnt/oss-scout/issues/246)) ([5fba032](https://github.com/costajohnt/oss-scout/commit/5fba032d68e7ad43ef0aaba8bf0c9e928945fcb5))
+
 ## [1.2.0](https://github.com/costajohnt/oss-scout/compare/core-v1.1.0...core-v1.2.0) (2026-06-19)
 
 
