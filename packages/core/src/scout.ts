@@ -231,6 +231,19 @@ export class OssScout implements ScoutStateReader, ScoutStateWriter {
     const skippedUrls = new Set(
       (this.state.skippedIssues ?? []).map((s) => s.url),
     );
+
+    // Rotation (#249): also exclude issues surfaced by a recent search so
+    // consecutive searches return fresh candidates instead of the same set.
+    // Folded into the same exclusion set the issue filter already honors.
+    if (options?.excludeRecentlySurfaced ?? true) {
+      const ttlDays = options?.recentlySurfacedTtlDays ?? 7;
+      const cutoff = Date.now() - ttlDays * 24 * 60 * 60 * 1000;
+      for (const r of this.state.savedResults ?? []) {
+        const seen = Date.parse(r.lastSeenAt);
+        if (!Number.isNaN(seen) && seen >= cutoff) skippedUrls.add(r.issueUrl);
+      }
+    }
+
     const discovery = new IssueDiscovery(
       this.githubToken,
       this.state.preferences,
