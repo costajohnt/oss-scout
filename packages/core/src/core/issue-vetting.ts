@@ -170,6 +170,19 @@ export interface RecommendationInput {
    * instead of a competing-PR penalty.
    */
   ownPR: boolean;
+  /**
+   * The linked PR was already merged (#249 part B). The issue is effectively
+   * resolved, so it is a hard skip — surfacing it as a contribution
+   * opportunity is noise. Distinct from an open competing PR (which may be
+   * revivable). Defaults to false.
+   */
+  linkedPRMerged?: boolean;
+  /**
+   * The linked PR was closed without merging (#249 part B). The previous
+   * attempt was abandoned or rejected, so default to skip rather than
+   * re-surfacing it. Defaults to false.
+   */
+  linkedPRClosed?: boolean;
   notClaimed: boolean;
   clearRequirements: boolean;
   contributionGuidelinesFound: boolean;
@@ -215,7 +228,11 @@ export function deriveRecommendation(
     notes.push(
       input.ownPR
         ? "Your PR is already in flight for this issue"
-        : "Existing PR found for this issue",
+        : input.linkedPRMerged
+          ? "A PR for this issue was already merged"
+          : input.linkedPRClosed
+            ? "A PR for this issue was closed without merging"
+            : "Existing PR found for this issue",
     );
   if (!input.notClaimed) notes.push("Issue appears to be claimed by someone");
   if (input.existingPRInconclusive) {
@@ -240,10 +257,14 @@ export function deriveRecommendation(
     notes.push("No CONTRIBUTING.md found");
 
   // Reasons to skip / approve.
-  if (!input.noExistingPR)
-    reasonsToSkip.push(
-      input.ownPR ? "You already have a PR in flight" : "Has existing PR",
-    );
+  if (!input.noExistingPR) {
+    if (input.ownPR) reasonsToSkip.push("You already have a PR in flight");
+    else if (input.linkedPRMerged)
+      reasonsToSkip.push("Linked PR already merged");
+    else if (input.linkedPRClosed)
+      reasonsToSkip.push("Linked PR closed without merge");
+    else reasonsToSkip.push("Has existing PR");
+  }
   if (!input.notClaimed) reasonsToSkip.push("Already claimed");
   if (!input.projectIsActive && !input.projectCheckFailed)
     reasonsToSkip.push("Inactive project");
@@ -276,6 +297,12 @@ export function deriveRecommendation(
   // Recommendation.
   let recommendation: "approve" | "skip" | "needs_review";
   if (input.issueClosed) {
+    recommendation = "skip";
+  } else if (input.linkedPRMerged || input.linkedPRClosed) {
+    // The issue is resolved (merged) or its attempt was abandoned/rejected
+    // (closed) — a hard skip, not a revive opportunity (#249 part B). An OPEN
+    // competing PR is deliberately NOT caught here; it falls through to the
+    // existing competing-PR handling below.
     recommendation = "skip";
   } else if (input.ownPR) {
     // You're already working on this; don't re-surface it as competition.
@@ -435,6 +462,13 @@ export class IssueVetter {
       !linkedPR.merged &&
       username !== "" &&
       linkedPR.author.toLowerCase() === username.toLowerCase();
+    // Linked-PR lifecycle gate (#249 part B): a merged linked PR means the
+    // issue is resolved; a closed-unmerged one means the attempt was
+    // abandoned/rejected. Both are hard skips. (state === "closed" && merged
+    // is how buildLinkedPRFromTimelineEvent encodes a merged PR.)
+    const linkedPRMerged = !!linkedPR && linkedPR.merged;
+    const linkedPRClosed =
+      !!linkedPR && linkedPR.state === "closed" && !linkedPR.merged;
 
     // Analyze issue quality
     const clearRequirements = analyzeRequirements(core.body);
@@ -516,6 +550,8 @@ export class IssueVetter {
       deriveRecommendation({
         noExistingPR,
         ownPR,
+        linkedPRMerged,
+        linkedPRClosed,
         notClaimed,
         clearRequirements,
         contributionGuidelinesFound: !!contributionGuidelines,
