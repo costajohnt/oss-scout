@@ -103,4 +103,42 @@ describe("deriveRecommendation (#157)", () => {
       "Org affinity (merged PRs in other owner repos)",
     );
   });
+
+  // Linked-PR lifecycle gate (#249 part B).
+  it("skips an issue whose linked PR was already merged", () => {
+    const out = deriveRecommendation(
+      baseInput({
+        noExistingPR: false,
+        linkedPRMerged: true,
+        passedAllChecks: false,
+      }),
+    );
+    expect(out.recommendation).toBe("skip");
+    expect(out.reasonsToSkip).toContain("Linked PR already merged");
+    expect(out.reasonsToSkip).not.toContain("Has existing PR");
+    expect(out.notes).toContain("A PR for this issue was already merged");
+  });
+
+  it("skips an issue whose linked PR was closed without merging", () => {
+    const out = deriveRecommendation(
+      baseInput({
+        noExistingPR: false,
+        linkedPRClosed: true,
+        passedAllChecks: false,
+      }),
+    );
+    expect(out.recommendation).toBe("skip");
+    expect(out.reasonsToSkip).toContain("Linked PR closed without merge");
+    expect(out.reasonsToSkip).not.toContain("Has existing PR");
+  });
+
+  it("leaves an OPEN competing PR as needs_review, not a hard skip", () => {
+    // Regression guard: the merged/closed gate must NOT swallow open PRs,
+    // which remain revive opportunities surfaced for review.
+    const out = deriveRecommendation(
+      baseInput({ noExistingPR: false, passedAllChecks: false }),
+    );
+    expect(out.recommendation).toBe("needs_review");
+    expect(out.reasonsToSkip).toContain("Has existing PR");
+  });
 });
