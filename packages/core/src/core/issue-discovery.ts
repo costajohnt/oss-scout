@@ -802,11 +802,20 @@ export class IssueDiscovery {
       searchBudget >= LOW_BUDGET_THRESHOLD &&
       enabledStrategies.has("broad")
     ) {
-      // Skip broad search if we already have enough candidates
-      if (skipThreshold > 0 && allCandidates.length >= skipThreshold) {
+      // Skip broad search only if we already have enough candidates from NEW
+      // repos. Phases 0/1 only ever search the user's affinity + starred repos,
+      // so counting their candidates here would gate off the broad phase — the
+      // one phase that surfaces repos the user hasn't touched. Counting
+      // only new-repo candidates keeps "sufficient results" meaning "enough NEW
+      // work", not "we re-found issues in the same repos".
+      const newRepoCandidateCount = allCandidates.filter(
+        (c) =>
+          !phase0RepoSet.has(c.issue.repo) && !starredRepoSet.has(c.issue.repo),
+      ).length;
+      if (skipThreshold > 0 && newRepoCandidateCount >= skipThreshold) {
         info(
           MODULE,
-          `Skipping broad search: already found ${allCandidates.length} candidates (threshold: ${skipThreshold})`,
+          `Skipping broad search: already found ${newRepoCandidateCount} candidate(s) from new repos (threshold: ${skipThreshold})`,
         );
       } else {
         // Always apply baseline inter-phase delay

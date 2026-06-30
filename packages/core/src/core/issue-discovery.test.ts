@@ -1018,20 +1018,23 @@ describe("IssueDiscovery", () => {
   });
 
   describe("searchIssues — broad phase delay/skip logic", () => {
-    it("skips Phase 2 when allCandidates >= skipBroadWhenSufficientResults", async () => {
-      // Phase 0 returns enough candidates to exceed the skip threshold
-      const candidates = Array.from({ length: 15 }, (_, i) =>
-        makeCandidate(`org/repo-${i}`, "merged_pr"),
+    it("runs Phase 2 when phases 0/1 found candidates only in affinity repos", async () => {
+      // Phase 0 returns 15 candidates, all from the user's own merged-PR repos.
+      // These must NOT gate off the broad phase — otherwise an affinity-heavy
+      // user never discovers new repos (broad is the only phase that does).
+      const affinityRepos = Array.from(
+        { length: 15 },
+        (_, i) => `org/affinity-${i}`,
       );
       mockFetchIssuesFromKnownRepos.mockResolvedValue({
-        candidates,
+        candidates: affinityRepos.map((r) => makeCandidate(r, "merged_pr")),
         allReposFailed: false,
         rateLimitHit: false,
       });
       vi.mocked(applyPerRepoCap).mockImplementation((c) => c);
 
       const discovery = makeDiscovery(
-        { getReposWithMergedPRs: vi.fn(() => ["org/repo-0"]) },
+        { getReposWithMergedPRs: vi.fn(() => affinityRepos) },
         { skipBroadWhenSufficientResults: 15 },
       );
 
@@ -1039,8 +1042,34 @@ describe("IssueDiscovery", () => {
         maxResults: 20,
       });
 
-      // Phase 2 body short-circuited by the skip threshold: no broad query
-      // ran, so "broad" must NOT be reported as used (#130)
+      expect(strategiesUsed).toContain("broad");
+      expect(mockSearchAcrossLanguagesAndLabels).toHaveBeenCalled();
+    });
+
+    it("skips Phase 2 once enough candidates come from NEW repos", async () => {
+      // The skip gate still fires, but only on candidates from repos outside the
+      // user's affinity + starred sets. (Phase 0 searches "org/seed" here while
+      // the candidates come from fresh repos — a mock decoupling that exercises
+      // the gate; in normal flow new-repo candidates only appear via the broad
+      // phase itself.)
+      const freshRepos = Array.from({ length: 15 }, (_, i) => `org/fresh-${i}`);
+      mockFetchIssuesFromKnownRepos.mockResolvedValue({
+        candidates: freshRepos.map((r) => makeCandidate(r, "merged_pr")),
+        allReposFailed: false,
+        rateLimitHit: false,
+      });
+      vi.mocked(applyPerRepoCap).mockImplementation((c) => c);
+
+      const discovery = makeDiscovery(
+        { getReposWithMergedPRs: vi.fn(() => ["org/seed"]) },
+        { skipBroadWhenSufficientResults: 15 },
+      );
+
+      const { strategiesUsed } = await discovery.searchIssues({
+        maxResults: 20,
+      });
+
+      // No broad query ran, so "broad" must NOT be reported as used (#130)
       expect(strategiesUsed).not.toContain("broad");
       expect(mockSearchAcrossLanguagesAndLabels).not.toHaveBeenCalled();
     });
@@ -1155,9 +1184,10 @@ describe("IssueDiscovery", () => {
     });
 
     it("clamps an unsatisfiable threshold to maxResults - 1 (old persisted default 15 vs maxResults 10)", async () => {
-      // 9 candidates from Phase 0: under maxResults (10), so Phase 2's gate
-      // is open; threshold 15 would never fire unclamped, but clamped to 9
-      // it skips the broad phase.
+      // 9 new-repo candidates: under maxResults (10), so Phase 2's gate is open;
+      // threshold 15 would never fire unclamped, but clamped to 9 it skips the
+      // broad phase. Phase 0 seeds an unrelated affinity repo, so all 9
+      // candidates count as "new" toward the skip gate.
       const candidates = Array.from({ length: 9 }, (_, i) =>
         makeCandidate(`org/clamp-${i}`, "merged_pr"),
       );
@@ -1169,7 +1199,7 @@ describe("IssueDiscovery", () => {
       vi.mocked(applyPerRepoCap).mockImplementation((c) => c);
 
       const discovery = makeDiscovery(
-        { getReposWithMergedPRs: vi.fn(() => ["org/clamp-0"]) },
+        { getReposWithMergedPRs: vi.fn(() => ["org/seed"]) },
         { skipBroadWhenSufficientResults: 15 },
       );
 
