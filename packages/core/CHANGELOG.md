@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.4](https://github.com/costajohnt/oss-scout/compare/core-v1.2.3...core-v1.2.4) (2026-06-30)
+
+
+### Bug Fixes
+
+* **discovery:** count only new-repo candidates toward the broad-phase skip ([#254](https://github.com/costajohnt/oss-scout/issues/254)) ([cb7396e](https://github.com/costajohnt/oss-scout/commit/cb7396ef4d4bb5e00ed121fc792c612617fc0842))
+
 ## [1.2.3](https://github.com/costajohnt/oss-scout/compare/core-v1.2.2...core-v1.2.3) (2026-06-29)
 
 
