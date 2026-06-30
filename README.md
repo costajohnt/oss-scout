@@ -248,7 +248,7 @@ oss-scout config reset                               # reset to defaults
 | `defaultStrategy` | enum[] | all | Default search strategies: merged, starred, broad, maintained |
 | `interPhaseDelayMs` | number | 30000 | Delay between search phases (rate-limit pacing) |
 | `broadPhaseDelayMs` | number | 90000 | Extra delay before the broad phase |
-| `skipBroadWhenSufficientResults` | number | 8 | Skip the broad phase once this many candidates are found (0 disables) |
+| `skipBroadWhenSufficientResults` | number | 8 | Skip the broad phase once this many candidates from **new** repos are found (0 disables). Candidates from your affinity (Phase 0) and starred (Phase 1) repos do not count, so the broad phase still runs to surface repos you haven't contributed to. |
 | `persistence` | enum | local | State storage: local or gist |
 | `preferLanguages` | string[] | [] | Soft-boost ranking for these repo languages (the `--prefer-languages` flag overrides) |
 | `preferRepos` | string[] | [] | Soft-boost ranking for these `owner/repo` slugs (the `--prefer-repos` flag overrides) |
