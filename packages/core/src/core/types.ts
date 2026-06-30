@@ -347,6 +347,21 @@ export interface SearchOptions {
    * `interPhaseDelayMs` for the rationale (#143).
    */
   broadPhaseDelayMs?: number;
+  /**
+   * Exclude issues already surfaced by a recent search so consecutive
+   * searches rotate to fresh candidates instead of returning the same set
+   * (#249). A result counts as "recently surfaced" when its `lastSeenAt`
+   * (recorded by `saveResults`) is within `recentlySurfacedTtlDays`.
+   * Defaults to `true`. Pass `false` to force-resurface (e.g. an explicit
+   * "search the same pool again" request).
+   */
+  excludeRecentlySurfaced?: boolean;
+  /**
+   * TTL in days for the `excludeRecentlySurfaced` rotation window (#249).
+   * Results last surfaced more than this many days ago are eligible to
+   * resurface. Defaults to 7.
+   */
+  recentlySurfacedTtlDays?: number;
 }
 
 /** Result of a search operation. */

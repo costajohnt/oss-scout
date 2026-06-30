@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.2.3](https://github.com/costajohnt/oss-scout/compare/core-v1.2.2...core-v1.2.3) (2026-06-29)
+
+
+### Bug Fixes
+
+* **vetting:** skip issues whose linked PR is already merged or closed ([#249](https://github.com/costajohnt/oss-scout/issues/249)) ([#252](https://github.com/costajohnt/oss-scout/issues/252)) ([0472a97](https://github.com/costajohnt/oss-scout/commit/0472a9761b095972a6d72cc43a8acc6d7d329150))
+
+## [1.2.2](https://github.com/costajohnt/oss-scout/compare/core-v1.2.1...core-v1.2.2) (2026-06-28)
+
+
+### Bug Fixes
+
+* **search:** exclude recently-surfaced results so consecutive searches rotate ([#249](https://github.com/costajohnt/oss-scout/issues/249)) ([#250](https://github.com/costajohnt/oss-scout/issues/250)) ([57d673f](https://github.com/costajohnt/oss-scout/commit/57d673f044f739604c55e6947531badb2622b291))
+
 ## [1.2.1](https://github.com/costajohnt/oss-scout/compare/core-v1.2.0...core-v1.2.1) (2026-06-20)
 
 

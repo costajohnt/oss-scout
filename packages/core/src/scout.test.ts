@@ -6,6 +6,7 @@ import { ScoutStateSchema } from "./core/schemas.js";
 import type { ScoutState } from "./core/schemas.js";
 import type { IssueCandidate } from "./core/types.js";
 import type { Octokit } from "@octokit/rest";
+import { IssueDiscovery } from "./core/issue-discovery.js";
 
 vi.mock("./core/feature-discovery.js", async (importOriginal) => {
   const actual =
@@ -880,5 +881,93 @@ describe("OssScout.vetList partial-results discard (#162)", () => {
     await expect(scout.vetList({ concurrency: 1 })).rejects.toThrow(
       "Bad credentials",
     );
+  });
+});
+
+describe("OssScout.search recently-surfaced rotation (#249)", () => {
+  function savedResult(url: string, lastSeenAt: string) {
+    return {
+      issueUrl: url,
+      repo: "o/r",
+      number: 1,
+      title: "t",
+      labels: [],
+      recommendation: "approve" as const,
+      viabilityScore: 80,
+      searchPriority: "normal" as const,
+      firstSeenAt: lastSeenAt,
+      lastSeenAt,
+      lastScore: 80,
+    };
+  }
+
+  const RECENT_URL = "https://github.com/o/recent/issues/1";
+  const STALE_URL = "https://github.com/o/stale/issues/2";
+  const SKIPPED_URL = "https://github.com/o/skip/issues/3";
+
+  function makeScout(now: number) {
+    const recent = new Date(now - 1 * 24 * 60 * 60 * 1000).toISOString();
+    const stale = new Date(now - 30 * 24 * 60 * 60 * 1000).toISOString();
+    return new OssScout(
+      "test-token",
+      ScoutStateSchema.parse({
+        version: 1,
+        savedResults: [
+          savedResult(RECENT_URL, recent),
+          savedResult(STALE_URL, stale),
+        ],
+        skippedIssues: [
+          {
+            url: SKIPPED_URL,
+            repo: "o/skip",
+            number: 3,
+            title: "t",
+            skippedAt: recent,
+          },
+        ],
+      }),
+    );
+  }
+
+  function captureSkippedUrls() {
+    let captured: Set<string> | undefined;
+    vi.spyOn(IssueDiscovery.prototype, "searchIssues").mockImplementation(
+      async (opts: { skippedUrls?: Set<string> }) => {
+        captured = opts.skippedUrls;
+        return { candidates: [], strategiesUsed: [] };
+      },
+    );
+    return () => captured;
+  }
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("excludes results surfaced within the TTL while still excluding the skip list", async () => {
+    const scout = makeScout(Date.now());
+    const getCaptured = captureSkippedUrls();
+
+    await scout.search();
+
+    const skipped = getCaptured();
+    expect(skipped).toBeDefined();
+    // Explicit skip-list exclusion is preserved.
+    expect(skipped!.has(SKIPPED_URL)).toBe(true);
+    // A result surfaced 1 day ago is excluded so "search again" rotates.
+    expect(skipped!.has(RECENT_URL)).toBe(true);
+    // A result last surfaced 30 days ago is past the TTL and may resurface.
+    expect(skipped!.has(STALE_URL)).toBe(false);
+  });
+
+  it("does not exclude recently-surfaced results when excludeRecentlySurfaced is false", async () => {
+    const scout = makeScout(Date.now());
+    const getCaptured = captureSkippedUrls();
+
+    await scout.search({ excludeRecentlySurfaced: false });
+
+    const skipped = getCaptured();
+    expect(skipped!.has(SKIPPED_URL)).toBe(true);
+    expect(skipped!.has(RECENT_URL)).toBe(false);
   });
 });
