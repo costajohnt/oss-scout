@@ -51,6 +51,14 @@ vi.mock("./http-cache.js", () => ({
     getIfFresh: vi.fn(() => null),
     set: vi.fn(),
   })),
+  // Pass-through: probeRepoFile now routes its getContent through cachedRequest.
+  // Exercise the real fetcher here; ETag behavior is covered in http-cache and
+  // probe-repo-file.etag tests.
+  cachedRequest: async (
+    _cache: unknown,
+    _url: string,
+    fetcher: (headers: Record<string, string>) => Promise<{ data: unknown }>,
+  ) => (await fetcher({})).data,
 }));
 
 import {
