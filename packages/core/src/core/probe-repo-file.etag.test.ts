@@ -22,7 +22,10 @@ vi.mock("./http-cache.js", async () => {
 });
 
 /** An HTTP-shaped error with a numeric status (Octokit RequestError shape). */
-function httpError(status: number, message: string): Error & { status: number } {
+function httpError(
+  status: number,
+  message: string,
+): Error & { status: number } {
   const err = new Error(message) as Error & { status: number };
   err.status = status;
   return err;
@@ -34,7 +37,10 @@ function base64(text: string): string {
 
 /** Octokit mock whose getContent runs the supplied per-call implementation. */
 function makeOctokit(
-  impl: (args: { path: string; headers?: Record<string, string> }) => Promise<unknown>,
+  impl: (args: {
+    path: string;
+    headers?: Record<string, string>;
+  }) => Promise<unknown>,
 ): { octokit: Octokit; getContent: ReturnType<typeof vi.fn> } {
   const getContent = vi.fn(impl);
   const octokit = { repos: { getContent } } as unknown as Octokit;
