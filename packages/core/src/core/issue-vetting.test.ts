@@ -65,6 +65,10 @@ vi.mock("./issue-eligibility.js", () => ({
   checkNotClaimed: vi.fn().mockResolvedValue({ passed: true }),
   checkUserMergedPRsInRepo: vi.fn().mockResolvedValue(0),
   analyzeRequirements: vi.fn(() => true),
+  // Imported by issue-graphql's merged-PR prefetch (#182) to build the cache
+  // key it writes; keep it consistent with the real implementation's shape.
+  mergedPRsCacheKey: (owner: string, repo: string) =>
+    `v1:merged-prs:${owner}/${repo}`,
 }));
 
 vi.mock("./repo-health.js", () => ({
@@ -841,6 +845,95 @@ describe("IssueVetter", () => {
       expect(getSpy).toHaveBeenCalledWith(
         expect.objectContaining({ issue_number: 2 }),
       );
+    });
+
+    it("prefetches merged-PR counts only for repos not already known (#182)", async () => {
+      // graphql serves both the issue-core batch and the merged-PR batch;
+      // the merged-PR query is the one containing a `search(` selection.
+      const graphql = vi.fn().mockImplementation((query: string) => {
+        if (query.includes("search(")) {
+          return Promise.resolve({ r0: { issueCount: 0 } });
+        }
+        // Empty core batch → both issues fall back to REST issues.get.
+        return Promise.resolve({});
+      });
+      const octokit = {
+        issues: {
+          get: vi.fn().mockResolvedValue({
+            data: {
+              id: 1,
+              html_url: "https://github.com/owner/repo1/issues/1",
+              title: "Issue",
+              body: "1. repro\n2. expected\n```code```",
+              comments: 0,
+              labels: [],
+              created_at: "2026-01-01T00:00:00Z",
+              updated_at: "2026-03-01T00:00:00Z",
+            },
+          }),
+        },
+        graphql,
+      } as unknown as Octokit;
+      const vetter = new IssueVetter(
+        octokit,
+        makeStubStateReader({
+          getGitHubUsername: vi.fn(() => "octocat"),
+          // repo1 is already known → must be excluded from the prefetch.
+          getReposWithMergedPRs: vi.fn(() => ["owner/repo1"]),
+        }),
+      );
+
+      await vetter.vetIssuesParallel(
+        [
+          "https://github.com/owner/repo1/issues/1",
+          "https://github.com/owner/repo2/issues/2",
+        ],
+        10,
+      );
+
+      const searchCall = graphql.mock.calls.find(([q]) =>
+        (q as string).includes("search("),
+      );
+      expect(searchCall).toBeTruthy();
+      const [, variables] = searchCall as [string, Record<string, string>];
+      const serialized = JSON.stringify(variables);
+      expect(serialized).toContain("repo:owner/repo2");
+      // The already-known repo is skipped — it never reaches the Search API.
+      expect(serialized).not.toContain("repo:owner/repo1");
+    });
+
+    it("does not prefetch merged-PR counts when the username is unknown (#182)", async () => {
+      const graphql = vi.fn().mockResolvedValue({});
+      const octokit = {
+        issues: {
+          get: vi.fn().mockResolvedValue({
+            data: {
+              id: 1,
+              html_url: "https://github.com/owner/repo/issues/1",
+              title: "Issue",
+              body: "1. repro\n2. expected\n```code```",
+              comments: 0,
+              labels: [],
+              created_at: "2026-01-01T00:00:00Z",
+              updated_at: "2026-03-01T00:00:00Z",
+            },
+          }),
+        },
+        graphql,
+      } as unknown as Octokit;
+      // makeStubStateReader has no getGitHubUsername → prefetch is skipped.
+      const vetter = new IssueVetter(octokit, makeStubStateReader());
+
+      await vetter.vetIssuesParallel(
+        ["https://github.com/owner/repo/issues/1"],
+        10,
+      );
+
+      // Only the issue-core batch runs; no merged-PR search query is issued.
+      const searchCall = graphql.mock.calls.find(([q]) =>
+        (q as string).includes("search("),
+      );
+      expect(searchCall).toBeUndefined();
     });
 
     it("propagates 401 auth errors instead of swallowing per-item", async () => {

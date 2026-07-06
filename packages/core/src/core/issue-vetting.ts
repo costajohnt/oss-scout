@@ -46,8 +46,10 @@ import {
 import { fetchAndScanAntiLLMPolicy } from "./anti-llm-policy.js";
 import {
   prefetchIssueCores,
+  prefetchMergedPRCounts,
   issueCoreKey,
   type PrefetchedIssueCore,
+  type MergedPRRepoRef,
 } from "./issue-graphql.js";
 import { getHttpCache, versionedCacheKey } from "./http-cache.js";
 import {
@@ -688,6 +690,37 @@ export class IssueVetter {
   }
 
   /**
+   * Batch-prefetch merged-PR counts for the repos in a vetting batch (#182),
+   * warming the cache `checkUserMergedPRsInRepo` reads so each per-repo Search
+   * API call becomes a cache hit.
+   *
+   * Two repos are intentionally excluded:
+   * - Repos already known to have the user's merged PRs
+   *   (`getReposWithMergedPRs`): `vetIssue` short-circuits those to a merged
+   *   count of 1 and never calls the Search API, so prefetching them is waste.
+   * - Everything, when the GitHub username is unknown: the GraphQL `author:`
+   *   filter needs a concrete login and the REST path falls back to `@me`.
+   */
+  private async prefetchMergedPRCounts(
+    issueRefs: MergedPRRepoRef[],
+  ): Promise<void> {
+    const username = this.stateReader.getGitHubUsername?.() ?? "";
+    if (!username) return;
+
+    const alreadyKnown = new Set(this.stateReader.getReposWithMergedPRs());
+    const seen = new Set<string>();
+    const repos: MergedPRRepoRef[] = [];
+    for (const { owner, repo } of issueRefs) {
+      const full = `${owner}/${repo}`;
+      if (alreadyKnown.has(full) || seen.has(full)) continue;
+      seen.add(full);
+      repos.push({ owner, repo });
+    }
+    if (repos.length === 0) return;
+    await prefetchMergedPRCounts(this.octokit, username, repos);
+  }
+
+  /**
    * Vet multiple issues in parallel with concurrency limit
    */
   async vetIssuesParallel(
@@ -722,15 +755,21 @@ export class IssueVetter {
     // from the map and vetIssue falls back to REST for it. A fatal error (401 /
     // rate limit) propagates out of prefetchIssueCores and aborts the batch,
     // matching the per-issue auth-error handling below.
-    const prefetched = await prefetchIssueCores(
-      this.octokit,
-      uniqueUrls.flatMap((url) => {
-        const p = parseGitHubUrl(url);
-        return p && p.type === "issues"
-          ? [{ owner: p.owner, repo: p.repo, number: p.number }]
-          : [];
-      }),
-    );
+    const issueRefs = uniqueUrls.flatMap((url) => {
+      const p = parseGitHubUrl(url);
+      return p && p.type === "issues"
+        ? [{ owner: p.owner, repo: p.repo, number: p.number }]
+        : [];
+    });
+    // Two independent GraphQL prefetches run concurrently: issue cores (#169)
+    // and merged-PR counts (#182). The merged-PR prefetch pre-populates the
+    // same cache checkUserMergedPRsInRepo reads, replacing scout's dominant
+    // REST Search-API consumer with a single batched GraphQL query per ~15
+    // repos (which bills the GraphQL points bucket, not the Search bucket).
+    const [prefetched] = await Promise.all([
+      prefetchIssueCores(this.octokit, issueRefs),
+      this.prefetchMergedPRCounts(issueRefs),
+    ]);
     const prefetchFor = (url: string): PrefetchedIssueCore | undefined => {
       const p = parseGitHubUrl(url);
       return p && p.type === "issues"
