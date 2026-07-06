@@ -6,14 +6,17 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 let mockOctokitInstance: any;
 
+const pluginSpy = vi.fn(() => {
+  return class MockOctokit {
+    constructor() {
+      return mockOctokitInstance;
+    }
+  };
+});
+
 vi.mock("@octokit/rest", () => ({
   Octokit: {
-    plugin: () =>
-      class MockOctokit {
-        constructor() {
-          return mockOctokitInstance;
-        }
-      },
+    plugin: (...plugins: unknown[]) => pluginSpy(...plugins),
   },
 }));
 
@@ -21,9 +24,21 @@ vi.mock("@octokit/plugin-throttling", () => ({
   throttling: {},
 }));
 
+vi.mock("@octokit/plugin-retry", () => ({
+  retry: {},
+}));
+
 // Must import after mocks are set up
 const { checkRateLimit, getOctokit, getRateLimitCallbacks } =
   await import("./github.js");
+const { throttling } = await import("@octokit/plugin-throttling");
+const { retry } = await import("@octokit/plugin-retry");
+
+describe("Octokit plugin composition", () => {
+  it("should compose throttling and retry plugins", () => {
+    expect(pluginSpy).toHaveBeenCalledWith(throttling, retry);
+  });
+});
 
 describe("checkRateLimit", () => {
   beforeEach(() => {

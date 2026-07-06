@@ -8,6 +8,10 @@ import { debug, warn } from "./logger.js";
 import { ConfigurationError, errorMessage, rethrowIfFatal } from "./errors.js";
 import { extractRepoFromUrl } from "./utils.js";
 import type { ScoutStateWriter } from "./issue-vetting.js";
+import {
+  getSearchBudgetTracker,
+  type SearchBudgetTracker,
+} from "./search-budget.js";
 
 const MODULE = "bootstrap";
 
@@ -28,6 +32,11 @@ const PER_PAGE = 100;
 export async function bootstrapScout(
   scout: ScoutStateWriter,
   token: string,
+  // Optional injected budget tracker. Defaults to the shared singleton so
+  // bootstrap paces itself against the same 30/min Search API window as the
+  // rest of the app; a host running bootstrap+search in one process shares
+  // budget accounting across both.
+  tracker: SearchBudgetTracker = getSearchBudgetTracker(),
 ): Promise<BootstrapResult> {
   const username = scout.getPreferences().githubUsername;
   if (!username) {
@@ -88,11 +97,20 @@ export async function bootstrapScout(
   let mergedPRCount = 0;
   try {
     for (let page = 1; page <= SEARCH_MAX_PAGES; page++) {
-      const { data } = await octokit.search.issuesAndPullRequests({
-        q: `is:pr is:merged author:${username}`,
-        per_page: PER_PAGE,
-        page,
-      });
+      await tracker.waitForBudget();
+      let data: Awaited<
+        ReturnType<typeof octokit.search.issuesAndPullRequests>
+      >["data"];
+      try {
+        const response = await octokit.search.issuesAndPullRequests({
+          q: `is:pr is:merged author:${username}`,
+          per_page: PER_PAGE,
+          page,
+        });
+        data = response.data;
+      } finally {
+        tracker.recordCall();
+      }
 
       for (const item of data.items) {
         const repo = extractRepoFromUrl(item.html_url);
@@ -120,11 +138,20 @@ export async function bootstrapScout(
   let closedPRCount = 0;
   try {
     for (let page = 1; page <= SEARCH_MAX_PAGES; page++) {
-      const { data } = await octokit.search.issuesAndPullRequests({
-        q: `is:pr is:closed is:unmerged author:${username}`,
-        per_page: PER_PAGE,
-        page,
-      });
+      await tracker.waitForBudget();
+      let data: Awaited<
+        ReturnType<typeof octokit.search.issuesAndPullRequests>
+      >["data"];
+      try {
+        const response = await octokit.search.issuesAndPullRequests({
+          q: `is:pr is:closed is:unmerged author:${username}`,
+          per_page: PER_PAGE,
+          page,
+        });
+        data = response.data;
+      } finally {
+        tracker.recordCall();
+      }
 
       for (const item of data.items) {
         const repo = extractRepoFromUrl(item.html_url);
@@ -152,11 +179,20 @@ export async function bootstrapScout(
   let openPRCount = 0;
   try {
     for (let page = 1; page <= SEARCH_MAX_PAGES; page++) {
-      const { data } = await octokit.search.issuesAndPullRequests({
-        q: `is:pr is:open author:${username}`,
-        per_page: PER_PAGE,
-        page,
-      });
+      await tracker.waitForBudget();
+      let data: Awaited<
+        ReturnType<typeof octokit.search.issuesAndPullRequests>
+      >["data"];
+      try {
+        const response = await octokit.search.issuesAndPullRequests({
+          q: `is:pr is:open author:${username}`,
+          per_page: PER_PAGE,
+          page,
+        });
+        data = response.data;
+      } finally {
+        tracker.recordCall();
+      }
 
       for (const item of data.items) {
         const repo = extractRepoFromUrl(item.html_url);

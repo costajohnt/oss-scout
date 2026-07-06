@@ -4,11 +4,12 @@
 
 import { Octokit } from "@octokit/rest";
 import { throttling } from "@octokit/plugin-throttling";
+import { retry } from "@octokit/plugin-retry";
 import { warn } from "./logger.js";
 
 const MODULE = "github";
 
-const ThrottledOctokit = Octokit.plugin(throttling);
+const ThrottledOctokit = Octokit.plugin(throttling, retry);
 
 interface RateLimitInfo {
   remaining: number;
