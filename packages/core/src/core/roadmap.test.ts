@@ -1,4 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+
+// Pass-through http-cache: probeRepoFile now routes its getContent through
+// cachedRequest. Exercise the real fetcher here without touching the on-disk
+// ETag cache; ETag behavior is covered in probe-repo-file.etag tests.
+vi.mock("./http-cache.js", () => ({
+  getHttpCache: () => ({}),
+  cachedRequest: async (
+    _cache: unknown,
+    _url: string,
+    fetcher: (headers: Record<string, string>) => Promise<{ data: unknown }>,
+  ) => (await fetcher({})).data,
+}));
+
 import {
   parseRoadmapIssueRefs,
   fetchRoadmapIssueRefs,

@@ -98,12 +98,25 @@ export async function checkProjectHealth(
             }>,
         );
 
-        // Get recent commits
-        const { data: commits } = await octokit.repos.listCommits({
-          owner,
-          repo,
-          per_page: 1,
-        });
+        // Get recent commits (ETag-cached — an unchanged tip revalidates as a
+        // free 304 once the surrounding health TTL expires).
+        const commitsUrl = `/repos/${owner}/${repo}/commits?per_page=1`;
+        const commits = await cachedRequest(
+          cache,
+          commitsUrl,
+          (headers) =>
+            octokit.repos.listCommits({
+              owner,
+              repo,
+              per_page: 1,
+              headers,
+            }) as Promise<{
+              data: Array<{
+                commit?: { author?: { date?: string } | null } | null;
+              }>;
+              headers: Record<string, string>;
+            }>,
+        );
 
         const lastCommit = commits[0];
         const lastCommitAt =

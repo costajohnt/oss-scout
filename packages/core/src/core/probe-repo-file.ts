@@ -22,6 +22,7 @@
 import type { Octokit } from "@octokit/rest";
 import { errorMessage, getHttpStatusCode, rethrowIfFatal } from "./errors.js";
 import { warn } from "./logger.js";
+import { getHttpCache, cachedRequest } from "./http-cache.js";
 
 const MODULE = "probe-repo-file";
 
@@ -50,6 +51,13 @@ export interface ProbeRepoFileResult {
  * a faster path may have already resolved) must inspect the rejected reasons
  * themselves; this primitive only rethrows for the single path it owns. See
  * repo-health and anti-llm-policy for that pre-scan.
+ *
+ * Successful (200) responses are ETag-cached: a later probe of the same path
+ * revalidates with `If-None-Match`, so an unchanged doc comes back as a 304
+ * that costs zero primary rate-limit quota. Only 200 bodies are cached here —
+ * 404s (file absent) still surface as rejections that this function's own catch
+ * maps to a clean `null`, exactly as before, and the per-caller negative caches
+ * (guidelines/roadmap Maps, anti-llm time cache) continue to handle absences.
  */
 export async function probeRepoFile(
   octokit: Octokit,
@@ -58,7 +66,18 @@ export async function probeRepoFile(
   path: string,
 ): Promise<ProbeRepoFileResult> {
   try {
-    const { data } = await octokit.repos.getContent({ owner, repo, path });
+    // ETag-revalidate the content GET. cachedRequest only intercepts 304
+    // (returning the cached body); a 404 or fatal error propagates untouched to
+    // the catch below, preserving the "file absent" semantics callers depend on.
+    const data = await cachedRequest<unknown>(
+      getHttpCache(),
+      `/repos/${owner}/${repo}/contents/${path}`,
+      (headers) =>
+        octokit.repos.getContent({ owner, repo, path, headers }) as Promise<{
+          data: unknown;
+          headers: Record<string, string>;
+        }>,
+    );
     if (
       data &&
       typeof data === "object" &&

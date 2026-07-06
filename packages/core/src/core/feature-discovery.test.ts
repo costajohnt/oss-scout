@@ -23,6 +23,19 @@ vi.mock("./http-cache.js", () => ({
     getIfFresh: vi.fn(() => null),
     set: vi.fn(),
   })),
+  // Pass-through: probeRepoFile routes getContent through cachedRequest, so
+  // rate-limit/404 errors from the octokit mocks must still reach it unchanged.
+  cachedRequest: async (
+    _cache: unknown,
+    _url: string,
+    fetcher: (headers: Record<string, string>) => Promise<{ data: unknown }>,
+  ) => (await fetcher({})).data,
+  cachedTimeBased: async (
+    _cache: unknown,
+    _key: string,
+    _ttl: number,
+    fetcher: () => Promise<unknown>,
+  ) => fetcher(),
 }));
 vi.mock("./search-budget.js", () => ({
   getSearchBudgetTracker: vi.fn(() => ({
