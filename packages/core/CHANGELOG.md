@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.3.0](https://github.com/costajohnt/oss-scout/compare/core-v1.2.4...core-v1.3.0) (2026-07-06)
+
+
+### Features
+
+* **vetting:** batch merged-PR repo checks via GraphQL search to free the Search API budget ([#259](https://github.com/costajohnt/oss-scout/issues/259)) ([c1243c8](https://github.com/costajohnt/oss-scout/commit/c1243c8fdcfff4cad8199e79b76ef97661647f38))
+
+
+### Bug Fixes
+
+* **bootstrap:** pace bootstrap searches through the search budget tracker ([#256](https://github.com/costajohnt/oss-scout/issues/256)) ([f203354](https://github.com/costajohnt/oss-scout/commit/f2033547ef394fbee084f9f72a94e742d1daf574))
+* **github:** retry transient 5xx/network errors via @octokit/plugin-retry ([#257](https://github.com/costajohnt/oss-scout/issues/257)) ([aab4a94](https://github.com/costajohnt/oss-scout/commit/aab4a94a7565db6ab4ed86cafc924cbd6f04a2f9))
+
+
+### Performance Improvements
+
+* **vetting:** ETag-cache doc probes and health commits so revalidation is rate-limit-free ([#258](https://github.com/costajohnt/oss-scout/issues/258)) ([7870d79](https://github.com/costajohnt/oss-scout/commit/7870d7930b57ccfda330c97c0f3b55dbc911c3ad))
+
 ## [1.2.4](https://github.com/costajohnt/oss-scout/compare/core-v1.2.3...core-v1.2.4) (2026-06-30)
 
 
