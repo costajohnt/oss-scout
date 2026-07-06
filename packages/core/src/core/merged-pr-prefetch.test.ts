@@ -157,7 +157,9 @@ describe("prefetchMergedPRCounts", () => {
     const search = vi.fn();
     const octokit = makeOctokit(graphql, search);
 
-    await prefetchMergedPRCounts(octokit, "octocat", [{ owner: "o1", repo: "r1" }]);
+    await prefetchMergedPRCounts(octokit, "octocat", [
+      { owner: "o1", repo: "r1" },
+    ]);
     const count = await checkUserMergedPRsInRepo(octokit, "o1", "r1");
 
     expect(count).toBe(5);
@@ -243,7 +245,9 @@ describe("prefetchMergedPRCounts", () => {
     const search = vi.fn().mockResolvedValue({ data: { total_count: 4 } });
     const octokit = makeOctokit(graphql, search);
 
-    await prefetchMergedPRCounts(octokit, "octocat", [{ owner: "o1", repo: "r1" }]);
+    await prefetchMergedPRCounts(octokit, "octocat", [
+      { owner: "o1", repo: "r1" },
+    ]);
     expect(cacheStub.set).not.toHaveBeenCalled();
 
     // The per-call path falls through to the authoritative REST @me query.
@@ -253,9 +257,10 @@ describe("prefetchMergedPRCounts", () => {
   });
 
   it("matches the authenticated login case-insensitively", async () => {
-    const graphql = vi
-      .fn()
-      .mockResolvedValue({ viewer: { login: "OctoCat" }, r0: { issueCount: 6 } });
+    const graphql = vi.fn().mockResolvedValue({
+      viewer: { login: "OctoCat" },
+      r0: { issueCount: 6 },
+    });
     await prefetchMergedPRCounts(makeOctokit(graphql), "octocat", [
       { owner: "o1", repo: "r1" },
     ]);
