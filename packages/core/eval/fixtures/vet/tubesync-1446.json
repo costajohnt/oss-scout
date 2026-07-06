@@ -1,0 +1,40 @@
+{
+  "id": "tubesync-1446",
+  "url": "https://github.com/meeb/tubesync/issues/1446",
+  "owner": "meeb",
+  "repo": "tubesync",
+  "issueNumber": 1446,
+  "vetDate": "2026-04-12",
+  "issue": {
+    "title": "Change health check to generate its URL",
+    "body": "We have environment variables for where `gunicorn` is listening, so we should use those to generate the proper URL instead of using a hard-coded argument in the `Dockerfile`.\n\nI'd suggest instead of an error, we should format a string as the URL instead. This preserves the ability to override the URL with an argument but uses the generated one by default.\n\nhttps://github.com/meeb/tubesync/blob/33479e8e36a23320e2107e42e051b7c4b5264c99/tubesync/healthcheck.py#L38-L42\n\nhttps://github.com/meeb/tubesync/blob/33479e8e36a23320e2107e42e051b7c4b5264c99/tubesync/tubesync/gunicorn.py#L19-L24\n\nhttps://github.com/meeb/tubesync/blob/33479e8e36a23320e2107e42e051b7c4b5264c99/Dockerfile#L776-L778",
+    "labels": ["enhancement", "good first issue"],
+    "state": "closed",
+    "createdAt": "2026-04-11T01:12:07Z",
+    "updatedAtObserved": "2026-04-14T21:37:01Z"
+  },
+  "repoMeta": {
+    "stars": 2752,
+    "forks": 164
+  },
+  "vetTimeFacts": {
+    "hasExistingPR": true,
+    "isClaimed": false,
+    "projectActive": true,
+    "contributionGuidelinesFound": false,
+    "mergedPRCount": 0,
+    "orgHasMergedPRs": false,
+    "matchesPreferredCategory": false,
+    "closedWithoutMergeCount": 0
+  },
+  "outcome": {
+    "label": "skip_correct",
+    "date": "2026-04-12",
+    "detail": "Skipped: competing PR #1447 open at vet time (verified live: #1447 merged=true).",
+    "prUrl": "https://github.com/meeb/tubesync/pull/1447"
+  },
+  "measurable": true,
+  "expectedVerdict": "skip",
+  "fidelityNote": "hasExistingPR=true matches checkNoExistingPR.",
+  "vaultSource": "open-source/potential-issue-list.md, open-source/skipped-issues.md"
+}

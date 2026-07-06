@@ -1,0 +1,40 @@
+{
+  "id": "super-productivity-7191",
+  "url": "https://github.com/super-productivity/super-productivity/issues/7191",
+  "owner": "super-productivity",
+  "repo": "super-productivity",
+  "issueNumber": 7191,
+  "vetDate": "2026-04-12",
+  "issue": {
+    "title": "🚨 \"Database Error - Cannot Load Data\" (indexedDB) when session is closed and reopened with autostart enabled",
+    "body": "**Version Used**\n17.2.4 (Linux Mint Cinnamon, Flatpak)\n\n**Expected Behavior**\nWhen logging out of a Linux Mint session and logging back in, with Super Productivity set to autostart, the app should open normally and load data without errors.\n\n**Current Behavior**\nAfter logging out of the Linux Mint (Cinnamon) session and logging back in, the app (launched automatically at session start) displays the following error:\n\n\"Database Error - Cannot Load Data\nSuper Productivity cannot open its database. This may be caused by:\n- Low disk space\n- Temporary file lock (try closing other tabs)\n- Storage corruption\nTechnical details: Internal error opening backing store for indexedDB.open.\"\n\nThe error occurs consistently on every logout/login cycle. Workaround: manually closing the app, waiting a few minutes, then relaunching it starts correctly.\n\n**Steps to Reproduce**\n1. Install SP via Flatpak on Linux Mint Cinnamon\n2. Set Super Productivity to autostart at session login\n3. Open a session with SP running\n4. Log out of the session (Menu → Log out)\n5. Log back in\n6. SP launches automatically and immediately shows the indexedDB error\n\nTested multiple times — behavior is consistent.\n\nNote: Similar errors have been reported in older issues (#375, #419, #955) but none identified this specific trigger (logout/login cycle with autostart). Closing SP manually before logging out prevents the error.\n\n**Your Environment**\n- Version: 17.2.4\n- OS: Linux Mint Cinnamon\n- Install method: Flatpak (com.super_productivity.SuperProductivity)\n- Sync: Dropbox (3 devices)\n\n### Can you reproduce this reliably?\n\nYes, I can reproduce it reliably.\n\n### Console Output\n\n```shell\n\n```\n\n### documentation gap\n\n- [ ] The documentation/[wiki](https://github.com/super-productivity/super-productivity/wiki) is unclear or incorrect for this case.\n- [ ] There should be a note added to the documentation/[wiki](https://github.com/super-productivity/super-productivity/wiki) for this case.\n- [ ] I can help improve the documentation.",
+    "labels": [],
+    "state": "closed",
+    "createdAt": "2026-04-10T18:44:03Z",
+    "updatedAtObserved": "2026-04-15T16:19:54Z"
+  },
+  "repoMeta": {
+    "stars": 20467,
+    "forks": 1824
+  },
+  "vetTimeFacts": {
+    "hasExistingPR": false,
+    "isClaimed": false,
+    "projectActive": true,
+    "contributionGuidelinesFound": true,
+    "mergedPRCount": 0,
+    "orgHasMergedPRs": false,
+    "matchesPreferredCategory": false,
+    "closedWithoutMergeCount": 0
+  },
+  "outcome": {
+    "label": "merged",
+    "date": "2026-04-19",
+    "detail": "PR #7220 merged 2026-04-19 (verified live: merged=true)",
+    "prUrl": "https://github.com/super-productivity/super-productivity/pull/7220"
+  },
+  "measurable": true,
+  "expectedVerdict": "pursue",
+  "fidelityNote": "Cold-start in this repo, same as #7219/#7188.",
+  "vaultSource": "open-source/potential-issue-list.md, open-source/skipped-issues.md"
+}

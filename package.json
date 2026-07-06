@@ -11,6 +11,8 @@
     "test:watch": "pnpm -r run test:watch",
     "test:coverage": "pnpm -r run test:coverage",
     "typecheck": "pnpm -r run typecheck",
+    "eval:vet": "pnpm --filter @oss-scout/core run eval:vet",
+    "eval:vet:quick": "pnpm --filter @oss-scout/core run eval:vet:quick",
     "lint": "eslint packages/",
     "lint:fix": "eslint packages/ --fix",
     "format": "prettier --write packages/",

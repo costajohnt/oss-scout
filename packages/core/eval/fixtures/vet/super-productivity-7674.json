@@ -1,0 +1,40 @@
+{
+  "id": "super-productivity-7674",
+  "url": "https://github.com/super-productivity/super-productivity/issues/7674",
+  "owner": "super-productivity",
+  "repo": "super-productivity",
+  "issueNumber": 7674,
+  "vetDate": "2026-06-09",
+  "issue": {
+    "title": "💡 Azure DevOps: Allow filtering by iteration (\"Iteration Path\") and teams/subteams (\"Area Path\"), issue type and more (WIQL support?)",
+    "body": "### Problem Statement\n\nAs a followup from https://github.com/super-productivity/super-productivity/pull/6446#discussion_r2798480446 even when testing manually I have the problem to find the actual task/issues to work on.\n\nSpecifically these filters seem to be useful:\n* by type ([bug/task/Product backlog items etc.](https://learn.microsoft.com/en-us/azure/devops/boards/work-items/guidance/scrum-process?view=azure-devops))\n* by iteration (\"sprint\" aka in agile developments you usually work in iterations that are natively supported by ADS)\n* by area (aka \"projects\", these may be useful, note ADS has a tree-hierarchy here aka allows for subareas separated by `/`)\n\n### Possible Solution\n\nADS has a \"key-value\" schema for many properties, as it is very customizable it can have different names, but usually \"Iteration Path\" is the iteration and \"area path\" is the \"team\":\n\n<img width=\"711\" height=\"132\" alt=\"Image\" src=\"https://github.com/user-attachments/assets/13e4cca6-c56e-44d5-9368-96d41db4f71a\" />\n\nMaybe just allow passing a custom filter or so?\n\nActually best supports a custom query langauge: [WIQL reference](https://learn.microsoft.com/en-us/azure/devops/boards/queries/wiql-syntax?view=azure-devops)\nIt is AFAIK the same and can also [be defined from the GUI](https://learn.microsoft.com/en-us/azure/devops/boards/queries/using-queries?view=azure-devops&tabs=browser).\n\n### Describe alternatives you've considered\n\n* As shown above, even in the GUI you can define queries. Maybe allow selecting just \"a query\" from that list?\n* Or maybe a simpler implementation by just hardcoding the filter? As the current selection \"only assigned to me\" etc. allows?\n\n### Additional context\n\nIIRC your Jira integration has similar support/also supports their query language, so that may be useful.",
+    "labels": ["help wanted"],
+    "state": "closed",
+    "createdAt": "2026-05-19T10:43:02Z",
+    "updatedAtObserved": "2026-06-22T15:38:51Z"
+  },
+  "repoMeta": {
+    "stars": 20467,
+    "forks": 1824
+  },
+  "vetTimeFacts": {
+    "hasExistingPR": false,
+    "isClaimed": false,
+    "projectActive": true,
+    "contributionGuidelinesFound": true,
+    "mergedPRCount": 1,
+    "orgHasMergedPRs": false,
+    "matchesPreferredCategory": false,
+    "closedWithoutMergeCount": 0
+  },
+  "outcome": {
+    "label": "merged",
+    "date": "2026-06-22",
+    "detail": "PR #8516 merged 2026-06-22 after a comment-first scoping round (verified live: merged=true)",
+    "prUrl": "https://github.com/super-productivity/super-productivity/pull/8516"
+  },
+  "measurable": true,
+  "expectedVerdict": "pursue",
+  "fidelityNote": "Interesting calibration case: the issue body floats 3 mutually-exclusive designs (unclear scope at face value), so analyzeRequirements(body) may legitimately score clearRequirements=false. The eventual merge only happened because John scoped it with a comment before writing code, not from the raw issue alone — a good illustration that 'needs_review' can be the MORE honest verdict than a clean approve/skip binary for this one.",
+  "vaultSource": "open-source/potential-issue-list.md, open-source/skipped-issues.md"
+}

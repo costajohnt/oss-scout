@@ -1,0 +1,39 @@
+{
+  "id": "open-design-5081",
+  "url": "https://github.com/nexu-io/open-design/issues/5081",
+  "owner": "nexu-io",
+  "repo": "open-design",
+  "issueNumber": 5081,
+  "vetDate": "2026-07-02",
+  "issue": {
+    "title": "[Bug]: Kiro missing from agentLabels.ts (no display label / alias)",
+    "body": "## Before you submit\n- [x] I searched existing issues and confirmed this is not a duplicate.\n- [x] I replaced the example text with the real behavior, reproduction steps, expected result, and version.\n\n## What happened?\n`apps/web/src/utils/agentLabels.ts` has no entry for **Kiro**, so Kiro is not treated as a first-class agent in the web UI the way Claude, Codex, and Devin are.\n\nConcretely, in `AGENT_LABELS`:\n- there is **no** `kiro: 'Kiro'` (or `'Kiro CLI'`) label, and\n- in `AGENT_ALIASES` there is **no** `'kiro cli': 'kiro'` alias.\n\nBecause of this, `exactAgentDisplayName('kiro')` returns `null`, and `agentDisplayName('kiro', …)` falls through to `safeFallbackLabel`, rendering a raw/normalized string instead of the canonical brand name. Every consumer of these helpers is affected — e.g. `agentModelDisplayName` (used to show \"Agent · model\") and any UI that resolves an agent's display name (handoff/agent chips, run headers).\n\nNote the brand icon already exists at `apps/web/public/agent-icons/kiro.svg`, so this is purely a missing label/alias mapping, not a missing asset. Kiro is otherwise a fully supported runtime (`apps/daemon/src/runtimes/defs/kiro.ts`, registered in `runtimes/registry.ts`, metadata → `https://kiro.dev`).\n\nFor comparison, `AGENT_LABELS` currently contains `claude: 'Claude'`, `codex: 'Codex'`, `devin: 'Devin'`, `antigravity: 'Antigravity'`, etc., but not `kiro`.\n\n## Steps to reproduce\n1. Run an Open Design session using the **Kiro CLI** agent (agent id `kiro`).\n2. Look at any UI surface that shows the agent's display name (agent chip / run header / \"Agent · model\" label).\n3. Observe the label is a raw fallback (e.g. `kiro` / `Kiro CLI` passed through) rather than a canonical, alias-normalized brand label like the other agents get.\n\nAlternatively, in code: `exactAgentDisplayName('kiro')` returns `null`, whereas `exactAgentDisplayName('codex')` returns `'Codex'`.\n\n## Expected behavior\n`agentLabels.ts` maps Kiro like the other first-class agents:\n- `AGENT_LABELS`: add `kiro: 'Kiro'` (label consistent with the other short brand names).\n- `AGENT_ALIASES`: add `'kiro cli': 'kiro'` (and `'kiro-cli': 'kiro'`) so the daemon's `name: 'Kiro CLI'` / `bin: 'kiro-cli'` resolve to the canonical id.\n\nAfter the fix, `exactAgentDisplayName('kiro')` / `agentDisplayName('kiro', 'Kiro CLI')` return `'Kiro'`, and `agentIconId('kiro')` resolves to the existing `kiro.svg` brand asset. No regression to existing agents.\n\n## Open Design version\n0.12.1\n\n## Platform\nOther — UI label mapping, not OS-specific.\n\n## Logs (optional)\n```shell\n# Not applicable — no runtime error; incorrect/generic display label only.\n```\n\n## Screenshots (optional)\nAttach a screenshot of a Kiro run's agent chip / header showing the non-canonical label.\n\n## Additional context\n- The same file is also missing labels for other newer ACP agents (hermes, kilo, kimi, vibe, pi, grok/grok-build, trae/trae-cli, reasonix). This issue is scoped to **Kiro**; the others can be a follow-up.\n- Part of a broader effort to make Kiro a true first-class equivalent of Claude Code and Codex across the product (see also the MCP dropdown bug and the `od mcp install kiro` request).\n",
+    "labels": ["bug"],
+    "state": "open",
+    "createdAt": "2026-07-02T16:01:49Z",
+    "updatedAtObserved": "2026-07-06T00:12:07Z"
+  },
+  "repoMeta": {
+    "stars": 75275,
+    "forks": 8611
+  },
+  "vetTimeFacts": {
+    "hasExistingPR": false,
+    "isClaimed": false,
+    "projectActive": true,
+    "contributionGuidelinesFound": true,
+    "mergedPRCount": 1,
+    "orgHasMergedPRs": false,
+    "matchesPreferredCategory": false,
+    "closedWithoutMergeCount": 0
+  },
+  "outcome": {
+    "label": "lost_race",
+    "date": "2026-07-02",
+    "detail": "Another contributor claimed + opened an identical-fix PR (#5085) while John's clone was still downloading; John's finished, review-gated fix was never pushed (zero external footprint)."
+  },
+  "measurable": false,
+  "expectedVerdict": "pursue",
+  "fidelityNote": "Race timing is not observable from a point-in-time vet snapshot — oss-scout has no signal for 'a competing contributor is about to claim this in the next N minutes'. Excluded from headline accuracy; reported in the lost-race appendix.",
+  "vaultSource": "open-source/potential-issue-list.md, open-source/skipped-issues.md"
+}

@@ -1,0 +1,40 @@
+{
+  "id": "casa-6923",
+  "url": "https://github.com/rubyforgood/casa/issues/6923",
+  "owner": "rubyforgood",
+  "repo": "casa",
+  "issueNumber": 6923,
+  "vetDate": "2026-06-09",
+  "issue": {
+    "title": "Fix broken Heroku Scheduler rake tasks",
+    "body": "## Context\n\nRunning each project rake task in this repo (`bundle exec rake <name>`) surfaces a cluster of bugs in the tasks driven by Heroku Scheduler. **Three tasks crash on every invocation; two more crash latently when production data shape triggers them.**\n\nThis issue covers the \"broken in production\" bugs only. Maintainability cleanup (auto_annotate noise, `factory_bot:lint` debt, `deployment/` pruning, in-task schedule-guard anti-pattern) and moving controller specs to request specs are tracked separately.\n\n## Bugs that crash on every run\n\n### 1. `send_case_contact_types_reminder` — `NoMethodError: undefined method 'every' for main`\n\n`lib/tasks/send_case_contact_types_reminder.rake:4` and `lib/tasks/send_no_contact_made_reminder.rake:4` both wrap their work in:\n\n```ruby\nevery 1.weeks do\n  CaseContactTypesReminder.new.send!\nend\n```\n\n`every` is from the `whenever` gem (intended for `config/schedule.rb`), not a Rake primitive. The block raises immediately when the task runs — meaning the case-contact-types SMS reminder has not actually executed since that block was added.\n\n### 2. `send_no_contact_made_reminder` — task name doesn't exist\n\n`lib/tasks/send_no_contact_made_reminder.rake` declares `task send_case_contact_types_reminder: :environment do …` — the same task name used by the other file. `rake -T` confirms only one task is registered, with both descriptions concatenated:\n\n```\nrake send_case_contact_types_reminder    # Send an SMS … past 60 or more days / Send an SMS … two weeks have passed …\n```\n\nSo Heroku Scheduler invocations of `send_no_contact_made_reminder` fail with \"Don't know how to build task\", and the no-contact-made SMS reminder has never run. The file also `require_relative`s the wrong service file and instantiates `CaseContactTypesReminder` instead of `NoContactMadeReminder`.\n\n### 3. `recurring:init` — `NameError: uninitialized constant ExampleRecurringTask`\n\n`lib/tasks/recurring_jobs.rake:3` calls `ExampleRecurringTask.schedule!`, but `ExampleRecurringTask` is defined in `lib/tasks/example_recurring_task.rb` which Rails does not autoload. The class is also dead example code:\n\n```ruby\ndef perform\n  Bugsnag.notify(\"This is just ExampleRecurringTask saying hi in #{Rails.env}\")\nend\n```\n\n— likely safe to delete entirely.\n\n## Latent bugs that crash when data triggers them\n\n### 4. `youth_birthday_reminder` — `NoMethodError: undefined method 'volunteer_id' for nil`\n\n`lib/tasks/youth_birthday_reminder.rake:6`:\n\n```ruby\n.deliver(Volunteer.find_by(id: casa_case.case_assignments.first.volunteer_id))\n```\n\nWhen a `CasaCase.birthday_next_month` case has no `case_assignments`, `.first` is `nil`. Confirmed via isolated repro against dev DB:\n\n```\n$ rails runner 'cc = CasaCase.birthday_next_month.first; cc.case_assignments.destroy_all; cc.case_assignments.first.volunteer_id'\nRAISED: NoMethodError: undefined method 'volunteer_id' for nil\n```\n\nSeed data happens to have ≥1 assignment per case, so the bug never fires in test/dev — but it will fire in production whenever a case is briefly without an active assignment.\n\n`.first` also ignores active vs. inactive — should be `case_assignments.active`.\n\n### 5. `emancipation_checklist_reminder_notifier` (in `development/notifications.rake`) — same bug as #4\n\n`lib/tasks/development/notifications.rake:6` has the identical `casa_case.case_assignments.first.volunteer_id` shape and will crash the same way. The whole `development/notifications.rake` file is also missing an `if Rails.env.development?` guard — so the dev tasks `followup_notifier` (`Followup.all.first`) and `reimbursement_complete_notifier` (`CaseContact.all.first`) could be triggered against prod data.\n\n## Proposed PR scope\n\nSingle PR titled \"Fix broken Heroku Scheduler rake tasks\":\n\n- [ ] Drop the `every 1.weeks do … end` and `every 1.days do … end` blocks in both reminder rake files (#1)\n- [ ] Rename the task in `send_no_contact_made_reminder.rake` to `send_no_contact_made_reminder` and wire it to `NoContactMadeReminder` (#2)\n- [ ] Move `lib/tasks/case_contact_types_reminder.rb`, `no_contact_made_reminder.rb`, `supervisor_weekly_digest.rb` to `app/services/`; drop the `require_relative` lines from their rake files and specs so Rails autoload picks them up (cleanup tied to #1 / #2)\n- [ ] Delete `lib/tasks/recurring_jobs.rake` and `lib/tasks/example_recurring_task.rb` (or move the class to `app/jobs/` and gut the Bugsnag noise) (#3)\n- [ ] Add nil-safety + switch to `case_assignments.active.find_each` in `youth_birthday_reminder.rake` (#4)\n- [ ] Wrap `lib/tasks/development/notifications.rake` in `if Rails.env.development?` and apply the same nil-safety to the emancipation notifier (#5)\n\n## How verified\n\nRan every project-defined rake task against current dev DB (35 cases, 7 volunteers, 2 birthday-next-month cases, 0 followups; today is Saturday May 2 so `monday?` / `day == 1` guards short-circuit the digest tasks):\n\n| Task | Result |\n|---|---|\n| `send_case_contact_types_reminder` | exit 1 — `NoMethodError: undefined method 'every'` |\n| `recurring:init` | exit 1 — `NameError: uninitialized constant ExampleRecurringTask` |\n| `youth_birthday_reminder` (with `case_assignments` empty) | confirmed `NoMethodError` via isolated repro |\n| `send_no_contact_made_reminder` | task name not registered (collides with `send_case_contact_types_reminder`) |\n| `clear_passed_dates`, `court_report_due_reminder`, `volunteer_birthday_reminder`, `send_learning_hour_reports`, `factory_bot:lint`, `test_checker` | exit 0, no crash |\n\n`post_gc_stat_to_discord` was skipped during verification because it HTTP-fetches the production URL — that's a separate concern (P3).",
+    "labels": ["Type: Bug", "ruby"],
+    "state": "closed",
+    "createdAt": "2026-05-03T05:59:24Z",
+    "updatedAtObserved": "2026-06-10T06:04:23Z"
+  },
+  "repoMeta": {
+    "stars": 373,
+    "forks": 533
+  },
+  "vetTimeFacts": {
+    "hasExistingPR": false,
+    "isClaimed": false,
+    "projectActive": true,
+    "contributionGuidelinesFound": true,
+    "mergedPRCount": 0,
+    "orgHasMergedPRs": false,
+    "matchesPreferredCategory": false,
+    "closedWithoutMergeCount": 0
+  },
+  "outcome": {
+    "label": "merged",
+    "date": "2026-06-10",
+    "detail": "PR #6990 merged 2026-06-10 (verified live: merged=true)",
+    "prUrl": "https://github.com/rubyforgood/casa/pull/6990"
+  },
+  "measurable": true,
+  "expectedVerdict": "pursue",
+  "fidelityNote": "vetTimeFacts from potential-issue-list.md: 'Score 8/10 — PR OPEN', fully available/unclaimed at vet time, first PR John opened in this repo (mergedPRCount=0).",
+  "vaultSource": "open-source/potential-issue-list.md, open-source/skipped-issues.md"
+}

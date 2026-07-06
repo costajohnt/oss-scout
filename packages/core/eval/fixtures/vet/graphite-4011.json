@@ -1,0 +1,40 @@
+{
+  "id": "graphite-4011",
+  "url": "https://github.com/GraphiteEditor/Graphite/issues/4011",
+  "owner": "GraphiteEditor",
+  "repo": "Graphite",
+  "issueNumber": 4011,
+  "vetDate": "2026-04-12",
+  "issue": {
+    "title": "Text alignment should work without an explicit max-width",
+    "body": "Currently, the Text node's \"Align\" parameter (Left/Center/Right/Justify) has no effect, and left alignment occurs regardless of the setting, when the \"Max Width\" setting is not active. It should use its own bounding box across all rows of text as the basis for centered and right-aligned justification.",
+    "labels": ["Good First Issue"],
+    "state": "open",
+    "createdAt": "2026-04-06T10:42:10Z",
+    "updatedAtObserved": "2026-04-11T16:47:20Z"
+  },
+  "repoMeta": {
+    "stars": 26467,
+    "forks": 1211
+  },
+  "vetTimeFacts": {
+    "hasExistingPR": true,
+    "isClaimed": false,
+    "projectActive": true,
+    "contributionGuidelinesFound": false,
+    "mergedPRCount": 0,
+    "orgHasMergedPRs": false,
+    "matchesPreferredCategory": false,
+    "closedWithoutMergeCount": 0
+  },
+  "outcome": {
+    "label": "skip_correct",
+    "date": "2026-04-12",
+    "detail": "Skipped: competing PR #4025 open at vet time (verified live: issue and PR both still open as of 2026-07-05).",
+    "prUrl": "https://github.com/GraphiteEditor/Graphite/pull/4025"
+  },
+  "measurable": true,
+  "expectedVerdict": "skip",
+  "fidelityNote": "hasExistingPR=true matches checkNoExistingPR.",
+  "vaultSource": "open-source/potential-issue-list.md, open-source/skipped-issues.md"
+}

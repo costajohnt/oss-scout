@@ -1,0 +1,40 @@
+{
+  "id": "near-cli-rs-581",
+  "url": "https://github.com/near/near-cli-rs/issues/581",
+  "owner": "near",
+  "repo": "near-cli-rs",
+  "issueNumber": 581,
+  "vetDate": "2026-04-04",
+  "issue": {
+    "title": "[Task] Check that recipient is valid before sending transaction",
+    "body": "### Background\n\nIt would be nice to add a check that recipient is valid before sending transaction. It could be done in two ways:\n1) Making an rpc call to check that recipient exists on-chain and ask something like \"The provided recipient `<account-id>` does not exist on `<network>`, are you sure that you want to proceed? (y/n)\"\n\nThis option can be more robust, but it'll make life a bit harder for those who want to send tokens to new account that wasn't activated yet\n\n2) By raw parent account check and making sure that \"testnet\" is not parent if mainnet network is selected and vice versa for testnet network\n\nI think one this is simpler and doesn't require extra rpc call\n\n### User Story\n\nAs a user I want to have minimal chances of submitting a transaction to a recipient on different network or non-existent recipient at all, but I still want to be able to do it after explicit confirmation, I shouldn't be blocked by this\n\n### Acceptance Criteria\n\nI think this can be added only for `tokens` subcommand for now, since contract should be safe (call will immediately fail if recipient is invalid)\n\n### Resources & Additional Notes\n\nThis is needed to prevent such issues https://nearblocks.io/txns/4SeBJbjHxkEmtbwB1T7FLxBHzkgGCg3HmqCcbQoatL2Q",
+    "labels": ["enhancement", "good first issue"],
+    "state": "closed",
+    "createdAt": "2026-04-01T19:48:08Z",
+    "updatedAtObserved": "2026-05-08T00:09:06Z"
+  },
+  "repoMeta": {
+    "stars": 144,
+    "forks": 77
+  },
+  "vetTimeFacts": {
+    "hasExistingPR": true,
+    "isClaimed": false,
+    "projectActive": true,
+    "contributionGuidelinesFound": false,
+    "mergedPRCount": 0,
+    "orgHasMergedPRs": false,
+    "matchesPreferredCategory": false,
+    "closedWithoutMergeCount": 0
+  },
+  "outcome": {
+    "label": "skip_correct",
+    "date": "2026-04-04",
+    "detail": "Skipped: competing PR #582 already under review at vet time (verified live: #582 merged=true).",
+    "prUrl": "https://github.com/near/near-cli-rs/pull/582"
+  },
+  "measurable": true,
+  "expectedVerdict": "skip",
+  "fidelityNote": "hasExistingPR=true matches checkNoExistingPR.",
+  "vaultSource": "open-source/potential-issue-list.md, open-source/skipped-issues.md"
+}

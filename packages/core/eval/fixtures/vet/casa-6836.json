@@ -1,0 +1,39 @@
+{
+  "id": "casa-6836",
+  "url": "https://github.com/rubyforgood/casa/issues/6836",
+  "owner": "rubyforgood",
+  "repo": "casa",
+  "issueNumber": 6836,
+  "vetDate": "2026-04-12",
+  "issue": {
+    "title": "Bug: N+1 queries on new case contacts datatable endpoint",
+    "body": "## Impacted User Types\n\nAll users who visit `/case_contacts/new_design` — volunteers, supervisors, and admins.\n\n## Environment\n\nAny environment where the `new_case_contact_table` Flipper flag is enabled.\n\n## Current Behavior\n\nWhen the new case contacts table loads at `/case_contacts/new_design`, the datatable endpoint (`POST /case_contacts/new_design/datatable`) fires two N+1 query sets — one per row for `casa_cases` and one per row for `followups`. The queries scale linearly with the number of rows returned per page (default 10, configurable up to 100).\n\n<details>\n\n<summary>Rails log showing the N+1 warnings</summary>\n\n```shell\n18:09:23 web.1  | N+1 queries detected:\n18:09:23 web.1  |   SELECT \"casa_cases\".\"id\", \"casa_cases\".\"case_number\", ... FROM \"casa_cases\" WHERE \"casa_cases\".\"id\" = $1 LIMIT $2\n18:09:23 web.1  |   SELECT \"casa_cases\".\"id\", \"casa_cases\".\"case_number\", ... FROM \"casa_cases\" WHERE \"casa_cases\".\"id\" = $1 LIMIT $2\n18:09:23 web.1  |   SELECT \"casa_cases\".\"id\", \"casa_cases\".\"case_number\", ... FROM \"casa_cases\" WHERE \"casa_cases\".\"id\" = $1 LIMIT $2\n18:09:23 web.1  |   SELECT \"casa_cases\".\"id\", \"casa_cases\".\"case_number\", ... FROM \"casa_cases\" WHERE \"casa_cases\".\"id\" = $1 LIMIT $2\n18:09:23 web.1  |   SELECT \"casa_cases\".\"id\", \"casa_cases\".\"case_number\", ... FROM \"casa_cases\" WHERE \"casa_cases\".\"id\" = $1 LIMIT $2\n18:09:23 web.1  |   SELECT \"casa_cases\".\"id\", \"casa_cases\".\"case_number\", ... FROM \"casa_cases\" WHERE \"casa_cases\".\"id\" = $1 LIMIT $2\n18:09:23 web.1  |   SELECT \"casa_cases\".\"id\", \"casa_cases\".\"case_number\", ... FROM \"casa_cases\" WHERE \"casa_cases\".\"id\" = $1 LIMIT $2\n18:09:23 web.1  | Call stack:\n18:09:23 web.1  |   app/datatables/case_contact_datatable.rb:20:in 'block in CaseContactDatatable#data'\n18:09:23 web.1  |   app/datatables/case_contact_datatable.rb:14:in 'Enumerable#map'\n18:09:23 web.1  |   app/datatables/case_contact_datatable.rb:14:in 'CaseContactDatatable#data'\n18:09:23 web.1  |   app/datatables/application_datatable.rb:15:in 'ApplicationDatatable#as_json'\n18:09:23 web.1  |   app/controllers/case_contacts/case_contacts_new_design_controller.rb:15:in 'CaseContacts::CaseContactsNewDesignController#datatable'\n\n18:09:23 web.1  | N+1 queries detected:\n18:09:23 web.1  |   SELECT 1 AS one FROM \"followups\" WHERE \"followups\".\"case_contact_id\" = $1 AND \"followups\".\"status\" = $2 LIMIT $3\n18:09:23 web.1  |   SELECT 1 AS one FROM \"followups\" WHERE \"followups\".\"case_contact_id\" = $1 AND \"followups\".\"status\" = $2 LIMIT $3\n18:09:23 web.1  |   SELECT 1 AS one FROM \"followups\" WHERE \"followups\".\"case_contact_id\" = $1 AND \"followups\".\"status\" = $2 LIMIT $3\n18:09:23 web.1  |   SELECT 1 AS one FROM \"followups\" WHERE \"followups\".\"case_contact_id\" = $1 AND \"followups\".\"status\" = $2 LIMIT $3\n18:09:23 web.1  |   SELECT 1 AS one FROM \"followups\" WHERE \"followups\".\"case_contact_id\" = $1 AND \"followups\".\"status\" = $2 LIMIT $3\n18:09:23 web.1  |   SELECT 1 AS one FROM \"followups\" WHERE \"followups\".\"case_contact_id\" = $1 AND \"followups\".\"status\" = $2 LIMIT $3\n18:09:23 web.1  |   SELECT 1 AS one FROM \"followups\" WHERE \"followups\".\"case_contact_id\" = $1 AND \"followups\".\"status\" = $2 LIMIT $3\n18:09:23 web.1  |   SELECT 1 AS one FROM \"followups\" WHERE \"followups\".\"case_contact_id\" = $1 AND \"followups\".\"status\" = $2 LIMIT $3\n18:09:23 web.1  |   SELECT 1 AS one FROM \"followups\" WHERE \"followups\".\"case_contact_id\" = $1 AND \"followups\".\"status\" = $2 LIMIT $3\n18:09:23 web.1  |   SELECT 1 AS one FROM \"followups\" WHERE \"followups\".\"case_contact_id\" = $1 AND \"followups\".\"status\" = $2 LIMIT $3\n18:09:23 web.1  | Call stack:\n18:09:23 web.1  |   app/datatables/case_contact_datatable.rb:38:in 'block in CaseContactDatatable#data'\n18:09:23 web.1  |   app/datatables/case_contact_datatable.rb:14:in 'Enumerable#map'\n18:09:23 web.1  |   app/datatables/case_contact_datatable.rb:14:in 'CaseContactDatatable#data'\n18:09:23 web.1  |   app/datatables/application_datatable.rb:15:in 'ApplicationDatatable#as_json'\n18:09:23 web.1  |   app/controllers/case_contacts/case_contacts_new_design_controller.rb:15:in 'CaseContacts::CaseContactsNewDesignController#datatable'\n```\n\n</details>\n\n## Expected Behavior\n\nThe datatable endpoint should load all needed associations in a fixed number of queries regardless of page size.\n\n## Root Causes\n\n**N+1 #1 — `casa_cases` (datatable line 20)**\n\n`case_contact.casa_case&.case_number` triggers a query per row. The existing `.left_joins(:casa_case)` in `raw_records` joins for SQL filtering but does not eager load the association into memory.\n\nFix: add `:casa_case` to the `includes` chain in `raw_records`.\n\n**N+1 #2 — `followups.requested.exists?` (datatable line 38)**\n\n`:followups` is already in the `includes`, so the association records are loaded in memory. However, `.requested.exists?` fires a new SQL query regardless because `exists?` always hits the database.\n\nFix: replace with `case_contact.followups.any?(&:requested?)` — this operates on the already-loaded association without an additional query.\n\n## How to Replicate\n\n1. Enable the `new_case_contact_table` Flipper flag\n2. Log in as any user at the QA site\n3. Visit `/case_contacts/new_design`\n4. Observe the Rails log for `N+1 queries detected` warnings\n\n## How to access the QA site\n\n_Login Details:_\n[Link to QA site](https://casa-qa.herokuapp.com/)\n\nLogin Emails:\n\n- volunteer1@example.com — view site as a volunteer\n- supervisor1@example.com — view site as a supervisor\n- casa_admin1@example.com — view site as an admin\n- all_casa_admin1@example.com — view site as an all casa admin\n  - go to `/all_casa_admins/sign_in`\n\nPassword for all users: 12345678\n\n### Questions? Join Slack!\n\nWe highly recommend that you join us in [slack](https:https://join.slack.com/t/rubyforgood/shared_invite/zt-35218k86r-vlIiWqig54c9t~_LkGpQ7Q) #casa channel to ask questions quickly. And [discord](https://discord.gg/qJcw2RZH8Q) for office hours (currently Tuesday 5-7pm Pacific), stakeholder news, and upcoming new issues.\n",
+    "labels": ["Type: Bug"],
+    "state": "closed",
+    "createdAt": "2026-04-09T20:52:15Z",
+    "updatedAtObserved": "2026-04-14T01:16:05Z"
+  },
+  "repoMeta": {
+    "stars": 373,
+    "forks": 533
+  },
+  "vetTimeFacts": {
+    "hasExistingPR": false,
+    "isClaimed": true,
+    "projectActive": true,
+    "contributionGuidelinesFound": true,
+    "mergedPRCount": 0,
+    "orgHasMergedPRs": false,
+    "matchesPreferredCategory": false,
+    "closedWithoutMergeCount": 0
+  },
+  "outcome": {
+    "label": "skip_correct",
+    "date": "2026-04-12",
+    "detail": "Skipped: issue assigned to @cliftonmcintosh at vet time (verified live: assignee still on the closed issue)."
+  },
+  "measurable": true,
+  "expectedVerdict": "skip",
+  "fidelityNote": "isClaimed=true matches checkNotClaimed's assignee check.",
+  "vaultSource": "open-source/potential-issue-list.md, open-source/skipped-issues.md"
+}

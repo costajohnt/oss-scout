@@ -1,0 +1,40 @@
+{
+  "id": "super-productivity-7786",
+  "url": "https://github.com/super-productivity/super-productivity/issues/7786",
+  "owner": "super-productivity",
+  "repo": "super-productivity",
+  "issueNumber": 7786,
+  "vetDate": "2026-05-25",
+  "issue": {
+    "title": "🚨 Content of the task deleted when a checkbox was created",
+    "body": "### Version Used\n\nv18.7.0W Windows11\n\n### Current Behavior\n\nIf you create a new task in the board view and then try to add a checkbox, the entire content (note) of the task is deleted and a single checkbox is inserted instead (see video).\n\n<img width=\"300\" alt=\"Image\" src=\"https://github.com/user-attachments/assets/bcd0b9fe-4251-4240-a898-5619d6ec256d\" />\n\nThe text in the ‘note’ in the video was pre-set (Settings -> Tasks). However, I've also had it happen before that the entire text was deleted when I'd already written something by myself.\n\nOtherwise, I’m happy with the checkbox feature and grateful that it’s available.\n\n### Expected Behavior\n\nWhen I create a checkbox, it should be inserted at the last cursor position. Alternatively, it can simply be inserted at the end of the text. Under no circumstances, however, should the existing text be deleted.\n\n### Steps to Reproduce\n\nsee video\n\n### Can you reproduce this reliably?\n\nYes, I can reproduce it reliably.\n\n### Console Output\n\n```shell\n\n```\n\n### Documentation\n\n- [ ] The documentation/[wiki](https://github.com/super-productivity/super-productivity/wiki) is unclear or incorrect for this case.\n- [ ] There should be a note added to the documentation/[wiki](https://github.com/super-productivity/super-productivity/wiki) for this case.",
+    "labels": [],
+    "state": "closed",
+    "createdAt": "2026-05-25T16:02:22Z",
+    "updatedAtObserved": "2026-05-26T11:22:41Z"
+  },
+  "repoMeta": {
+    "stars": 20467,
+    "forks": 1824
+  },
+  "vetTimeFacts": {
+    "hasExistingPR": false,
+    "isClaimed": false,
+    "projectActive": true,
+    "contributionGuidelinesFound": true,
+    "mergedPRCount": 1,
+    "orgHasMergedPRs": false,
+    "matchesPreferredCategory": false,
+    "closedWithoutMergeCount": 0
+  },
+  "outcome": {
+    "label": "merged",
+    "date": "2026-05-26",
+    "detail": "PR #7793 merged 2026-05-26 (verified live: merged=true)",
+    "prUrl": "https://github.com/super-productivity/super-productivity/pull/7793"
+  },
+  "measurable": true,
+  "expectedVerdict": "pursue",
+  "fidelityNote": "Same vet round as #7785, same repo/history facts.",
+  "vaultSource": "open-source/potential-issue-list.md, open-source/skipped-issues.md"
+}

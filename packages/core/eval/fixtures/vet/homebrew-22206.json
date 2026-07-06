@@ -1,0 +1,40 @@
+{
+  "id": "homebrew-22206",
+  "url": "https://github.com/Homebrew/brew/issues/22206",
+  "owner": "Homebrew",
+  "repo": "brew",
+  "issueNumber": 22206,
+  "vetDate": "2026-05-10",
+  "issue": {
+    "title": "Error: Tab file for (cask) does not exist",
+    "body": "### Verification\n\n- [x] I understand that [if I ignore these instructions, my issue may be closed without review](https://github.com/Homebrew/homebrew-cask/blob/HEAD/doc/faq/closing_issues_without_review.md).\n- [x] I have retried my command with `--force`.\n- [x] I ran `brew update-reset && brew update` and retried my command.\n- [x] I ran `brew doctor`, fixed as many issues as possible and retried my command.\n- [x] I have checked the instructions for [reporting bugs](https://github.com/Homebrew/homebrew-cask#reporting-bugs).\n- [x] I made doubly sure this is not a [checksum does not match / SHA256 mismatch](https://docs.brew.sh/Common-Issues#cask---checksum-does-not-match) error (do not open an issue before trying to open a PR to fix first).\n\n### Description of issue\n\nRunning `brew info --cask discord` reveals that the cask is \"Installed (as dependency)\".\n\nAttempting to change its installation to on-request, using the below command, fails with the below output.\n\nThe same behavior occurs with other casks that report being installed as dependency.\n\nChanging the installations of formulae and on-request casks with `brew tab` works as expected.\n\n### Command that failed\n\nbrew tab --installed-on-request --cask discord\n\n### Output of command with `--verbose --debug`\n\n```shell\n/opt/homebrew/Library/Homebrew/brew.rb (Cask::CaskLoader::FromAPILoader): loading discord\nError: Tab file for discord does not exist.\n/opt/homebrew/Library/Homebrew/cmd/tab.rb:70:in 'Homebrew::Cmd::TabCmd#update_tab'\n/opt/homebrew/Library/Homebrew/vendor/bundle/ruby/4.0.0/gems/sorbet-runtime-0.6.13184/lib/types/private/methods/call_validation.rb:286:in 'UnboundMethod#bind_call'\n/opt/homebrew/Library/Homebrew/vendor/bundle/ruby/4.0.0/gems/sorbet-runtime-0.6.13184/lib/types/private/methods/call_validation.rb:286:in 'T::Private::Methods::CallValidation.validate_call'\n/opt/homebrew/Library/Homebrew/vendor/bundle/ruby/4.0.0/gems/sorbet-runtime-0.6.13184/lib/types/private/methods/_methods.rb:259:in 'block in Homebrew::Cmd::TabCmd#_on_method_added'\n/opt/homebrew/Library/Homebrew/cmd/tab.rb:54:in 'block in Homebrew::Cmd::TabCmd#run'\n/opt/homebrew/Library/Homebrew/cmd/tab.rb:53:in 'Array#each'\n/opt/homebrew/Library/Homebrew/cmd/tab.rb:53:in 'Homebrew::Cmd::TabCmd#run'\n/opt/homebrew/Library/Homebrew/vendor/bundle/ruby/4.0.0/gems/sorbet-runtime-0.6.13184/lib/types/private/methods/call_validation.rb:286:in 'UnboundMethod#bind_call'\n/opt/homebrew/Library/Homebrew/vendor/bundle/ruby/4.0.0/gems/sorbet-runtime-0.6.13184/lib/types/private/methods/call_validation.rb:286:in 'T::Private::Methods::CallValidation.validate_call'\n/opt/homebrew/Library/Homebrew/vendor/bundle/ruby/4.0.0/gems/sorbet-runtime-0.6.13184/lib/types/private/methods/_methods.rb:259:in 'block in Homebrew::Cmd::TabCmd#_on_method_added'\n/opt/homebrew/Library/Homebrew/brew.rb:114:in '<main>'\nPlease report this issue:\n  https://docs.brew.sh/Troubleshooting\n```\n\n### Output of `brew doctor` and `brew config`\n\n```shell\nPlease note that these warnings are just used to help the Homebrew maintainers\nwith debugging if you file an issue. If everything you use Homebrew for is\nworking fine: please don't worry or file an issue; just ignore this. Thanks!\n\nWarning: Some installed casks are deprecated or disabled.\nYou should find replacements for the following casks:\n  dosbox-x-app\n  gstreamer-runtime\n  vmware-fusion\n  wine-stable\n\nHOMEBREW_VERSION: 5.1.10-52-g1c3a79e\nORIGIN: https://github.com/Homebrew/brew\nHEAD: 1c3a79e898a18b906531af25acf255461448d32d\nLast commit: 2 hours ago\nBranch: main\nCore tap JSON: 09 May 20:20 UTC\nCore cask tap JSON: 09 May 20:20 UTC\nHOMEBREW_PREFIX: /opt/homebrew\nHOMEBREW_CASK_OPTS: []\nHOMEBREW_DISPLAY: /var/run/com.apple.launchd.bd6musbP09/org.xquartz:0\nHOMEBREW_DOWNLOAD_CONCURRENCY: 20\nHOMEBREW_FORBID_PACKAGES_FROM_PATHS: set\nHOMEBREW_MAKE_JOBS: 10\nHOMEBREW_SORBET_RUNTIME: set\nHomebrew Ruby: 4.0.3 => /opt/homebrew/Library/Homebrew/vendor/portable-ruby/4.0.3/bin/ruby\nCPU: deca-core 64-bit arm_firestorm_icestorm\nClang: 21.0.0 build 2100\nGit: 2.50.1 => /Applications/Xcode.app/Contents/Developer/usr/bin/git\nCurl: 8.7.1 => /usr/bin/curl\nmacOS: 26.4.1-arm64\nCLT: 26.4.1.0.1775747724\nXcode: 26.4.1\nMetal Toolchain: N/A\nRosetta 2: false\n```\n\n### Output of `brew tap`\n\n```shell\ndcmfx/tap\nhomebrew/autoupdate\n```",
+    "labels": [],
+    "state": "closed",
+    "createdAt": "2026-05-09T21:32:23Z",
+    "updatedAtObserved": "2026-05-10T08:54:56Z"
+  },
+  "repoMeta": {
+    "stars": 48733,
+    "forks": 11203
+  },
+  "vetTimeFacts": {
+    "hasExistingPR": false,
+    "isClaimed": false,
+    "projectActive": true,
+    "contributionGuidelinesFound": true,
+    "mergedPRCount": 0,
+    "orgHasMergedPRs": false,
+    "matchesPreferredCategory": false,
+    "closedWithoutMergeCount": 0
+  },
+  "outcome": {
+    "label": "lost_race",
+    "date": "2026-05-10",
+    "detail": "John's PR #22225 (opened 2026-05-10) was closed by the maintainer as a duplicate: PR #22211 by another contributor had merged ~9h earlier (verified live: #22211 merged=true, #22225 merged=false). The 'no other open PRs' check passed vacuously because #22211 was no longer open by the time John's PR was opened.",
+    "prUrl": "https://github.com/Homebrew/brew/pull/22225"
+  },
+  "measurable": false,
+  "expectedVerdict": "pursue",
+  "fidelityNote": "hasExistingPR=false is the CORRECT vet-time snapshot (no PR existed yet when John vetted/started); the competing PR was opened and merged entirely within John's build window. This is exactly the class of miss a snapshot-based existing-PR check structurally cannot catch — a fresh recheck immediately before push (which the vault's CLAUDE.md now mandates) is the real fix, not a vetting change.",
+  "vaultSource": "open-source/potential-issue-list.md, open-source/skipped-issues.md"
+}

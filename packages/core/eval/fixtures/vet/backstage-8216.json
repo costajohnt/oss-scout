@@ -1,0 +1,40 @@
+{
+  "id": "backstage-8216",
+  "url": "https://github.com/backstage/community-plugins/issues/8216",
+  "owner": "backstage",
+  "repo": "community-plugins",
+  "issueNumber": 8216,
+  "vetDate": "2026-04-12",
+  "issue": {
+    "title": "🐛 entity-validation: Errors out with `kind` or `metadata` key value missing, instead of properly reporting the issue",
+    "body": "### Workspace\n\nentity-validation\n\n### 📜 Description\n\nWhen an entity with either missing `kind` or an empty `metadata` field is validated, the plugin errors out, instead of reporting proper errors.\n\n### 👍 Expected behavior\n\nThe plugin should properly flag missing `kind` and `metadata` to be a proper object type.\n\n### 👎 Actual Behavior with Screenshots\n\nIt errors out instead of reporting the missing field.\n\nWhen `kind` is missing ->\n<img width=\"1919\" height=\"1059\" alt=\"Image\" src=\"https://github.com/user-attachments/assets/28af3979-d3cb-439f-9c63-251c14bf7149\" />\n\nWhen `metadata` property is present without any content ->\n<img width=\"1919\" height=\"1059\" alt=\"Image\" src=\"https://github.com/user-attachments/assets/2c5cac2d-8076-4a21-97e7-97f7127d2f3a\" />\n\n### 👟 Reproduction steps\n\n1. Go to entity validation plugin screen.\n2. Try to validate an entity with `kind` or `metadata` key value missing.\n\n### 📃 Provide the context for the Bug.\n\nThis bug doesn't flag an incorrect entity properly. This happens because the `humaizeEntityRef` from `@backstage/plugin-catalog-react` package expects `entitiyRef.kind` & `entityRef.metadata.namespace` to be available, even with the defaults provided.\n\n### 👀 Have you spent some time to check if this bug has been raised before?\n\n- [x] I checked and didn't find similar issue\n\n### 🏢 Have you read the Code of Conduct?\n\n- [x] I have read the [Code of Conduct](https://github.com/backstage/community-plugins/blob/main/CODE_OF_CONDUCT.md)\n\n### Are you willing to submit PR?\n\nYes I am willing to submit a PR!",
+    "labels": ["bug", "workspace/entity-validation"],
+    "state": "closed",
+    "createdAt": "2026-03-24T11:38:41Z",
+    "updatedAtObserved": "2026-07-03T17:43:55Z"
+  },
+  "repoMeta": {
+    "stars": 396,
+    "forks": 649
+  },
+  "vetTimeFacts": {
+    "hasExistingPR": false,
+    "isClaimed": false,
+    "projectActive": true,
+    "contributionGuidelinesFound": true,
+    "mergedPRCount": 0,
+    "orgHasMergedPRs": false,
+    "matchesPreferredCategory": false,
+    "closedWithoutMergeCount": 0
+  },
+  "outcome": {
+    "label": "merged",
+    "date": "2026-07-03",
+    "detail": "PR #8547 merged 2026-07-03 — an unusually long ~3 month review cycle (verified live: merged=true)",
+    "prUrl": "https://github.com/backstage/community-plugins/pull/8547"
+  },
+  "measurable": true,
+  "expectedVerdict": "pursue",
+  "fidelityNote": "Longest merge latency in this fixture set; included deliberately so the report's calibration section isn't only fast-merge success stories.",
+  "vaultSource": "open-source/potential-issue-list.md, open-source/skipped-issues.md"
+}

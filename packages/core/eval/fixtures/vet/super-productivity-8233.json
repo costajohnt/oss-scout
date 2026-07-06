@@ -1,0 +1,40 @@
+{
+  "id": "super-productivity-8233",
+  "url": "https://github.com/super-productivity/super-productivity/issues/8233",
+  "owner": "super-productivity",
+  "repo": "super-productivity",
+  "issueNumber": 8233,
+  "vetDate": "2026-06-09",
+  "issue": {
+    "title": "refactor(sync): single source of truth for local-only sync settings + round-trip tests",
+    "body": "## Background\n\nPer-device sync settings live inside `globalConfig.sync` — synced state — and must be carefully (a) scrubbed at every remote-upload boundary and (b) preserved with local values at every hydration/replay boundary. The current implementation works, but the definition of \"which keys are local-only\" is duplicated across three places that can silently drift, and the two-tier model behind the stripping/applying is implicit.\n\nThis came up while reviewing #8077 (which fixes #7661). The PR is correct as-is; this issue tracks follow-up hardening that's out of scope for that fix.\n\n## Problem 1 — \"local-only\" defined in 3 places\n\nThe same conceptual set (\"keys that must stay on this device\") is encoded three times:\n\n1. `LocalOnlySyncSettings` type at `src/app/features/config/local-only-sync-settings.util.ts:3-10` — `Pick` of 5 keys\n2. `LOCAL_ONLY_SYNC_SCHEDULE_KEYS` array at `src/app/features/config/local-only-sync-settings.util.ts:12-15` — value array of 2 keys (the strip-at-wire subset)\n3. `withLocalOnlySyncSettings` helper at `src/app/features/config/store/global-config.reducer.ts:129-139` — hand-rolled list of all 5 keys, no link back to (1)\n\nAdding a 6th local-only field requires remembering to update (1) and (3), and sometimes (2). Nothing forces consistency.\n\n## Problem 2 — two-tier semantics are implicit\n\nThe util conflates two distinct concepts without naming them:\n\n- **Schedule keys** (`syncInterval`, `isManualSyncOnly`) — must never leave the device. `stripLocalOnlySyncScheduleSettings` removes them entirely.\n- **Device-identity keys** (`syncProvider`, `isEnabled`, `isEncryptionEnabled`) — exist on every device but the local value must win on hydration. `stripLocalOnlySyncSettingsFromAppData` nulls `syncProvider` on upload; the receiving side restores it.\n\n`stripLocalOnlySyncSettingsFromAppData` does *both* (strip schedule + null `syncProvider`) and the asymmetry is invisible to callers. A first-time reader has to mentally reconstruct the model.\n\n## Problem 3 — no round-trip integration test\n\nThe invariant (\"for these 5 keys, local always wins after a remote interaction\") is re-established at **5 strip sites**:\n\n- `src/app/imex/sync/snapshot-upload.service.ts:122`\n- `src/app/op-log/sync-providers/file-based/file-based-sync-adapter.service.ts:410`\n- `src/app/op-log/sync-providers/file-based/file-based-sync-adapter.service.ts:789`\n- `src/app/op-log/sync/operation-log-upload.service.ts:454` (schedule keys, incremental op)\n- `src/app/op-log/sync/operation-log-upload.service.ts:499` (full-state op)\n\n...and **4 preserve/apply sites**:\n\n- `src/app/op-log/persistence/sync-hydration.service.ts:127-128`\n- `src/app/op-log/sync/remote-ops-processing.service.ts:502`\n- `src/app/features/config/store/global-config.reducer.ts:167` (`loadAllData`)\n- `src/app/features/config/store/global-config.reducer.ts:228` (`updateGlobalConfigSection` with `isRemote: true`)\n\nIf any single one regresses, settings leak or get overwritten on one client — a silent corruption that's hard to diagnose from logs. Existing tests cover each piece individually; nothing pins the round-trip invariant.\n\n## Proposed path\n\n### Phase 1 — single source of truth (small, mechanical)\n\nIn `local-only-sync-settings.util.ts`, declare the key arrays first and derive type + helpers from them:\n\n```ts\nexport const LOCAL_ONLY_SYNC_SCHEDULE_KEYS = [\n  'syncInterval',\n  'isManualSyncOnly',\n] as const satisfies readonly (keyof SyncConfig)[];\n\nexport const LOCAL_ONLY_SYNC_DEVICE_KEYS = [\n  'isEnabled',\n  'isEncryptionEnabled',\n  'syncProvider',\n] as const satisfies readonly (keyof SyncConfig)[];\n\nexport const LOCAL_ONLY_SYNC_KEYS = [\n  ...LOCAL_ONLY_SYNC_SCHEDULE_KEYS,\n  ...LOCAL_ONLY_SYNC_DEVICE_KEYS,\n] as const;\n\nexport type LocalOnlySyncSettings =\n  Pick<SyncConfig, (typeof LOCAL_ONLY_SYNC_KEYS)[number]>;\n```\n\nThen rewrite `withLocalOnlySyncSettings` in `global-config.reducer.ts` as a loop over `LOCAL_ONLY_SYNC_KEYS` instead of a hand-rolled list. Add a header comment to the util explaining the two-tier model (schedule vs device). Add one spec assertion that the two key sets are disjoint:\n\n```ts\nexpect(new Set([...LOCAL_ONLY_SYNC_SCHEDULE_KEYS, ...LOCAL_ONLY_SYNC_DEVICE_KEYS]).size)\n  .toBe(LOCAL_ONLY_SYNC_SCHEDULE_KEYS.length + LOCAL_ONLY_SYNC_DEVICE_KEYS.length);\n```\n\nPure refactor, no behavior change.\n\n### Phase 2 — round-trip integration tests (small, focused)\n\nAdd one test in `sync-hydration.service.spec.ts` and one in `remote-ops-processing.service.spec.ts` of the form:\n\n> Local: `{syncProvider: WebDAV, syncInterval: 5min, isManualSyncOnly: true, isEnabled: true, isEncryptionEnabled: false}`. Inbound full-state snapshot/op carries different values for all 5 keys. After hydration/replay, the local store still shows all 5 local values.\n\nAdd one test for the incremental case: dispatch a remote `updateGlobalConfigSection({sectionKey: 'sync', sectionCfg: {syncInterval: 60_000}})` and assert the local `syncInterval` is unchanged.\n\nThese pin the *invariant*, not the implementation; they'll survive a future refactor of the strip/apply layout.\n\n### Phase 3 — replace the `syncProvider === null` \"first load\" heuristic (separate PR)\n\nAt `global-config.reducer.ts:165`:\n\n```ts\nconst hasLocalSettings = oldState.sync.syncProvider !== null;\n```\n\nThis conflates \"never loaded\" with \"user explicitly has no provider.\" A `loadAllData` after the user disables sync would clobber their choice. Replace with an explicit `hasLoadedAppData` (or `isHydrated`) flag in state, flipped to `true` once on first successful `loadAllData`. State-shape change → its own PR.\n\n## Explicitly out of scope\n\n- A `SyncBoundaryService` abstraction over the 5 strip sites — each has different framing (snapshot, file adapter, op upload paths, full-state op); forcing them through one interface grows a worse parameter object.\n- Branded `SyncConfigForWire` / `SyncConfigLocalOnly` subtypes — type-safe but every caller would have to be retyped; runtime guards still needed, so structural ceremony with no dividend.\n\n## Refs\n\n- PR #8077 (`fix(sync): keep schedule settings local`) — context, no overlap\n- Issue #7661 — original bug report\n- `docs/sync-and-op-log/contributor-sync-model.md` — sync-correctness rules\n",
+    "labels": [],
+    "state": "open",
+    "createdAt": "2026-06-09T20:45:48Z",
+    "updatedAtObserved": "2026-06-09T20:45:48Z"
+  },
+  "repoMeta": {
+    "stars": 20467,
+    "forks": 1824
+  },
+  "vetTimeFacts": {
+    "hasExistingPR": false,
+    "isClaimed": false,
+    "projectActive": true,
+    "contributionGuidelinesFound": true,
+    "mergedPRCount": 1,
+    "orgHasMergedPRs": false,
+    "matchesPreferredCategory": false,
+    "closedWithoutMergeCount": 0
+  },
+  "outcome": {
+    "label": "maintainer_fixed",
+    "date": "2026-06-09",
+    "detail": "Maintainer johannesjo merged his own PR #8235 same day, ~few hours after filing the issue (verified live: merged=true).",
+    "prUrl": "https://github.com/super-productivity/super-productivity/pull/8235"
+  },
+  "measurable": false,
+  "expectedVerdict": "pursue",
+  "fidelityNote": "Maintainer-filed issue, self-fixed same day — no existing PR/claim visible at vet time.",
+  "vaultSource": "open-source/potential-issue-list.md, open-source/skipped-issues.md"
+}

@@ -19,7 +19,8 @@
   "files": [
     "dist/",
     "!dist/**/*.map",
-    "!dist/core/test-utils.*"
+    "!dist/core/test-utils.*",
+    "!dist/eval/**"
   ],
   "scripts": {
     "build": "tsc",
@@ -29,6 +30,9 @@
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",
+    "eval:vet": "tsx src/eval/vet-eval-cli.ts --full",
+    "eval:vet:quick": "tsx src/eval/vet-eval-cli.ts --quick",
+    "eval:vet:build-fixtures": "tsx src/eval/build-fixtures.ts",
     "prepublishOnly": "pnpm run build && pnpm run bundle"
   },
   "keywords": [
