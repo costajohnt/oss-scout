@@ -25,6 +25,16 @@ vi.mock("./logger.js", () => ({
   warn: () => {},
 }));
 
+// Bootstrap paces its Search API calls through the shared budget tracker
+// singleton; stub it so tests don't wait on real sliding-window pacing.
+const mockTracker = {
+  waitForBudget: vi.fn().mockResolvedValue(undefined),
+  recordCall: vi.fn(),
+};
+vi.mock("./search-budget.js", () => ({
+  getSearchBudgetTracker: () => mockTracker,
+}));
+
 const { bootstrapScout } = await import("./bootstrap.js");
 
 let tokenCounter = 0;
@@ -73,6 +83,8 @@ describe("bootstrapScout", () => {
       search: { issuesAndPullRequests: vi.fn() },
       paginate: { iterator: vi.fn() },
     };
+    mockTracker.waitForBudget.mockClear();
+    mockTracker.recordCall.mockClear();
   });
 
   it("skips when rate limit is too low", async () => {
@@ -126,6 +138,31 @@ describe("bootstrapScout", () => {
     expect(state.closedPRs).toHaveLength(1);
     expect(state.openPRs).toHaveLength(1);
     expect(state.openPRs[0].url).toBe("https://github.com/org/repo-d/pull/4");
+  });
+
+  it("paces every Search API call through the budget tracker", async () => {
+    mockRateLimit(30);
+    mockOctokitInstance.paginate.iterator = vi.fn().mockReturnValue(
+      (async function* () {
+        yield { data: [] };
+      })(),
+    );
+    mockOctokitInstance.search.issuesAndPullRequests = vi
+      .fn()
+      .mockResolvedValueOnce({
+        data: { items: [makePRItem(1, "org/repo-a")] },
+      })
+      .mockResolvedValueOnce({ data: { items: [] } })
+      .mockResolvedValueOnce({ data: { items: [] } });
+
+    const token = uniqueToken();
+    const scout = new OssScout(token, makeState());
+    await bootstrapScout(scout, token);
+
+    // One merged/closed/open Search call each; waitForBudget gates and
+    // recordCall accounts for every one of them.
+    expect(mockTracker.waitForBudget).toHaveBeenCalledTimes(3);
+    expect(mockTracker.recordCall).toHaveBeenCalledTimes(3);
   });
 
   it("handles empty results", async () => {
