@@ -9,6 +9,21 @@ vi.mock("./logger.js", () => ({
   info: vi.fn(),
 }));
 
+// Pass-through http-cache so these unit tests exercise the real fetcher without
+// touching the on-disk ETag cache. ETag-specific behavior is covered separately
+// in probe-repo-file.etag.test.ts against a real HttpCache.
+vi.mock("./http-cache.js", () => ({
+  getHttpCache: () => ({}),
+  cachedRequest: async (
+    _cache: unknown,
+    _url: string,
+    fetcher: (headers: Record<string, string>) => Promise<{ data: unknown }>,
+  ) => {
+    const response = await fetcher({});
+    return response.data;
+  },
+}));
+
 /** An HTTP-shaped error with a numeric status (Octokit RequestError shape). */
 function httpError(
   status: number,
