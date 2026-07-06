@@ -221,13 +221,25 @@ export async function checkNoExistingPR(
 }
 
 /** TTL for cached merged-PR counts per repo (15 minutes). */
-const MERGED_PR_CACHE_TTL_MS = 15 * 60 * 1000;
+export const MERGED_PR_CACHE_TTL_MS = 15 * 60 * 1000;
+
+/**
+ * Cache key for a repo's merged-PR count. Exported so the batched GraphQL
+ * prefetch (issue-graphql.ts) writes to the exact same key this per-call path
+ * reads — the prefetch simply pre-populates the cache and every later
+ * per-repo call short-circuits on the cache hit below (#182).
+ */
+export function mergedPRsCacheKey(owner: string, repo: string): string {
+  return versionedCacheKey(`merged-prs:${owner}/${repo}`);
+}
 
 /**
  * Check how many merged PRs the authenticated user has in a repo.
  * Uses GitHub Search API. Returns 0 on error (non-fatal).
  * Results are cached per-repo for 15 minutes to avoid redundant Search API
- * calls when multiple issues from the same repo are vetted.
+ * calls when multiple issues from the same repo are vetted. The batched
+ * GraphQL prefetch populates this same cache, so a warmed repo never reaches
+ * the Search API here at all (#182).
  */
 export async function checkUserMergedPRsInRepo(
   octokit: Octokit,
@@ -239,7 +251,7 @@ export async function checkUserMergedPRsInRepo(
   tracker: SearchBudgetTracker = getSearchBudgetTracker(),
 ): Promise<number | null> {
   const cache = getHttpCache();
-  const cacheKey = versionedCacheKey(`merged-prs:${owner}/${repo}`);
+  const cacheKey = mergedPRsCacheKey(owner, repo);
 
   // In-flight dedup: parallel vetting frequently hits several issues from
   // one repo at once, and each used to pay a separate Search API call
