@@ -1,0 +1,39 @@
+{
+  "id": "activist-2084",
+  "url": "https://github.com/activist-org/activist/issues/2084",
+  "owner": "activist-org",
+  "repo": "activist",
+  "issueNumber": 2084,
+  "vetDate": "2026-04-12",
+  "issue": {
+    "title": "Add a workflow to audit `npm` and `pypi` packages in the project",
+    "body": "### Terms\n\n- [x] I have searched [open and closed feature requests](https://github.com/activist-org/activist/issues?q=is%3Aissue+label%3Afeature)\n- [x] I agree to follow activist's [Code of Conduct](.github/CODE_OF_CONDUCT.md)\n\n### Description\n\nWith the recent incidents within some of the open source communities, its safer for us to start auditing the packages/dependencies that we are integrating into our projects. Using [`pip-audit`](https://github.com/pypa/pip-audit) package for the backend and [`npm audit`](https://yarnpkg.com/cli/npm/audit) command for the frontend within out workflows would a good way to start checking if any of the dependencies are compromised.\n\ncc @andrewtavis @nicki182 @to-sta \n\n### Contribution\n\n_No response_",
+    "labels": ["-priority-", "dependencies", "backend", "frontend"],
+    "state": "closed",
+    "createdAt": "2026-04-04T17:53:46Z",
+    "updatedAtObserved": "2026-05-17T18:15:32Z"
+  },
+  "repoMeta": {
+    "stars": 702,
+    "forks": 579
+  },
+  "vetTimeFacts": {
+    "hasExistingPR": false,
+    "isClaimed": true,
+    "projectActive": true,
+    "contributionGuidelinesFound": true,
+    "mergedPRCount": 0,
+    "orgHasMergedPRs": false,
+    "matchesPreferredCategory": false,
+    "closedWithoutMergeCount": 0
+  },
+  "outcome": {
+    "label": "skip_correct",
+    "date": "2026-04-12",
+    "detail": "Skipped: issue assigned to @sh-ran at vet time (verified live: assignee still on the closed issue)."
+  },
+  "measurable": true,
+  "expectedVerdict": "skip",
+  "fidelityNote": "isClaimed=true matches checkNotClaimed's assignee check.",
+  "vaultSource": "open-source/potential-issue-list.md, open-source/skipped-issues.md"
+}

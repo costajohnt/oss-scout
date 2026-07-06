@@ -1,0 +1,39 @@
+{
+  "id": "super-productivity-8651",
+  "url": "https://github.com/super-productivity/super-productivity/issues/8651",
+  "owner": "super-productivity",
+  "repo": "super-productivity",
+  "issueNumber": 8651,
+  "vetDate": "2026-06-30",
+  "issue": {
+    "title": "🚨 Couldn't create subtask from right panel",
+    "body": "### Version Used\n\n18.12.0\n\n### Current Behavior\n\nWhen I click the create subtask button on the right panel, it doesn't create subtask. I mean, it doesn't focus on that right panel like previous version. So, because of this we can't create subtask on kanban view/planner or calendar view anymore...\n It focus on the today section like below though:\n\n<img width=\"2057\" height=\"590\" alt=\"Image\" src=\"https://github.com/user-attachments/assets/3a218eed-e3a9-4648-b9be-01ce7dac89e2\" />\n\n### Expected Behavior\n\nWhen I click the create subtask button from the right panel, it's need to focus the right panel section like how it was previous version.\n### Steps to Reproduce\n\n1. Go to kanban view\n2. select task\n3. click add subtask button\n4. nothing happens if you are on kanban view\n5. if you are on project view or today view, it focus on that task to add subtask\n\n### Can you reproduce this reliably?\n\nYes, I can reproduce it reliably.\n\n### Console Output\n\n```shell\nno output when click\n```\n\n### Documentation\n\n- [ ] The documentation/[wiki](https://github.com/super-productivity/super-productivity/wiki) is unclear or incorrect for this case.\n- [ ] There should be a note added to the documentation/[wiki](https://github.com/super-productivity/super-productivity/wiki) for this case.",
+    "labels": [],
+    "state": "closed",
+    "createdAt": "2026-06-30T19:34:26Z",
+    "updatedAtObserved": "2026-07-03T07:25:20Z"
+  },
+  "repoMeta": {
+    "stars": 20467,
+    "forks": 1824
+  },
+  "vetTimeFacts": {
+    "hasExistingPR": false,
+    "isClaimed": false,
+    "projectActive": true,
+    "contributionGuidelinesFound": true,
+    "mergedPRCount": 1,
+    "orgHasMergedPRs": false,
+    "matchesPreferredCategory": false,
+    "closedWithoutMergeCount": 0
+  },
+  "outcome": {
+    "label": "maintainer_fixed",
+    "date": "2026-07-02",
+    "detail": "Maintainer johannesjo fixed the underlying regression via #8630 (against a sibling issue) and shipped 18.13.0; #8651 itself was never cross-referenced (verified live: PR #8630 merged=true)."
+  },
+  "measurable": false,
+  "expectedVerdict": "pursue",
+  "fidelityNote": "No visible existing PR/claim at vet time even after the fact (GitHub never cross-referenced #8630 to this issue) — a comment-content or cross-issue-similarity signal would be needed to catch this, which oss-scout does not implement.",
+  "vaultSource": "open-source/potential-issue-list.md, open-source/skipped-issues.md"
+}

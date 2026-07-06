@@ -1,0 +1,39 @@
+{
+  "id": "homebrew-22672",
+  "url": "https://github.com/Homebrew/brew/issues/22672",
+  "owner": "Homebrew",
+  "repo": "brew",
+  "issueNumber": 22672,
+  "vetDate": "2026-06-11",
+  "issue": {
+    "title": "brew bundle install with tap & root-level formula in that tap reports failure but succeeds",
+    "body": "### `brew doctor` output\n\n```shell\nPlease note that these warnings are just used to help the Homebrew maintainers\nwith debugging if you file an issue. If everything you use Homebrew for is\nworking fine: please don't worry or file an issue; just ignore this. Thanks!\n\nWarning: Your Xcode (26.1.1) is outdated.\nPlease update to Xcode 26.3 (or delete it).\nXcode can be updated from the App Store.\n\n\nThis is a Tier 2 configuration:\n  https://docs.brew.sh/Support-Tiers#tier-2\nYou can report issues with Tier 2 configurations to Homebrew/* repositories!\nRead the above document before opening any issues or PRs.\n```\n\nI have also reproduced this on a machine with no warnings from `brew doctor`, this is just the output I have the easiest access to copy-paste\n\n### Verification\n\n- [x] I ran `brew update` twice and am still able to reproduce my issue.\n- [x] My \"`brew doctor` output\" above says `Your system is ready to brew` or a definitely unrelated `Tier` message.\n- [x] This issue's title and/or description do not reference a single formula e.g. `brew install wget`. If they do, open an issue at https://github.com/Homebrew/homebrew-core/issues/new/choose instead.\n\n### `brew config` output\n\n```shell\nHOMEBREW_VERSION: 6.0.0\nORIGIN: https://github.com/Homebrew/brew\nHEAD: 3d9e344622974a7f96da927fd0407e08581eb437\nLast commit: 8 hours ago\nBranch: stable\nCore tap: N/A\nCore cask tap: N/A\nHOMEBREW_PREFIX: /opt/homebrew\nHOMEBREW_CASK_OPTS: []\nHOMEBREW_DOWNLOAD_CONCURRENCY: 24\nHOMEBREW_FORBID_PACKAGES_FROM_PATHS: set\nHOMEBREW_MAKE_JOBS: 12\nHOMEBREW_REQUIRE_TAP_TRUST: set\nHomebrew Ruby: 4.0.5 => /opt/homebrew/Library/Homebrew/vendor/portable-ruby/4.0.5_1/bin/ruby\nCPU: dodeca-core 64-bit arm_brava\nClang: 17.0.0 build 1700\nGit: 2.50.1 => /Applications/Xcode.app/Contents/Developer/usr/bin/git\nCurl: 8.7.1 => /usr/bin/curl\nmacOS: 26.5-arm64\nCLT: 26.5.0.0.1777544298\nXcode: 26.1.1\nMetal Toolchain: N/A\nRosetta 2: false\n```\n\n### What were you trying to do (and why)?\n\nI'm attempting to set up a `Brewfile` for reproducible installation of development environments, and I need to be able to install packages from third-party taps. One of the taps in question has its formulas at the root directory of the repo. Attempting to do so as of Homebrew 6 now experiences an error.\n\n### What happened (include all command output)?\n\n`brew bundle install` reports 3 warnings, a failure, and exits with a non-zero status code. However, the installation is actually successful and on a re-run there is nothing to be done\n\n```\n❯ brew bundle install\nWarning: 'metalbear-co/mirrord/mirrord' formula is unreadable: No available formula with the name \"metalbear-co/mirrord/mirrord\".\nThis command requires the tap metalbear-co/mirrord.\nIf you trust this tap, tap it explicitly and then try again:\n  brew tap metalbear-co/mirrord\nWarning: 'metalbear-co/mirrord/mirrord' formula is unreadable: No available formula with the name \"metalbear-co/mirrord/mirrord\".\nThis command requires the tap metalbear-co/mirrord.\nIf you trust this tap, tap it explicitly and then try again:\n  brew tap metalbear-co/mirrord\nTapping metalbear-co/mirrord\nInstalling metalbear-co/mirrord/mirrord\nWarning: 'metalbear-co/mirrord/mirrord' formula is unreadable: No available formula with the name \"metalbear-co/mirrord/mirrord\".\nInstalling metalbear-co/mirrord/mirrord has failed!\n`brew bundle` failed! 1 Brewfile dependency failed to install\n\n~/Desktop\n❯ brew list | grep mirrord\nmirrord\n\n~/Desktop\n❯ brew bundle install\nUsing metalbear-co/mirrord\nUsing metalbear-co/mirrord/mirrord\n`brew bundle` complete! 2 Brewfile dependencies now installed.\n```\n\n### What did you expect to happen?\n\nI'd expect:\n- No errors to be logged, as the Brewfile is tapping & trusting the tap\n- The command to exit with no error and a 0 status code, as it actually installed successfully\n\nAlternatively, if root-level formulas are not supported I'd expect it to error out entirely, rather than installing successfully\n\n### Step-by-step reproduction instructions (by running `brew` commands)\n\nWrite the following to a Brewfile (origin provided because of #22668):\n\n```ruby\ntap \"metalbear-co/mirrord\", \"https://github.com/metalbear-co/homebrew-mirrord\", trusted: true\nbrew \"metalbear-co/mirrord/mirrord\", trusted: true\n```\n\nInstall the brewfile with `brew bundle install`\n\nIt will report 3 warning, a failure, and exit with a non-zero status, but will have successfully installed the tap and the formula\n",
+    "labels": [],
+    "state": "closed",
+    "createdAt": "2026-06-11T19:55:11Z",
+    "updatedAtObserved": "2026-06-12T01:14:17Z"
+  },
+  "repoMeta": {
+    "stars": 48733,
+    "forks": 11203
+  },
+  "vetTimeFacts": {
+    "hasExistingPR": false,
+    "isClaimed": false,
+    "projectActive": true,
+    "contributionGuidelinesFound": true,
+    "mergedPRCount": 0,
+    "orgHasMergedPRs": false,
+    "matchesPreferredCategory": false,
+    "closedWithoutMergeCount": 1
+  },
+  "outcome": {
+    "label": "maintainer_fixed",
+    "date": "2026-06-12",
+    "detail": "Maintainer swept/closed the issue as completed within the 24-48h window flagged at vet time (verified live: state=closed, state_reason=completed)."
+  },
+  "measurable": false,
+  "expectedVerdict": "pursue",
+  "fidelityNote": "closedWithoutMergeCount=1 reflects the real prior history: John's #22225 (see homebrew-22206 fixture) had closed without merging a month earlier in this same repo, so calculateViabilityScore's -15 closed-without-merge penalty legitimately applies here even though mergedPRCount=0.",
+  "vaultSource": "open-source/potential-issue-list.md, open-source/skipped-issues.md"
+}

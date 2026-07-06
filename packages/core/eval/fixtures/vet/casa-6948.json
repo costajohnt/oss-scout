@@ -1,0 +1,40 @@
+{
+  "id": "casa-6948",
+  "url": "https://github.com/rubyforgood/casa/issues/6948",
+  "owner": "rubyforgood",
+  "repo": "casa",
+  "issueNumber": 6948,
+  "vetDate": "2026-06-09",
+  "issue": {
+    "title": "DRY spec/requests/casa_cases.rb",
+    "body": "## Description\nSome blocks of code in this test file are copied and pasted especially between the supervisor and admin. Over time despite the page behaving the same for both types of users, the test blocks have diverged.\nGroup reused code in an [Rspec shared example](https://rspec.info/features/3-12/rspec-core/example-groups/shared-examples/). Shared examples can take parameters like functions.\nMake sure the tests are working.\n\n### Divergent Tests  \nGET index/\n - `it \"renders a successful response\"` use `build_stubbed` for both tests\n - `it \"shows all my organization's cases\" do` test relevant to admin and supervisor but only in admin section\n - `it \"doesn't show other organizations' cases\" do` test relevant to admin and supervisor but only in admin section\n\nOpportunities for shared examples between volunteers and supervisors for tests that check for unauthorized access\nAdmin test blocks have missing tests for suprvisors\n\n## How to access the QA site\n_Login Details:_  \n[Link to QA site](https://casa-qa.herokuapp.com/)  \n\nLogin Emails: \n- volunteer1@example.com  view site as a volunteer\n- supervisor1@example.com view site as a supervisor\n- casa_admin1@example.com view site as an admin\n- all_casa_admin1@example.com view site as an all casa admin\n  - go to `/all_casa_admins/sign_in`  \n\npassword for all users: 12345678  \n\n### Questions? Join Slack!\n\nWe highly recommend that you join us in [slack](https://join.slack.com/t/rubyforgood/shared_invite/zt-35218k86r-vlIiWqig54c9t~_LkGpQ7Q) #casa channel to ask questions quickly. And [discord](https://discord.gg/qJcw2RZH8Q) for office hours (currently Tuesday 5-7pm Pacific), stakeholder news, and upcoming new issues.\n",
+    "labels": [],
+    "state": "closed",
+    "createdAt": "2026-05-13T00:43:42Z",
+    "updatedAtObserved": "2026-06-10T05:47:18Z"
+  },
+  "repoMeta": {
+    "stars": 373,
+    "forks": 533
+  },
+  "vetTimeFacts": {
+    "hasExistingPR": false,
+    "isClaimed": false,
+    "projectActive": true,
+    "contributionGuidelinesFound": true,
+    "mergedPRCount": 0,
+    "orgHasMergedPRs": false,
+    "matchesPreferredCategory": false,
+    "closedWithoutMergeCount": 0
+  },
+  "outcome": {
+    "label": "merged",
+    "date": "2026-06-10",
+    "detail": "PR #6991 merged 2026-06-10 (verified live: merged=true)",
+    "prUrl": "https://github.com/rubyforgood/casa/pull/6991"
+  },
+  "measurable": true,
+  "expectedVerdict": "pursue",
+  "fidelityNote": "vault notes: prior claimant (andoq) auto-unassigned 15d before this vet for inactivity, so isClaimed=false at vet time. Same-day vet as #6923 (mergedPRCount=0 for both).",
+  "vaultSource": "open-source/potential-issue-list.md, open-source/skipped-issues.md"
+}

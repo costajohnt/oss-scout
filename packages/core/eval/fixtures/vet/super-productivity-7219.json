@@ -1,0 +1,40 @@
+{
+  "id": "super-productivity-7219",
+  "url": "https://github.com/super-productivity/super-productivity/issues/7219",
+  "owner": "super-productivity",
+  "repo": "super-productivity",
+  "issueNumber": 7219,
+  "vetDate": "2026-04-13",
+  "issue": {
+    "title": "💥 Failed to execute 'querySelector' on 'Document': '#t-{private-dropbox-id} is not a valid selector.",
+    "body": "### Steps to Reproduce\n\nUncertain, as there were several actions here and I only recall the last  couple\n\n1. Swipe left to open context menu\n2. Delete task\n\n### Additional Console Output\nOn Android\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n### Url\nhttps://localhost/#/tag/TODAY/tasks\n\n\n\n### Meta Info\nMETA: SP18.1.3_L2A __ Browser – en-US – Linux armv8l – en-US – UA:Mozilla/5.0 (Linux; Android 13; Lenovo TB125FU Build/TP1A.220624.014; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/146.0.7680.177 Safari/537.36\n\n\n### Stacktrace\n```\nn._highlightSourceTask (https://localhost/chunk-6SR4OEIZ.js:13:21449)\nn.open (https://localhost/chunk-6SR4OEIZ.js:13:15681)\nn.open (https://localhost/chunk-6SR4OEIZ.js:14:834)\nn.openContextMenu (https://localhost/chunk-GTIGPKPG.js:3:20112)\nhttps://localhost/chunk-GTIGPKPG.js:3:25450\nGh (https://localhost/chunk-GENRFGET.js:4:63169)\nr (https://localhost/chunk-GENRFGET.js:4:63005)\nCo.emit (https://localhost/chunk-GENRFGET.js:4:140025)\nhttps://localhost/chunk-GXRACEOH.js:4:7927\n```\n\n\n### Actions Before Error\n```\n1776104698893: [Task] SetSelectedTask \n1776104700776: [SP_ALL] Load(import) all data \n1776104700813: [AppState] Set Today String \n1776104700829: [SP_ALL] All Data was loaded \n1776104700848: [Idle] Reset \n1776104771820: [Task] SetSelectedTask (2) \n1776104771832: [Layout] Hide Non-Task Side Panel \n1776104778257: [Task Shared] updateTask (2) \n1776104784729: [Task] SetSelectedTask \n1776104784736: [Layout] Hide Non-Task Side Panel \n1776104786170: [Task] SetSelectedTask (2) \n1776104786175: [Layout] Hide Non-Task Side Panel \n1776104794601: [Task Shared] updateTask (2) \n1776104795425: [Task] SetSelectedTask \n1776104795429: [Layout] Hide Non-Task Side Panel \n1776104796596: [Task] SetSelectedTask (2) \n1776104796600: [Layout] Hide Non-Task Side Panel \n1776104800201: [Task Shared] updateTask \n1776104802556: [Task] SetSelectedTask \n1776104802563: [Layout] Hide Non-Task Side Panel \n1776104804174: [Task] SetSelectedTask (2) \n1776104804179: [Layout] Hide Non-Task Side Panel \n1776104808698: [Task Shared] updateTask (2) \n1776104814261: [Task] SetSelectedTask \n1776104814268: [Layout] Hide Non-Task Side Panel \n1776104815412: [Task] SetSelectedTask (2) \n1776104815415: [Layout] Hide Non-Task Side Panel \n1776104819137: [Task Shared] updateTask (2) \n1776104824138: [Task] SetSelectedTask \n1776104824149: [Layout] Hide Non-Task Side Panel\n```",
+    "labels": [],
+    "state": "closed",
+    "createdAt": "2026-04-13T19:03:06Z",
+    "updatedAtObserved": "2026-04-16T16:03:47Z"
+  },
+  "repoMeta": {
+    "stars": 20467,
+    "forks": 1824
+  },
+  "vetTimeFacts": {
+    "hasExistingPR": false,
+    "isClaimed": false,
+    "projectActive": true,
+    "contributionGuidelinesFound": true,
+    "mergedPRCount": 0,
+    "orgHasMergedPRs": false,
+    "matchesPreferredCategory": false,
+    "closedWithoutMergeCount": 0
+  },
+  "outcome": {
+    "label": "merged",
+    "date": "2026-04-16",
+    "detail": "PR #7222 merged 2026-04-16 (verified live: merged=true)",
+    "prUrl": "https://github.com/super-productivity/super-productivity/pull/7222"
+  },
+  "measurable": true,
+  "expectedVerdict": "pursue",
+  "fidelityNote": "One of John's earliest contributions to this repo — no prior merged/closed PR history yet (mergedPRCount=0), unlike the June entries above.",
+  "vaultSource": "open-source/potential-issue-list.md, open-source/skipped-issues.md"
+}

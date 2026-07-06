@@ -1,0 +1,40 @@
+{
+  "id": "super-productivity-8232",
+  "url": "https://github.com/super-productivity/super-productivity/issues/8232",
+  "owner": "super-productivity",
+  "repo": "super-productivity",
+  "issueNumber": 8232,
+  "vetDate": "2026-06-09",
+  "issue": {
+    "title": "fix(planner): timed recurring tasks (`dueWithTime`) still double-counted after #8229",
+    "body": "### Context\n\nFollow-up to #8220 / #8229.\n\n#8229 fixes the Planner's double-count for recurring tasks marked done without time tracked, by deduping repeat projections against `normalTasks` in `getPlannerDay` (`src/app/features/planner/store/planner.selectors.ts`). It correctly covers recurring tasks with no `startTime` (untimed) and recurring tasks on non-today columns.\n\nThere is still a gap for **timed** recurring tasks (`TaskRepeatCfg.startTime` set) on the **Today** column.\n\n### The gap\n\nIn `getPlannerDay`:\n\n- For today, `tIds = unplannedTaskIdsToday`, which is `todayListTaskIds.filter(id => !allPlannedIdSet.has(id))`. Tasks with `dueWithTime` are in `allPlannedTasks`, so they're excluded from `normalTasks`.\n- A recurring task with `startTime` gets created with `dueWithTime` (see `task-repeat-cfg.effects.ts:107-109`). So a timed recurring instance for today lives in `allPlannedTasks` → `scheduledTaskItems`, never in `normalTasks`.\n- `coveredRepeatCfgIds` is built from `normalTasks.map(t => t.repeatCfgId)`. The dedup added in #8229 therefore never sees this task's `repeatCfgId`, so the projection for the same cfg is **not** filtered from `repeatProjectionsForDay`.\n\nOn top of that, `getScheduledTaskItems` (`planner.selectors.ts:339-355`) computes `end = start + Math.max(task.timeEstimate - task.timeSpent, 0)` with no `isDone` check. So a done recurring meeting with `dueWithTime` and zero `timeSpent` still contributes its full estimate via `scheduledTaskItems`, **and** the projection adds another full estimate — the original #8220 symptom returns for timed recurring tasks.\n\n### Reproducer\n\n1. Create a recurring task with a fixed start time (e.g. 09:00, 1h estimate) scheduled for today.\n2. Mark the instance done without tracking time.\n3. Compare remaining time in Today vs Planner. Planner is `0` higher than Today by ~`2 × estimate` (one from `scheduledTaskItems`, one from the un-deduped projection).\n\n### Suggested fix\n\nTwo independent changes; either alone closes part of the gap, both together close it fully.\n\n1. **Extend the dedup in `getPlannerDay`** to also include `repeatCfgId`s from `scheduledTaskItems` (or, equivalently, from `allPlannedTasks` filtered to this day) before filtering `repeatProjectionsForDay` / `noStartTimeRepeatProjections`.\n2. **Make `getScheduledTaskItems` done-aware**, mirroring `normalTasks` (`isDone ? 0 : getTimeLeftForTask(t)`), so done timed tasks stop contributing to `timeEstimate`.\n\nA regression spec analogous to #8229's, but with `dueWithTime` set on the instance, would guard this.\n\n### Notes\n\n- The schedule view's existing dedup in `create-schedule-days.ts:162-169` keys by bare `repeatCfgId` similarly; the same approach extended over `scheduledTaskItems` should fit here too.\n- Not blocking on #8229 — that PR fixes the larger class of cases. This is a narrow follow-up for timed recurring instances on today's column.",
+    "labels": [],
+    "state": "closed",
+    "createdAt": "2026-06-09T20:37:52Z",
+    "updatedAtObserved": "2026-06-09T21:54:05Z"
+  },
+  "repoMeta": {
+    "stars": 20467,
+    "forks": 1824
+  },
+  "vetTimeFacts": {
+    "hasExistingPR": false,
+    "isClaimed": false,
+    "projectActive": true,
+    "contributionGuidelinesFound": true,
+    "mergedPRCount": 1,
+    "orgHasMergedPRs": false,
+    "matchesPreferredCategory": false,
+    "closedWithoutMergeCount": 0
+  },
+  "outcome": {
+    "label": "maintainer_fixed",
+    "date": "2026-06-09",
+    "detail": "Maintainer johannesjo merged his own PR #8236 same day, an identical fix to the one John had already built locally (verified live: merged=true).",
+    "prUrl": "https://github.com/super-productivity/super-productivity/pull/8236"
+  },
+  "measurable": false,
+  "expectedVerdict": "pursue",
+  "fidelityNote": "Same pattern as #8233, same vet round.",
+  "vaultSource": "open-source/potential-issue-list.md, open-source/skipped-issues.md"
+}

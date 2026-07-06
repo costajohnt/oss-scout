@@ -1,0 +1,40 @@
+{
+  "id": "eslint-plugin-unicorn-3091",
+  "url": "https://github.com/sindresorhus/eslint-plugin-unicorn/issues/3091",
+  "owner": "sindresorhus",
+  "repo": "eslint-plugin-unicorn",
+  "issueNumber": 3091,
+  "vetDate": "2026-06-11",
+  "issue": {
+    "title": "`consistent-compound-words` is overzealous",
+    "body": "Most of the phrases `consistent-compound-words` bans, like _down load_ are clearly misspellings. However, a few advocate for joining together two-word phrases that are perfectly fine, or even preferred, to keep apart.\n\nLooking through the list, the following stood out. I've checked them with a couple of dictionaries.\n* **Call back** is the verb; callback (or call back) is the noun.\n* **Feed back** is generally the verb; feedback is the noun.\n* **Key frame** is [how Wikipedia spells it](https://en.wikipedia.org/wiki/Key_frame), though it lists keyframe as an alternative. Keyframe is not in Chambers, and is a mere new word suggestion in Collins.\n* **New line** is not the name of `\\n`, but is correct in contexts like `shouldStartNewLine`.\n* **Time out** is the verb; the noun is time out, time-out or timeout.\n* **Touch screen** how Chambers spells this word, and Wikipedia lists it as an alternative spelling. Collins lists touchscreen, touch-screen and touch screen.\n* **Wild card** is how Chambers spells this, and Collins prefers to.",
+    "labels": ["bug"],
+    "state": "closed",
+    "createdAt": "2026-06-11T12:51:03Z",
+    "updatedAtObserved": "2026-06-11T22:00:48Z"
+  },
+  "repoMeta": {
+    "stars": 5173,
+    "forks": 486
+  },
+  "vetTimeFacts": {
+    "hasExistingPR": false,
+    "isClaimed": false,
+    "projectActive": true,
+    "contributionGuidelinesFound": false,
+    "mergedPRCount": 0,
+    "orgHasMergedPRs": false,
+    "matchesPreferredCategory": false,
+    "closedWithoutMergeCount": 0
+  },
+  "outcome": {
+    "label": "maintainer_fixed",
+    "date": "2026-06-11",
+    "detail": "Maintainer (Sindre) merged his own PR #3117 same day, ~9h after sketching the fix in a comment (verified live: merged=true).",
+    "prUrl": "https://github.com/sindresorhus/eslint-plugin-unicorn/pull/3117"
+  },
+  "measurable": false,
+  "expectedVerdict": "pursue",
+  "fidelityNote": "The maintainer had already posted the exact fix in a thread comment before this vet — a 'maintainer recently commented with a concrete fix sketch' heuristic could plausibly catch this class, but oss-scout's vetter does not read/analyze comment bodies for that signal today. Flagged as a future-feature candidate in the report, not scored as a miss.",
+  "vaultSource": "open-source/potential-issue-list.md, open-source/skipped-issues.md"
+}

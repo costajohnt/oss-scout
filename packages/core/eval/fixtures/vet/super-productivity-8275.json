@@ -1,0 +1,39 @@
+{
+  "id": "super-productivity-8275",
+  "url": "https://github.com/super-productivity/super-productivity/issues/8275",
+  "owner": "super-productivity",
+  "repo": "super-productivity",
+  "issueNumber": 8275,
+  "vetDate": "2026-06-12",
+  "issue": {
+    "title": "🚨 CalDAV Tasks sync connects to Nextcloud server but does not show tasks",
+    "body": "### Note\n\nThis bug is about CalDAV **tasks**. #8259 is about CalDAV **events**.\n\n### Version Used\n\nv18.9.1 snap\n\n### Current Behavior\n\nAfter credentials have been entered into the **Setup CalDAV Config** or **Edit CalDAV Config** dialog box and connection to the CalDAV server has succeeded:\n* In the relevant project or inbox pane of Super Productivity, **NO tasks from the CalDAV server's chosen calendar are shown**.\n\n### Expected Behavior\n\nAfter credentials have been entered into the **Setup CalDAV Config** or **Edit CalDAV Config** dialog box and connection to the CalDAV server has succeeded:\n* In the relevant project or inbox pane of Super Productivity, **ALL tasks from the CalDAV server's chosen calendar are shown**.\n\n### Steps to Reproduce\n\n1. In web browser, go to Calendar page of a Nextcloud server that has some events in its calendar, e.g. https://my.nextcloud.server/apps/calendar/\n2. On that page, click **⚙ Calendar settings** (near bottom left of page)\n3. In the resulting dialog box, click the **CalDAV URL** entry to copy the CalDAV URL to the clipboard. (The URL will be something like https://my.nextcloud.server/remote.php/dav .)\n4. In Super Productivity, press <key>P</key> or click the **Show/hide issue provider panel** button (triskelion icon)\n5. In the **Issue provider panel**, under **Setup Issue Provider**, click the **CalDAV Todo** button\n6. This pops up a dialog box titled **Setup CalDAV Config**\n7. In the **CalDAV server URL** field, paste from the clipboard the URL copied in step 3 above (e.g. https://my.nextcloud.server/remote.php/dav ).\n8. In the **The name of the CalDAV resource (the calendar)** field, type (or copy-paste) the name of the server's calendar containing the tasks of interest (e.g. \"my_tasks\").\n9. In the **Your CalDAV username** field, it is unclear what to enter:\n    * In Nextcloud, the \"username\" (\"display name\") is usually an alphanumeric string (e.g. *foobar*) and is NOT the same as the \"login\", which is usually an email address (e.g. *foobar@example.com*); see https://github.com/super-productivity/super-productivity/issues/7617#issuecomment-4472672548\n    * However, the bug I am reporting appears regardless. At least, it did for me whether I used my username or my login email address.\n10. In the **Your CalDAV password** field, enter the password for the Nextcloud server.\n11. Under **Advanced Config**, set the **Project assigned to tasks created from issues** field to a project or inbox that actually exists in your Super Productivity instance, like **Inbox** or **Finances** or whatever.\n12. Ensure **Poll imported for changes and notify** is checked.\n13. Set **Polling trigger** field to **Always (in background)**.\n14. Set **Poll interval (minutes)** field to **1**.\n15. Tick **Also import subtasks when a task is added**.\n16. Click the **Test Connection** button. It changes to a tick symbol, and a toast message appears saying \"Connection works!\".\n17. Click the **Save** button.\n27. In Super Productivity's left pane, click the tab for the project or inbox you assigned in step 11 above (e.g. **Inbox**).\n28. In the resulting display, no tasks from the CalDAV server are shown.\n\n### Can you reproduce this reliably?\n\nYes, I can reproduce it reliably.\n\n### Console Output\n\n```shell\n\n```\n\n### Documentation\n\n- [ ] The documentation/[wiki](https://github.com/super-productivity/super-productivity/wiki) is unclear or incorrect for this case.\n- [ ] There should be a note added to the documentation/[wiki](https://github.com/super-productivity/super-productivity/wiki) for this case.",
+    "labels": ["help wanted", "documentation gap"],
+    "state": "open",
+    "createdAt": "2026-06-11T14:16:36Z",
+    "updatedAtObserved": "2026-06-12T22:26:44Z"
+  },
+  "repoMeta": {
+    "stars": 20467,
+    "forks": 1824
+  },
+  "vetTimeFacts": {
+    "hasExistingPR": false,
+    "isClaimed": false,
+    "projectActive": true,
+    "contributionGuidelinesFound": true,
+    "mergedPRCount": 1,
+    "orgHasMergedPRs": false,
+    "matchesPreferredCategory": false,
+    "closedWithoutMergeCount": 0
+  },
+  "outcome": {
+    "label": "skip_correct",
+    "date": "2026-06-12",
+    "detail": "Skipped after deep investigation found it wasn't a code bug at all — a config trap (an auto-import setting defaulting off), not a defect in the sync code path."
+  },
+  "measurable": false,
+  "expectedVerdict": "skip",
+  "fidelityNote": "The right call here required actually reproducing the reported behavior end-to-end against a live server, not something derivable from the issue text/labels/repo metadata oss-scout's vetter reads. clearRequirements will likely score true (the bug report itself is clear and detailed) even though the correct verdict was 'skip, not a bug' — a good illustration of why this fixture is unmeasurable by the current feature set.",
+  "vaultSource": "open-source/potential-issue-list.md, open-source/skipped-issues.md"
+}

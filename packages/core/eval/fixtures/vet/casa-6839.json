@@ -1,0 +1,40 @@
+{
+  "id": "casa-6839",
+  "url": "https://github.com/rubyforgood/casa/issues/6839",
+  "owner": "rubyforgood",
+  "repo": "casa",
+  "issueNumber": 6839,
+  "vetDate": "2026-04-12",
+  "issue": {
+    "title": "Bug(?): Supervisors cannot edit case contacts — CaseContactPolicy#show? excludes supervisors",
+    "body": "**Note:** It is unclear whether this is a bug or an intentional restriction. This issue is filed to ask for clarification. If supervisors are not meant to edit case contacts through this path, the Edit button should be hidden from them in the UI.\n\n## Impacted User Types\n\nSupervisors.\n\n## Environment\n\nAny environment. This is a policy configuration issue in the Rails authorization layer, not specific to a browser or deployment.\n\n## Current Behavior\n\nWhen a supervisor clicks **Edit** on a case contact (in either the old or new case contacts table), they are silently redirected away instead of reaching the edit form. The redirect chain is:\n\n1. `GET /case_contacts/:id/edit` → 302 → `/case_contacts/:id/form/details` ✓\n2. `GET /case_contacts/:id/form/details` → 302 → `/` ✗ (Pundit authorization failure)\n3. `GET /` → 302 → `/volunteers` (supervisor default page)\n\nThe failure in step 2 occurs because `CaseContacts::FormController#show` calls `authorize @case_contact`, which Pundit resolves to `CaseContactPolicy#show?`. That policy only permits the creator or an admin — supervisors are excluded.\n\nRelevant code in `app/policies/case_contact_policy.rb`:\n\n```ruby\ndef show?\n  creator_or_admin?          # supervisors are NOT included\nend\n\ndef update?\n  creator_or_supervisor_or_admin?   # supervisors ARE included\nend\n\nalias_method :edit?, :update?\n```\n\n## Expected Behavior\n\nEither:\n\n- **If supervisors should be able to edit:** `show?` should include supervisors so the edit form is accessible, consistent with `edit?` / `update?`.\n- **If supervisors should not be able to edit:** The Edit button should not be shown to supervisors in the UI.\n\n## How to Replicate\n\n1. Log in as a supervisor (e.g. `supervisor1@example.com`)\n2. Navigate to `/case_contacts` or `/case_contacts/new_design`\n3. Click **Edit** on any case contact\n4. Observe that the browser redirects to `/volunteers` instead of the edit form\n\n## How to access the QA site\n\n_Login Details:_\n[Link to QA site](https://casa-qa.herokuapp.com/)\n\nLogin Emails:\n\n- `volunteer1@example.com` — view site as a volunteer\n- `supervisor1@example.com` — view site as a supervisor\n- `casa_admin1@example.com` — view site as an admin\n- `all_casa_admin1@example.com` — view site as an all casa admin\n  - go to `/all_casa_admins/sign_in`\n\nPassword for all users: 12345678\n\n### Questions? Join Slack\n\nWe highly recommend that you join us in [slack](https:https://join.slack.com/t/rubyforgood/shared_invite/zt-35218k86r-vlIiWqig54c9t~_LkGpQ7Q) #casa channel to ask questions quickly. And [discord](https://discord.gg/qJcw2RZH8Q) for office hours (currently Tuesday 5-7pm Pacific), stakeholder news, and upcoming new issues.",
+    "labels": ["Type: Bug", "Help Wanted"],
+    "state": "closed",
+    "createdAt": "2026-04-09T21:13:30Z",
+    "updatedAtObserved": "2026-04-14T01:16:39Z"
+  },
+  "repoMeta": {
+    "stars": 373,
+    "forks": 533
+  },
+  "vetTimeFacts": {
+    "hasExistingPR": true,
+    "isClaimed": false,
+    "projectActive": true,
+    "contributionGuidelinesFound": true,
+    "mergedPRCount": 0,
+    "orgHasMergedPRs": false,
+    "matchesPreferredCategory": false,
+    "closedWithoutMergeCount": 0
+  },
+  "outcome": {
+    "label": "skip_correct",
+    "date": "2026-04-12",
+    "detail": "Skipped: competing PR #6844 was already open at vet time (verified live: #6844 merged=true, so the skip was also right in hindsight).",
+    "prUrl": "https://github.com/rubyforgood/casa/pull/6844"
+  },
+  "measurable": true,
+  "expectedVerdict": "skip",
+  "fidelityNote": "hasExistingPR=true directly matches the vault note ('Taken: competing PR #6844 open') — exactly the checkNoExistingPR signal oss-scout's vetter runs today.",
+  "vaultSource": "open-source/potential-issue-list.md, open-source/skipped-issues.md"
+}

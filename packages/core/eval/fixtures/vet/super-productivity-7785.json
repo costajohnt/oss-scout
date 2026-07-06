@@ -1,0 +1,40 @@
+{
+  "id": "super-productivity-7785",
+  "url": "https://github.com/super-productivity/super-productivity/issues/7785",
+  "owner": "super-productivity",
+  "repo": "super-productivity",
+  "issueNumber": 7785,
+  "vetDate": "2026-05-25",
+  "issue": {
+    "title": "🚨 Mobile swipe action always shows \"Mark as done\" even for completed tasks",
+    "body": "### Version Used\n\n18.4.4_L2A (Android, Fairphone 5)\n\n### Current Behavior\n\nThe swipe action always displays \"Mark as done\" (MARK_DONE key) regardless \nof the task's current state. The action itself works correctly (it does \nre-activate the task), but the label is misleading.\n\n### Expected Behavior\n\nWhen swiping left on a completed task, the action label should reflect \nthe actual action: \"Mark as undone\" (or equivalent), since the task is \nalready done.\n\n### Steps to Reproduce\n\n1. Mark a task as done on Android\n2. Swipe left on that completed task\n3. The action label reads \"Mark as done\" instead of \"Mark as undone\"\n\n**Suggestion**\nAdd a separate i18n key (e.g. MARK_UNDONE) and use it conditionally \nbased on the task's current done state.\n\n**Note**\nThis action (re-activating a completed task) is not available on desktop \n(PC), where unchecking the task checkbox achieves the same result.\n\n### Can you reproduce this reliably?\n\nYes, I can reproduce it reliably.\n\n### Console Output\n\n```shell\n\n```\n\n### Documentation\n\n- [ ] The documentation/[wiki](https://github.com/super-productivity/super-productivity/wiki) is unclear or incorrect for this case.\n- [ ] There should be a note added to the documentation/[wiki](https://github.com/super-productivity/super-productivity/wiki) for this case.",
+    "labels": [],
+    "state": "closed",
+    "createdAt": "2026-05-25T14:56:16Z",
+    "updatedAtObserved": "2026-05-26T11:36:29Z"
+  },
+  "repoMeta": {
+    "stars": 20467,
+    "forks": 1824
+  },
+  "vetTimeFacts": {
+    "hasExistingPR": false,
+    "isClaimed": false,
+    "projectActive": true,
+    "contributionGuidelinesFound": true,
+    "mergedPRCount": 1,
+    "orgHasMergedPRs": false,
+    "matchesPreferredCategory": false,
+    "closedWithoutMergeCount": 0
+  },
+  "outcome": {
+    "label": "merged",
+    "date": "2026-05-26",
+    "detail": "PR #7792 merged 2026-05-26 (verified live: merged=true)",
+    "prUrl": "https://github.com/super-productivity/super-productivity/pull/7792"
+  },
+  "measurable": true,
+  "expectedVerdict": "pursue",
+  "fidelityNote": "By this vet date John had several earlier merged PRs in this repo (#7211/#7220/#7222 all landed in April), so mergedPRCount treated as established (>0).",
+  "vaultSource": "open-source/potential-issue-list.md, open-source/skipped-issues.md"
+}

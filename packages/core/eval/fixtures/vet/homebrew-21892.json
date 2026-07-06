@@ -1,0 +1,39 @@
+{
+  "id": "homebrew-21892",
+  "url": "https://github.com/Homebrew/brew/issues/21892",
+  "owner": "Homebrew",
+  "repo": "brew",
+  "issueNumber": 21892,
+  "vetDate": "2026-04-04",
+  "issue": {
+    "title": "`HOMEBREW_ARTIFACT_DOMAIN` does not fallback to ghcr.io URLs",
+    "body": "### `brew doctor` output\n\n```shell\nPlease note that these warnings are just used to help the Homebrew maintainers\nwith debugging if you file an issue. If everything you use Homebrew for is\nworking fine: please don't worry or file an issue; just ignore this. Thanks!\n\nWarning: /usr/bin occurs before /opt/homebrew/bin in your PATH.\nThis means that system-provided programs will be used instead of those\nprovided by Homebrew. Consider setting your PATH so that\n/opt/homebrew/bin occurs before /usr/bin. Here is a one-liner:\n  echo 'export PATH=\"/opt/homebrew/bin:$PATH\"' >> ~/.zshrc\n\nThe following tools exist at both paths:\n  openssl\n  pip3\n  python3\n```\n\n### Verification\n\n- [x] I ran `brew update` twice and am still able to reproduce my issue.\n- [x] My \"`brew doctor` output\" above says `Your system is ready to brew` or a definitely unrelated `Tier` message.\n- [x] This issue's title and/or description do not reference a single formula e.g. `brew install wget`. If they do, open an issue at https://github.com/Homebrew/homebrew-core/issues/new/choose instead.\n\n### `brew config` output\n\n```shell\nHOMEBREW_VERSION: 5.1.3-12-gf31f20a\nORIGIN: https://github.com/Homebrew/brew\nHEAD: f31f20a49747a14897a3eb3cd1773cbad6d70c72\nLast commit: 4 hours ago\nBranch: main\nCore tap JSON: 02 Apr 20:52 UTC\nCore cask tap JSON: 02 Apr 20:52 UTC\nHOMEBREW_PREFIX: /opt/homebrew\nHOMEBREW_REPOSITORY: /opt/homebrew/Homebrew\nHOMEBREW_ARTIFACT_DOMAIN: https://<internal_nexus>/repository/githubcr-proxy/\nHOMEBREW_CASK_OPTS: []\nHOMEBREW_DOWNLOAD_CONCURRENCY: 16\nHOMEBREW_FORBID_PACKAGES_FROM_PATHS: set\nHOMEBREW_MAKE_JOBS: 8\nHOMEBREW_SORBET_RUNTIME: set\nHomebrew Ruby: 4.0.2 => /opt/homebrew/Homebrew/Library/Homebrew/vendor/portable-ruby/4.0.2_1/bin/ruby\nCPU: octa-core 64-bit arm_firestorm_icestorm\nClang: 17.0.0 build 1700\nGit: 2.50.1 => /Library/Developer/CommandLineTools/usr/bin/git\nCurl: 8.7.1 => /usr/bin/curl\nmacOS: 26.3-arm64\nCLT: 26.2.0.0.1.1764812424\nXcode: N/A\nRosetta 2: false\n```\n\n### What were you trying to do (and why)?\n\nWhen connected to certain networks I do not have access to ghcr.io, so I have `HOMEBREW_ARTIFACT_DOMAIN` set to use an internal mirror. However, when `HOMEBREW_ARTIFACT_DOMAIN` is not reachable, Homebrew does not fallback to using ghcr.io. I do not have `HOMEBREW_ARTIFACT_DOMAIN_NO_FALLBACK` set, so I expected Homebrew would be able to fallback.\n\n> : When `$HOMEBREW_ARTIFACT_DOMAIN` and `$HOMEBREW_ARTIFACT_DOMAIN_NO_FALLBACK`\n  are both set, if the request to `$HOMEBREW_ARTIFACT_DOMAIN` fails then\n  Homebrew will error rather than trying any other/default URLs.\n\n### What happened (include all command output)?\n\n```\n==> Fetching downloads for: xz\n✘ Bottle xz (5.8.3)\nError: Failed to download resource \"xz\"\nDownload failed: https://<nexus_internal>/repository/githubcr-proxy/v2/homebrew/core/xz/blobs/sha256:55c891f5d47142fe923c87df0e3343d7ef2bc7d368c67892b4ad2c80e53069d5\ncurl: (6) Could not resolve host: <nexus_internal>\nWarning: Problem : timeout. Will retry in 1 seconds. 3 retries left.\ncurl: (6) Could not resolve host: <nexus_internal>\nWarning: Problem : timeout. Will retry in 2 seconds. 2 retries left.\ncurl: (6) Could not resolve host: <nexus_internal>\nWarning: Problem : timeout. Will retry in 4 seconds. 1 retries left.\ncurl: (6) Could not resolve host: <nexus_internal>\n```\n\n### What did you expect to happen?\n\nWhen `HOMEBREW_ARTIFACT_DOMAIN` is set, Homebrew will attempt to use the value set, if the artifact domain is not reachable, Homebrew will fallback to using the default ghcr.io domain.\n\n### Step-by-step reproduction instructions (by running `brew` commands)\n\n```shell\nHOMEBREW_ARTIFACT_DOMAIN=https://<internal_nexus>/repository/githubcr-proxy/ brew install xz\n```",
+    "labels": ["help wanted"],
+    "state": "closed",
+    "createdAt": "2026-04-02T22:55:15Z",
+    "updatedAtObserved": "2026-04-28T07:59:18Z"
+  },
+  "repoMeta": {
+    "stars": 48733,
+    "forks": 11203
+  },
+  "vetTimeFacts": {
+    "hasExistingPR": false,
+    "isClaimed": false,
+    "projectActive": true,
+    "contributionGuidelinesFound": true,
+    "mergedPRCount": 0,
+    "orgHasMergedPRs": false,
+    "matchesPreferredCategory": false,
+    "closedWithoutMergeCount": 0
+  },
+  "outcome": {
+    "label": "skip_correct",
+    "date": "2026-04-04",
+    "detail": "Skipped: could not be reproduced or verified end-to-end without a private artifact host (verified live: state_reason=completed — someone else eventually resolved it upstream)."
+  },
+  "measurable": false,
+  "expectedVerdict": "skip",
+  "fidelityNote": "The skip reason is 'can't verify a fix works without infra John doesn't have' — a feasibility judgment, not something hasExistingPR/isClaimed/projectActive/clearRequirements models. Reported, not scored.",
+  "vaultSource": "open-source/potential-issue-list.md, open-source/skipped-issues.md"
+}

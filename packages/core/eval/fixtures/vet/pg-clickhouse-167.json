@@ -1,0 +1,39 @@
+{
+  "id": "pg-clickhouse-167",
+  "url": "https://github.com/ClickHouse/pg_clickhouse/issues/167",
+  "owner": "ClickHouse",
+  "repo": "pg_clickhouse",
+  "issueNumber": 167,
+  "vetDate": "2026-04-12",
+  "issue": {
+    "title": "Convert all errors to ereport",
+    "body": "Replace all instances of `elog()` with `ereport()` with an appropriate error code and always prefixed with `pg_clickhouse: `. For generic FDW errors, for example:\n\n\n```c\nereport(ERROR,\n\t\terrcode(ERRCODE_FDW_ERROR),\n\t\terrmsg(\"pg_clickhouse: failed to push down %s\", text_to_cstring(name))\n\t);\n```\n\nConsult `include/server/utils/errcodes.h` for the relevant error codes.",
+    "labels": ["good first issue", "quality"],
+    "state": "closed",
+    "createdAt": "2026-04-01T16:26:29Z",
+    "updatedAtObserved": "2026-07-01T02:38:08Z"
+  },
+  "repoMeta": {
+    "stars": 251,
+    "forks": 14
+  },
+  "vetTimeFacts": {
+    "hasExistingPR": false,
+    "isClaimed": true,
+    "projectActive": true,
+    "contributionGuidelinesFound": false,
+    "mergedPRCount": 0,
+    "orgHasMergedPRs": false,
+    "matchesPreferredCategory": false,
+    "closedWithoutMergeCount": 0
+  },
+  "outcome": {
+    "label": "skip_correct",
+    "date": "2026-04-12",
+    "detail": "Skipped: issue assigned to @serprex at vet time (verified live: assignee still on the closed issue)."
+  },
+  "measurable": true,
+  "expectedVerdict": "skip",
+  "fidelityNote": "isClaimed=true matches checkNotClaimed's assignee check.",
+  "vaultSource": "open-source/potential-issue-list.md, open-source/skipped-issues.md"
+}

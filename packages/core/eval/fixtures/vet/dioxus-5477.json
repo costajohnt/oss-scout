@@ -1,0 +1,40 @@
+{
+  "id": "dioxus-5477",
+  "url": "https://github.com/DioxusLabs/dioxus/issues/5477",
+  "owner": "DioxusLabs",
+  "repo": "dioxus",
+  "issueNumber": 5477,
+  "vetDate": "2026-04-12",
+  "issue": {
+    "title": "dx serve --addr 0.0.0.0 should report http://0.0.0.0:8080 as the address",
+    "body": "## Feature Request\n\nI'm accustomed to tools where you can set 0.0.0.0 showing THAT address when you start the dev server. Mine is still showing\n\n> Serving at: http://127.0.0.1:8080\n\nIt also seems to redirect to 127 if I manually visit the all 0s version.\n\nI think it would be more intuitive to switch the address to all 0s both in the `dx serve` printout and to NOT redirect when you're making that the address in the browser. Obviously, you can run something like `sudo ss -tunlp` to verify but it's an extra step and I am fundamentally lazy.",
+    "labels": ["enhancement"],
+    "state": "closed",
+    "createdAt": "2026-04-10T08:45:12Z",
+    "updatedAtObserved": "2026-04-14T23:52:45Z"
+  },
+  "repoMeta": {
+    "stars": 36640,
+    "forks": 1709
+  },
+  "vetTimeFacts": {
+    "hasExistingPR": false,
+    "isClaimed": false,
+    "projectActive": true,
+    "contributionGuidelinesFound": false,
+    "mergedPRCount": 0,
+    "orgHasMergedPRs": false,
+    "matchesPreferredCategory": false,
+    "closedWithoutMergeCount": 0
+  },
+  "outcome": {
+    "label": "merged",
+    "date": "2026-04-14",
+    "detail": "PR #5481 merged 2026-04-14 (verified live: merged=true)",
+    "prUrl": "https://github.com/DioxusLabs/dioxus/pull/5481"
+  },
+  "measurable": true,
+  "expectedVerdict": "pursue",
+  "fidelityNote": "No CONTRIBUTING.md found at any of the 4 probed paths (checked live 2026-07-05) — contributionGuidelinesFound=false is a real repo characteristic, not a fixture gap.",
+  "vaultSource": "open-source/potential-issue-list.md, open-source/skipped-issues.md"
+}

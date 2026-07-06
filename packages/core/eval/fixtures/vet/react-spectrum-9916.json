@@ -1,0 +1,40 @@
+{
+  "id": "react-spectrum-9916",
+  "url": "https://github.com/adobe/react-spectrum/issues/9916",
+  "owner": "adobe",
+  "repo": "react-spectrum",
+  "issueNumber": 9916,
+  "vetDate": "2026-04-12",
+  "issue": {
+    "title": "`AlertDialog` renders without `aria-describedby`",
+    "body": "### Provide a general summary of the issue here\n\nWhen using `AlertDialog` (with `role=\"alertdialog\"`), the component renders without `aria-describedby`.\n\nAccording to the W3C specification, authors SHOULD use `aria-describedby` on an `alertdialog` to reference the alert message element in the dialog.\nhttps://www.w3.org/TR/wai-aria-1.2/#alertdialog\n\n### 🤔 Expected Behavior?\n\nI think one of the following behaviors should be expected:\n- `AlertDialog` automatically assigns an ID to the content element and sets `aria-describedby` on the dialog to reference it.\n- A development warning is shown when a rendered alertdialog lacks `aria-describedby`\n\n### 😯 Current Behavior\n\n`AlertDialog` renders without `aria-describedby` by default. \n\n### 💁 Possible Solution\n\n_No response_\n\n### 🔦 Context\n\n_No response_\n\n### 🖥️ Steps to Reproduce\n\nhttps://codesandbox.io/p/sandbox/happy-saha-jtm36v?file=%2Fsrc%2FApp.js%3A26%2C1\n\n### Version\n\n3.31.0\n\n### What browsers are you seeing the problem on?\n\nChrome\n\n### If other, please specify.\n\n_No response_\n\n### What operating system are you using?\n\nmacOS\n\n### 🧢 Your Company/Team\n\n_No response_\n\n### 🕷 Tracking Issue\n\n_No response_",
+    "labels": ["accessibility"],
+    "state": "closed",
+    "createdAt": "2026-04-12T13:30:33Z",
+    "updatedAtObserved": "2026-06-25T23:20:58Z"
+  },
+  "repoMeta": {
+    "stars": 15629,
+    "forks": 1496
+  },
+  "vetTimeFacts": {
+    "hasExistingPR": false,
+    "isClaimed": false,
+    "projectActive": true,
+    "contributionGuidelinesFound": true,
+    "mergedPRCount": 0,
+    "orgHasMergedPRs": false,
+    "matchesPreferredCategory": false,
+    "closedWithoutMergeCount": 0
+  },
+  "outcome": {
+    "label": "merged",
+    "date": "2026-06-25",
+    "detail": "PR #9924 merged 2026-06-25, a much longer review cycle than most (verified live: merged=true)",
+    "prUrl": "https://github.com/adobe/react-spectrum/pull/9924"
+  },
+  "measurable": true,
+  "expectedVerdict": "pursue",
+  "fidelityNote": "Merge landed >2 months after vet/PR-open — long enterprise-repo review latency, unrelated to vet quality.",
+  "vaultSource": "open-source/potential-issue-list.md, open-source/skipped-issues.md"
+}

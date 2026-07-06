@@ -1,0 +1,39 @@
+{
+  "id": "nautilus-trader-4096",
+  "url": "https://github.com/nautechsystems/nautilus_trader/issues/4096",
+  "owner": "nautechsystems",
+  "repo": "nautilus_trader",
+  "issueNumber": 4096,
+  "vetDate": "2026-05-19",
+  "issue": {
+    "title": "Bybit XRP option symbols with decimal strikes incorrectly parsed as composite",
+    "body": "# Bug Report\n\n## Confirmation\n\n  - [x] I've re-read the relevant sections of the documentation.\n  - [x] I've searched existing issues and discussions to avoid duplicates.\n  - [x] I've reviewed or skimmed the source code (or examples) to confirm the behavior is not by design.\n  - [x] I've tested this issue using a recent *development* wheel (`dev` develop or `a` nightly) and can still reproduce it.\n\n  ---\n\n  ### Expected Behavior\n\n  Subscribing to order book deltas for a Bybit option whose strike price contains a decimal point\n  (e.g. `XRP-22MAY26-0.8-C-USDT-OPTION.BYBIT`) should behave identically to subscribing to any\n  other single-instrument option. `DataEngine._setup_order_book` should create a book for the\n  specified instrument and return without error.\n\n  ### Actual Behavior\n\n  The `DataEngine` crashes with an unhandled `TypeError` during `DataCommand` queue processing,\n  bringing down the entire trading node:\n\n  [ERROR] DataEngine: Unexpected exception in DataCommand queue processing:\n  TypeError(\"Argument 'other' has incorrect type (expected nautilus_trader.model.objects.Currency, got str)\")\n\n  This is caused by a two-step failure:\n\n  1. **`Symbol.is_composite()` misfires on decimal strikes.**\n     Nautilus uses `.` as the composite-symbol separator (e.g. `ES.CME`). Any option whose\n     strike price contains a decimal point — common on low-priced underlyings like XRP, DOGE, SHIB —\n     causes `is_composite()` to return `True` for what is a fully-qualified single-instrument ID:\n\n     ```python\n     InstrumentId.from_str(\"XRP-22MAY26-0.8-C-USDT-OPTION.BYBIT\").symbol.is_composite()\n     # True  ← incorrect; the '.' belongs to the strike, not a composite separator\n     InstrumentId.from_str(\"BTC-29MAY26-90000-C-USDT-OPTION.BYBIT\").symbol.is_composite()\n     # False ← correct; integer strike, no dot\n\n  2. Cache.instruments(underlying=…) compares a str to a Currency object.\n  Because is_composite() returned True, DataEngine._setup_order_book calls:\n\n  root = command.instrument_id.symbol.root()        # e.g. \"XRP-22MAY26-0\"  (str)\n  instruments = self._cache.instruments(venue=..., underlying=root)\n\n  2. Inside Cache.instruments the filter is:\n\n  underlying == x.underlying   # str == Currency\n\n  2. str.__eq__(Currency) returns NotImplemented; Python then tries Currency.__eq__(str),\n  which raises TypeError because the Cython Currency.__eq__ enforces strict typing.\n\n  The combined effect is a hard crash on the first SubscribeOrderBook command for any option\n  with a non-integer strike, despite the instrument having loaded and been cached correctly.\n\n  Steps to Reproduce the Problem\n\n  1. Connect a BybitDataClient for the OPTION product type with base_coin = \"XRP\".\n  2. Call strategy.subscribe_order_book_deltas(instrument_id, ...) for any XRP option whose\n  strike is a decimal (e.g. XRP-22MAY26-0.8-C-USDT-OPTION.BYBIT).\n  3. Observe the TypeError in the DataEngine command queue and node shutdown.\n\n  Code Snippets or Logs\n\n  Minimal reproduction of the misfire (no exchange connection needed):\n\n  from nautilus_trader.model.identifiers import InstrumentId\n\n  float_strike  = InstrumentId.from_str(\"XRP-22MAY26-0.8-C-USDT-OPTION.BYBIT\")\n  int_strike    = InstrumentId.from_str(\"BTC-29MAY26-90000-C-USDT-OPTION.BYBIT\")\n\n  print(float_strike.symbol.is_composite())   # True  — unexpected\n  print(float_strike.symbol.root())           # 'XRP-22MAY26-0' — meaningless root\n  print(int_strike.symbol.is_composite())     # False — correct\n\n  Full stack trace from a live node:\n\n  File \".../nautilus_trader/live/data_engine.py\", line 412, in _run_cmd_queue\n      self._execute_command(command)\n  File \"nautilus_trader/data/engine.pyx\", line 855,  in DataEngine._execute_command\n  File \"nautilus_trader/data/engine.pyx\", line 893,  in DataEngine._execute_command\n  File \"nautilus_trader/data/engine.pyx\", line 905,  in DataEngine._handle_subscribe\n  File \"nautilus_trader/data/engine.pyx\", line 1025, in DataEngine._handle_subscribe_order_book\n  File \"nautilus_trader/data/engine.pyx\", line 1035, in DataEngine._setup_order_book\n  File \"nautilus_trader/cache/cache.pyx\", line 3747, in Cache.instruments\n  TypeError: Argument 'other' has incorrect type (expected nautilus_trader.model.objects.Currency, got str)\n\n  Relevant source locations:\n\n  - engine.pyx ~1033: if command.instrument_id.symbol.is_composite():\n  - engine.pyx ~1035: instruments = self._cache.instruments(venue=..., underlying=root) — root is str\n  - cache.pyx  ~3747: underlying == x.underlying — x.underlying is Currency\n\n  Specifications\n\n  - OS platform: Linux (Debian 12 bookworm, x86-64)\n  - Python version: 3.12\n  - nautilus_trader version: 1.224.0\n",
+    "labels": ["bug", "wontfix"],
+    "state": "closed",
+    "createdAt": "2026-05-19T10:25:11Z",
+    "updatedAtObserved": "2026-05-20T00:54:31Z"
+  },
+  "repoMeta": {
+    "stars": 24464,
+    "forks": 3116
+  },
+  "vetTimeFacts": {
+    "hasExistingPR": false,
+    "isClaimed": false,
+    "projectActive": true,
+    "contributionGuidelinesFound": true,
+    "mergedPRCount": 0,
+    "orgHasMergedPRs": false,
+    "matchesPreferredCategory": false,
+    "closedWithoutMergeCount": 0
+  },
+  "outcome": {
+    "label": "maintainer_fixed",
+    "date": "2026-05-19",
+    "detail": "Maintainer closed the issue NOT_PLANNED same day, having fixed the underlying problem differently on the Rust data-engine path (verified live: state=closed, state_reason=not_planned)."
+  },
+  "measurable": false,
+  "expectedVerdict": "pursue",
+  "fidelityNote": "Not a self-fix in the same sense as the super-productivity cases — maintainer solved a related-but-different root cause and declined the Cython-path fix as legacy. Bucketed as maintainer_fixed because the practical effect (John's ready fix was never pushed) is the same.",
+  "vaultSource": "open-source/potential-issue-list.md, open-source/skipped-issues.md"
+}

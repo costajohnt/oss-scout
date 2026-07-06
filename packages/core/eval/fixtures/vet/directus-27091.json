@@ -1,0 +1,47 @@
+{
+  "id": "directus-27091",
+  "url": "https://github.com/directus/directus/issues/27091",
+  "owner": "directus",
+  "repo": "directus",
+  "issueNumber": 27091,
+  "vetDate": "2026-04-12",
+  "issue": {
+    "title": "Save as copy throws error",
+    "body": "### Describe the Bug\n\nWhen selecting \"Save as copy\" on an edited file in the file library, a `403 Forbidden` error is thrown, even when admin\n\n### To Reproduce\n\n- Upload an image\n- Make an edit to the image, eg: change the title\n- Select save as copy\n- Observe error\n\n### Directus Version\n\n11.17+\n\n### Hosting Strategy\n\nSelf-Hosted (Docker Image)\n\n### Database\n\n_No response_",
+    "labels": [
+      "Bug",
+      "Regression",
+      "Studio",
+      "Assets / Files",
+      "High Impact",
+      "Med Reach"
+    ],
+    "state": "closed",
+    "createdAt": "2026-04-10T15:17:40Z",
+    "updatedAtObserved": "2026-06-28T03:46:06Z"
+  },
+  "repoMeta": {
+    "stars": 36409,
+    "forks": 4825
+  },
+  "vetTimeFacts": {
+    "hasExistingPR": true,
+    "isClaimed": false,
+    "projectActive": true,
+    "contributionGuidelinesFound": true,
+    "mergedPRCount": 0,
+    "orgHasMergedPRs": false,
+    "matchesPreferredCategory": false,
+    "closedWithoutMergeCount": 0
+  },
+  "outcome": {
+    "label": "skip_correct",
+    "date": "2026-04-12",
+    "detail": "Skipped: competing PR #27099 already open at vet time (verified live: #27099 state=closed, merged=false — it didn't land either, but the skip decision was correct given what was visible then).",
+    "prUrl": "https://github.com/directus/directus/pull/27099"
+  },
+  "measurable": true,
+  "expectedVerdict": "skip",
+  "fidelityNote": "hasExistingPR=true matches checkNoExistingPR. Included even though the competing PR itself never merged, to test that the vetter correctly treats 'has a competing PR' as a skip signal regardless of that PR's eventual fate.",
+  "vaultSource": "open-source/potential-issue-list.md, open-source/skipped-issues.md"
+}

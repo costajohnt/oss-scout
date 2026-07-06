@@ -1,0 +1,40 @@
+{
+  "id": "super-productivity-7188",
+  "url": "https://github.com/super-productivity/super-productivity/issues/7188",
+  "owner": "super-productivity",
+  "repo": "super-productivity",
+  "issueNumber": 7188,
+  "vetDate": "2026-04-12",
+  "issue": {
+    "title": "🚨 Time estimate is reset when clicking on the title input field after setting the estimate",
+    "body": "### Version Used\n\n17.2.4 (Linux Mint desktop app, Windows 10 desktop app)\n\n### Expected Behavior\n\nWhen creating a new task, setting a time estimate first and then clicking on the title field to type the task name should preserve the estimate value.\n\n### Current Behavior\n\nIf a time estimate is selected from the dropdown *before* the task title is entered, clicking on the title input field immediately resets the estimate to zero.\n\n### Steps to Reproduce\n\n1. Open the add task input area\n2. Set a time estimate by selecting a value from the estimate dropdown (e.g. 30m)\n3. Click on the title input field to start typing the task name\n4. The time estimate is immediately cleared/reset to zero\n\n**Environment**\n- Version: 17.2.4\n- OS: Linux Mint (desktop app) / Windows 10 (desktop app)\n- Sync: Dropbox (3 devices)\n\n### Can you reproduce this reliably?\n\nYes, I can reproduce it reliably.\n\n### Console Output\n\n```shell\n\n```\n\n### documentation gap\n\n- [ ] The documentation/[wiki](https://github.com/super-productivity/super-productivity/wiki) is unclear or incorrect for this case.\n- [ ] There should be a note added to the documentation/[wiki](https://github.com/super-productivity/super-productivity/wiki) for this case.\n- [ ] I can help improve the documentation.",
+    "labels": [],
+    "state": "closed",
+    "createdAt": "2026-04-10T18:33:44Z",
+    "updatedAtObserved": "2026-04-13T14:44:59Z"
+  },
+  "repoMeta": {
+    "stars": 20467,
+    "forks": 1824
+  },
+  "vetTimeFacts": {
+    "hasExistingPR": false,
+    "isClaimed": false,
+    "projectActive": true,
+    "contributionGuidelinesFound": true,
+    "mergedPRCount": 0,
+    "orgHasMergedPRs": false,
+    "matchesPreferredCategory": false,
+    "closedWithoutMergeCount": 0
+  },
+  "outcome": {
+    "label": "merged",
+    "date": "2026-04-13",
+    "detail": "PR #7211 merged 2026-04-13 (verified live: merged=true)",
+    "prUrl": "https://github.com/super-productivity/super-productivity/pull/7211"
+  },
+  "measurable": true,
+  "expectedVerdict": "pursue",
+  "fidelityNote": "Cold-start in this repo, same as #7219/#7191.",
+  "vaultSource": "open-source/potential-issue-list.md, open-source/skipped-issues.md"
+}
