@@ -2,8 +2,9 @@
  * Search command — finds contributable issues using multi-strategy search.
  */
 
-import { withScout } from "./with-scout.js";
+import { withScout, persistScout } from "./with-scout.js";
 import { isLinkedPRStalled } from "../core/linked-pr.js";
+import { ValidationError } from "../core/errors.js";
 import type { ScoutState, SearchStrategy } from "../core/schemas.js";
 
 export interface SearchOutput {
@@ -83,15 +84,29 @@ export async function runSearch(
   return withScout(
     options.state,
     async (scout) => {
-      const result = await scout.search({
-        maxResults: options.maxResults,
-        strategies: options.strategies,
-        preferLanguages: options.preferLanguages,
-        preferRepos: options.preferRepos,
-        avoidRepos: options.avoidRepos,
-        boostIssueTypes: options.boostIssueTypes,
-        diversityRatio: options.diversityRatio,
-      });
+      let result;
+      try {
+        result = await scout.search({
+          maxResults: options.maxResults,
+          strategies: options.strategies,
+          preferLanguages: options.preferLanguages,
+          preferRepos: options.preferRepos,
+          avoidRepos: options.avoidRepos,
+          boostIssueTypes: options.boostIssueTypes,
+          diversityRatio: options.diversityRatio,
+        });
+      } catch (err) {
+        // withScout's persist epilogue only runs when fn resolves, so state
+        // mutated before a zero-candidate ValidationError (notably the
+        // language-rotation cursor, which advances even when the broad phase
+        // found nothing) would be silently dropped. Persist it before
+        // rethrowing so the next run leads with a different language slice
+        // (#249 follow-up).
+        if (err instanceof ValidationError && scout.isDirty()) {
+          await persistScout(scout);
+        }
+        throw err;
+      }
 
       scout.saveResults(result.candidates);
 

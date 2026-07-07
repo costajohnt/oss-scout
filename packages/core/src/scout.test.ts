@@ -7,6 +7,7 @@ import type { ScoutState } from "./core/schemas.js";
 import type { IssueCandidate } from "./core/types.js";
 import type { Octokit } from "@octokit/rest";
 import { IssueDiscovery } from "./core/issue-discovery.js";
+import { ValidationError } from "./core/errors.js";
 
 vi.mock("./core/feature-discovery.js", async (importOriginal) => {
   const actual =
@@ -1042,5 +1043,45 @@ describe("OssScout.search language rotation cursor (#249 follow-up)", () => {
 
     expect(getCapturedOffset()).toBe(0);
     expect(scout.getState().searchRotation.languageOffset).toBe(1);
+  });
+
+  it("advances the offset when a zero-candidate search throws after the broad phase ran", async () => {
+    // A broad phase that ran and found nothing must still rotate — otherwise
+    // the same barren language slice leads every subsequent run (#249
+    // follow-up). searchIssues throws ValidationError with strategiesUsed
+    // attached; scout.search advances off the error, then rethrows.
+    const scout = makeRotationScout({ languageOffset: 2 });
+    vi.spyOn(IssueDiscovery.prototype, "searchIssues").mockRejectedValue(
+      new ValidationError("No issue candidates found", ["merged", "broad"]),
+    );
+
+    await expect(scout.search()).rejects.toThrow("No issue candidates found");
+
+    const rotation = scout.getState().searchRotation;
+    expect(rotation.languageOffset).toBe(3);
+    expect(rotation.lastRotatedAt).toBeDefined();
+    expect(scout.isDirty()).toBe(true);
+  });
+
+  it("does not advance the offset when the zero-candidate error's broad phase did not run", async () => {
+    const scout = makeRotationScout({ languageOffset: 2 });
+    vi.spyOn(IssueDiscovery.prototype, "searchIssues").mockRejectedValue(
+      new ValidationError("No issue candidates found", ["merged", "starred"]),
+    );
+
+    await expect(scout.search()).rejects.toThrow("No issue candidates found");
+
+    expect(scout.getState().searchRotation.languageOffset).toBe(2);
+  });
+
+  it("does not advance the offset on a non-ValidationError failure", async () => {
+    const scout = makeRotationScout({ languageOffset: 2 });
+    vi.spyOn(IssueDiscovery.prototype, "searchIssues").mockRejectedValue(
+      new Error("network exploded"),
+    );
+
+    await expect(scout.search()).rejects.toThrow("network exploded");
+
+    expect(scout.getState().searchRotation.languageOffset).toBe(2);
   });
 });

@@ -65,7 +65,10 @@ vi.mock("./category-mapping.js", () => ({
 vi.mock("./errors.js", () => ({
   ValidationError: class ValidationError extends Error {
     code = "VALIDATION_ERROR";
-    constructor(message: string) {
+    constructor(
+      message: string,
+      public readonly strategiesUsed?: string[],
+    ) {
       super(message);
       this.name = "ValidationError";
     }
@@ -1022,6 +1025,19 @@ describe("IssueDiscovery", () => {
       await expect(discovery.searchIssues({ maxResults: 5 })).rejects.toThrow(
         "No issue candidates found",
       );
+    });
+
+    it("attaches strategiesUsed to the zero-candidate ValidationError", async () => {
+      // scout.search() reads strategiesUsed off the error to advance the
+      // language-rotation cursor even when the search found nothing — a broad
+      // phase that ran and came up empty must still rotate (#249 follow-up).
+      const discovery = makeDiscovery();
+      await expect(
+        discovery.searchIssues({ maxResults: 5 }),
+      ).rejects.toMatchObject({
+        name: "ValidationError",
+        strategiesUsed: expect.any(Array),
+      });
     });
 
     it("returns empty with warning when rate limited", async () => {

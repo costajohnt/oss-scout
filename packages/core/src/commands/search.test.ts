@@ -9,6 +9,7 @@ const mockSaveResults = vi.fn();
 const mockCheckpoint = vi.fn<() => Promise<boolean>>();
 const mockGetState = vi.fn<() => ScoutState>();
 const mockGetRepoScoreRecord = vi.fn<(repo: string) => RepoScore | undefined>();
+const mockIsDirty = vi.fn<() => boolean>();
 
 vi.mock("../scout.js", () => ({
   createScout: vi.fn().mockImplementation(() =>
@@ -18,6 +19,7 @@ vi.mock("../scout.js", () => ({
       checkpoint: mockCheckpoint,
       getState: mockGetState,
       getRepoScoreRecord: mockGetRepoScoreRecord,
+      isDirty: mockIsDirty,
     }),
   ),
 }));
@@ -247,6 +249,41 @@ describe("runSearch", () => {
     await runSearch({ maxResults: 5 });
 
     expect(mockCheckpoint).toHaveBeenCalled();
+  });
+
+  it("persists dirty state when a zero-candidate ValidationError is thrown", async () => {
+    // withScout's persist epilogue never runs when search throws, but the
+    // language-rotation cursor advances even on a zero-candidate broad run
+    // (#249 follow-up) — that advance must land on disk before rethrowing.
+    const { ValidationError } = await import("../core/errors.js");
+    const { saveLocalState } = await import("../core/local-state.js");
+    mockSearch.mockRejectedValue(
+      new ValidationError("No issue candidates found", ["broad"]),
+    );
+    mockIsDirty.mockReturnValue(true);
+    mockGetState.mockReturnValue({ version: 1 } as ScoutState);
+
+    const { runSearch } = await import("./search.js");
+    await expect(runSearch({ maxResults: 5 })).rejects.toThrow(
+      "No issue candidates found",
+    );
+
+    expect(saveLocalState).toHaveBeenCalled();
+    expect(mockCheckpoint).toHaveBeenCalled();
+  });
+
+  it("does not persist on non-ValidationError failures", async () => {
+    const { saveLocalState } = await import("../core/local-state.js");
+    mockSearch.mockRejectedValue(new Error("network exploded"));
+    mockIsDirty.mockReturnValue(true);
+
+    const { runSearch } = await import("./search.js");
+    await expect(runSearch({ maxResults: 5 })).rejects.toThrow(
+      "network exploded",
+    );
+
+    expect(saveLocalState).not.toHaveBeenCalled();
+    expect(mockCheckpoint).not.toHaveBeenCalled();
   });
 
   it("marks linkedPR.isStalled when the linked PR is open and stale (#97)", async () => {

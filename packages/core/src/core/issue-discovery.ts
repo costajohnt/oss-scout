@@ -930,6 +930,7 @@ export class IssueDiscovery {
       throw new ValidationError(
         `No issue candidates found across all search phases.${details} ` +
           "Try adjusting your search criteria (languages, labels) or check your network connection.",
+        strategiesUsed,
       );
     }
 

@@ -24,6 +24,7 @@ import type {
   SavedCandidate,
   SkippedIssue,
   Horizon,
+  SearchRotation,
 } from "./core/schemas.js";
 import type {
   ScoutConfig,
@@ -56,6 +57,7 @@ import {
   getHttpStatusCode,
   isRateLimitError,
   rethrowIfFatal,
+  ValidationError,
 } from "./core/errors.js";
 import { getHttpCache } from "./core/http-cache.js";
 
@@ -272,31 +274,38 @@ export class OssScout implements ScoutStateReader, ScoutStateWriter {
     // fan-out at a different variant each run instead of always index 0.
     const rotation = this.state.searchRotation ?? { languageOffset: 0 };
 
-    const { candidates, strategiesUsed } = await discovery.searchIssues({
-      maxResults: options?.maxResults,
-      strategies: options?.strategies,
-      skippedUrls,
-      preferLanguages,
-      preferRepos,
-      avoidRepos,
-      boostIssueTypes,
-      diversityRatio,
-      interPhaseDelayMs: options?.interPhaseDelayMs,
-      broadPhaseDelayMs: options?.broadPhaseDelayMs,
-      languageRotationOffset: rotation.languageOffset,
-    });
+    let candidates: IssueCandidate[];
+    let strategiesUsed: SearchResult["strategiesUsed"];
+    try {
+      ({ candidates, strategiesUsed } = await discovery.searchIssues({
+        maxResults: options?.maxResults,
+        strategies: options?.strategies,
+        skippedUrls,
+        preferLanguages,
+        preferRepos,
+        avoidRepos,
+        boostIssueTypes,
+        diversityRatio,
+        interPhaseDelayMs: options?.interPhaseDelayMs,
+        broadPhaseDelayMs: options?.broadPhaseDelayMs,
+        languageRotationOffset: rotation.languageOffset,
+      }));
+    } catch (err) {
+      // A zero-candidate search throws ValidationError (see issue-discovery.ts)
+      // instead of returning normally — the exact case rotation exists to fix,
+      // since a broad phase that ran and found nothing must not leave the same
+      // barren language slice leading the next run. Advance the cursor off the
+      // strategiesUsed the error carries, then rethrow unchanged (#249 follow-up).
+      if (err instanceof ValidationError) {
+        this.advanceRotationIfBroadRan(rotation, err.strategiesUsed ?? []);
+      }
+      throw err;
+    }
 
     // Advance the rotation cursor only when the broad phase actually ran —
     // otherwise a search that skipped it (e.g. sufficient results from
     // cheaper phases) would still shift the next run's starting variant.
-    if (strategiesUsed.includes("broad")) {
-      this.state.searchRotation = {
-        ...rotation,
-        languageOffset: rotation.languageOffset + 1,
-        lastRotatedAt: new Date().toISOString(),
-      };
-      this.dirty = true;
-    }
+    this.advanceRotationIfBroadRan(rotation, strategiesUsed);
 
     // Feed the freshly observed maintainer-responsiveness signals back into the
     // repo scores so the next search ranks responsive/active repos higher (#167).
@@ -314,6 +323,26 @@ export class OssScout implements ScoutStateReader, ScoutStateWriter {
       rateLimitWarning: discovery.rateLimitWarning ?? undefined,
       strategiesUsed,
     };
+  }
+
+  /**
+   * Advance the language-rotation cursor when the broad phase actually ran.
+   * Called on both the success path and the zero-candidate ValidationError
+   * path — a broad phase that ran and found nothing must still rotate, or the
+   * same barren language slice would lead every subsequent run (#249
+   * follow-up). Skipped/gated broad phases don't burn a rotation slot.
+   */
+  private advanceRotationIfBroadRan(
+    rotation: SearchRotation,
+    strategiesUsed: readonly string[],
+  ): void {
+    if (!strategiesUsed.includes("broad")) return;
+    this.state.searchRotation = {
+      ...rotation,
+      languageOffset: rotation.languageOffset + 1,
+      lastRotatedAt: new Date().toISOString(),
+    };
+    this.dirty = true;
   }
 
   /**
