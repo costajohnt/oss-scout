@@ -407,8 +407,8 @@ describe("searchRotation", () => {
       version: 1,
       searchRotation: { languageOffset: 1, futureField: "kept" },
     });
-    expect(
-      (parsed.searchRotation as Record<string, unknown>).futureField,
-    ).toBe("kept");
+    expect((parsed.searchRotation as Record<string, unknown>).futureField).toBe(
+      "kept",
+    );
   });
 });
