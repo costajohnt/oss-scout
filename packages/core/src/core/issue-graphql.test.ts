@@ -178,7 +178,9 @@ describe("graphqlSearchIssues", () => {
       url: "https://github.com/owner/repo/issues/7",
       title: "Add dark mode",
       updatedAt: "2026-03-01T00:00:00Z",
-      labels: { nodes: [{ name: "good first issue" }, { name: "enhancement" }] },
+      labels: {
+        nodes: [{ name: "good first issue" }, { name: "enhancement" }],
+      },
       repository: { nameWithOwner: "owner/repo" },
       ...over,
     };

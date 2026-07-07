@@ -152,9 +152,9 @@ describe("ScoutPreferencesSchema", () => {
     ).toThrow();
   });
 
-  it("applies broadPhaseDelayMs default of 90000", () => {
+  it("applies broadPhaseDelayMs default of 0 (broad phase now runs on GraphQL)", () => {
     const prefs = ScoutPreferencesSchema.parse({});
-    expect(prefs.broadPhaseDelayMs).toBe(90000);
+    expect(prefs.broadPhaseDelayMs).toBe(0);
   });
 
   it("applies skipBroadWhenSufficientResults default of 8 (below default maxResults)", () => {

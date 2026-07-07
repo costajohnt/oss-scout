@@ -224,7 +224,11 @@ export const ScoutPreferencesSchema = z.looseObject({
   // Soft boost for candidates whose issue labels match one of these types,
   // case-insensitive (e.g. "bug", "good first issue") (#168).
   boostIssueTypes: z.array(z.string()).default([]),
-  broadPhaseDelayMs: z.number().min(0).max(300000).default(90000),
+  // Broad-phase cooldown. Now that the broad phase runs on GraphQL (points
+  // bucket, 5000/hr) rather than the REST Search bucket (30/min), the long
+  // secondary-rate-limit cooldown is no longer needed; defaults to 0 (no extra
+  // pause). Retained as a knob for hosts that still want to throttle the phase.
+  broadPhaseDelayMs: z.number().min(0).max(300000).default(0),
   /**
    * Skip the expensive broad phase once this many candidates were found by
    * the cheaper phases. Clamped at runtime to maxResults - 1 so it stays

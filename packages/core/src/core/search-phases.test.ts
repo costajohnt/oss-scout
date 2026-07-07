@@ -71,10 +71,18 @@ vi.mock("./issue-vetting.js", () => ({
   IssueVetter: vi.fn(),
 }));
 
+const mockGraphqlSearchIssues = vi.fn();
+vi.mock("./issue-graphql.js", () => ({
+  graphqlSearchIssues: (...args: unknown[]) => mockGraphqlSearchIssues(...args),
+}));
+
 import {
   buildEffectiveLabels,
   interleaveArrays,
   cachedSearchIssues,
+  searchIssuesGraphQLFirst,
+  getGraphQLSearchQueryCount,
+  resetGraphQLSearchQueryCount,
   fetchIssuesFromMaintainedRepos,
   searchWithChunkedLabels,
   searchAcrossLanguagesAndLabels,
@@ -315,6 +323,119 @@ describe("cachedSearchIssues", () => {
 
     // Different queries produce different cache keys, so API is called both times
     expect(octokit.search.issuesAndPullRequests).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("searchIssuesGraphQLFirst", () => {
+  const params = {
+    q: "is:issue is:open",
+    sort: "created" as const,
+    order: "desc" as const,
+    per_page: 10,
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockCache.getIfFresh.mockReturnValue(null);
+    resetGraphQLSearchQueryCount();
+  });
+
+  it("returns GraphQL results without a REST search call or budget accounting", async () => {
+    const gqlResult = {
+      total_count: 3,
+      items: [makeItem("https://github.com/a/b/issues/1", "a/b")],
+    };
+    mockGraphqlSearchIssues.mockResolvedValue(gqlResult);
+    const octokit = makeMockOctokit([]);
+    const tracker = {
+      waitForBudget: vi.fn().mockResolvedValue(undefined),
+      recordCall: vi.fn(),
+    } as unknown as import("./search-budget.js").SearchBudgetTracker;
+
+    const result = await searchIssuesGraphQLFirst(octokit, params, tracker);
+
+    expect(result).toEqual(gqlResult);
+    expect(octokit.search.issuesAndPullRequests).not.toHaveBeenCalled();
+    expect(tracker.recordCall).not.toHaveBeenCalled();
+    expect(getGraphQLSearchQueryCount()).toBe(1);
+  });
+
+  it("folds sort/order into the query string passed to GraphQL", async () => {
+    mockGraphqlSearchIssues.mockResolvedValue({ total_count: 0, items: [] });
+    await searchIssuesGraphQLFirst(makeMockOctokit([]), {
+      ...params,
+      sort: "updated",
+      order: "desc",
+    });
+    expect(mockGraphqlSearchIssues).toHaveBeenCalledWith(
+      expect.anything(),
+      "is:issue is:open sort:updated-desc",
+      10,
+    );
+  });
+
+  it("clamps per_page to 100 when passing first to GraphQL", async () => {
+    mockGraphqlSearchIssues.mockResolvedValue({ total_count: 0, items: [] });
+    await searchIssuesGraphQLFirst(makeMockOctokit([]), {
+      ...params,
+      per_page: 300,
+    });
+    expect(mockGraphqlSearchIssues).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.any(String),
+      100,
+    );
+  });
+
+  it("falls back to REST search with budget accounting on GraphQL null", async () => {
+    mockGraphqlSearchIssues.mockResolvedValue(null);
+    const items = [makeItem("https://github.com/a/b/issues/1", "a/b")];
+    const octokit = makeMockOctokit(items);
+    const tracker = {
+      waitForBudget: vi.fn().mockResolvedValue(undefined),
+      recordCall: vi.fn(),
+    } as unknown as import("./search-budget.js").SearchBudgetTracker;
+
+    const result = await searchIssuesGraphQLFirst(octokit, params, tracker);
+
+    expect(result.items).toHaveLength(1);
+    expect(octokit.search.issuesAndPullRequests).toHaveBeenCalledTimes(1);
+    // REST fallback pays the budget tracker.
+    expect(tracker.recordCall).toHaveBeenCalledTimes(1);
+    // GraphQL query count only counts successful GraphQL calls.
+    expect(getGraphQLSearchQueryCount()).toBe(0);
+  });
+
+  it("caches a non-empty GraphQL result under the gqlsearch: key", async () => {
+    mockGraphqlSearchIssues.mockResolvedValue({
+      total_count: 1,
+      items: [makeItem("https://github.com/a/b/issues/1", "a/b")],
+    });
+    await searchIssuesGraphQLFirst(makeMockOctokit([]), params);
+
+    expect(mockCache.set).toHaveBeenCalledTimes(1);
+    expect(mockCache.set.mock.calls[0][0]).toContain("gqlsearch:");
+  });
+
+  it("does not cache an empty GraphQL result", async () => {
+    mockGraphqlSearchIssues.mockResolvedValue({ total_count: 0, items: [] });
+    await searchIssuesGraphQLFirst(makeMockOctokit([]), params);
+    expect(mockCache.set).not.toHaveBeenCalled();
+  });
+
+  it("returns a gqlsearch cache hit without calling GraphQL", async () => {
+    const cached = {
+      total_count: 1,
+      items: [makeItem("https://github.com/a/b/issues/1", "a/b")],
+    };
+    mockCache.getIfFresh.mockReturnValue(cached);
+    const octokit = makeMockOctokit([]);
+
+    const result = await searchIssuesGraphQLFirst(octokit, params);
+
+    expect(result).toEqual(cached);
+    expect(mockGraphqlSearchIssues).not.toHaveBeenCalled();
+    expect(octokit.search.issuesAndPullRequests).not.toHaveBeenCalled();
   });
 });
 
@@ -809,6 +930,30 @@ describe("searchWithChunkedLabels", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockCache.getIfFresh.mockReturnValue(null);
+    // Default: GraphQL unavailable so these tests exercise the REST fallback
+    // and keep asserting on octokit.search.issuesAndPullRequests unchanged.
+    mockGraphqlSearchIssues.mockResolvedValue(null);
+  });
+
+  it("uses GraphQL (no REST search) when GraphQL succeeds", async () => {
+    mockGraphqlSearchIssues.mockResolvedValue({
+      total_count: 1,
+      items: [makeItem("https://github.com/a/b/issues/1", "a/b")],
+    });
+    const octokit = makeMockOctokit([]);
+
+    const result = await searchWithChunkedLabels(
+      octokit,
+      ["good first issue"],
+      0,
+      (labelQ) => `is:issue is:open ${labelQ}`,
+      10,
+    );
+
+    expect(result).toHaveLength(1);
+    expect(mockGraphqlSearchIssues).toHaveBeenCalledTimes(1);
+    // GraphQL answered → the REST Search API is never touched.
+    expect(octokit.search.issuesAndPullRequests).not.toHaveBeenCalled();
   });
 
   it("issues a single query when labels fit within operator limit", async () => {
@@ -915,6 +1060,9 @@ describe("searchAcrossLanguagesAndLabels", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockCache.getIfFresh.mockReturnValue(null);
+    // Exercise the REST fallback so these tests keep asserting on the REST
+    // Search mock (GraphQL is covered directly elsewhere).
+    mockGraphqlSearchIssues.mockResolvedValue(null);
   });
 
   it("issues one search call when only one language is configured", async () => {

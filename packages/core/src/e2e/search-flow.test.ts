@@ -56,10 +56,70 @@ const { fakeOctokit } = vi.hoisted(() => {
         if (typeof q === "string" && q.includes("is:pr")) {
           return { data: { total_count: 0, items: [] } };
         }
-        // Issue discovery phases.
+        // Issue discovery broad phases now go through GraphQL (see `graphql`
+        // below), so a REST is:issue search here would be a regression.
         return { data: { total_count: 1, items: [issueItem] } };
       }),
     },
+    // GraphQL boundary. Routes by operation-name substring so all three
+    // GraphQL shapes the pipeline issues answer correctly:
+    //   - searchIssuesBroad   → broad issue search (Phase 2 / Phase 3 fallback)
+    //   - batchMergedPRCounts → merged-PR affinity prefetch
+    //   - batchIssueCores     → per-issue core prefetch used by the vetter
+    graphql: vi.fn(
+      async (query: string, variables: Record<string, unknown>) => {
+        if (typeof query === "string" && query.includes("searchIssuesBroad")) {
+          return {
+            search: {
+              issueCount: 1,
+              nodes: [
+                {
+                  url: issueItem.html_url,
+                  title: issueItem.title,
+                  updatedAt: issueItem.updated_at,
+                  labels: { nodes: issueItem.labels },
+                  repository: { nameWithOwner: "test-org/test-repo" },
+                },
+              ],
+            },
+          };
+        }
+        if (
+          typeof query === "string" &&
+          query.includes("batchMergedPRCounts")
+        ) {
+          // Identity gate needs viewer.login === configured username ("tester").
+          const res: Record<string, unknown> = { viewer: { login: "tester" } };
+          for (const key of Object.keys(variables ?? {})) {
+            const m = key.match(/^q(\d+)$/);
+            if (m) res[`r${m[1]}`] = { issueCount: 0 };
+          }
+          return res;
+        }
+        if (typeof query === "string" && query.includes("batchIssueCores")) {
+          const res: Record<string, unknown> = {};
+          for (const key of Object.keys(variables ?? {})) {
+            const m = key.match(/^num(\d+)$/);
+            if (m) {
+              res[`i${m[1]}`] = {
+                issue: {
+                  databaseId: 101,
+                  title: issueItem.title,
+                  body: issueItem.body,
+                  state: "OPEN",
+                  labels: { nodes: issueItem.labels },
+                  comments: { totalCount: 0 },
+                  createdAt: issueItem.created_at,
+                  updatedAt: issueItem.updated_at,
+                },
+              };
+            }
+          }
+          return res;
+        }
+        return {};
+      },
+    ),
     issues: {
       // vetIssue re-fetches the full issue by URL.
       get: vi.fn().mockResolvedValue({
@@ -198,8 +258,17 @@ describe("search pipeline e2e (#161)", () => {
     // The real project-health check consumed the repo + commits responses.
     expect(fakeOctokit.repos.get).toHaveBeenCalled();
 
-    // Real search-API calls were issued (not a mocked IssueDiscovery).
-    expect(fakeOctokit.search.issuesAndPullRequests).toHaveBeenCalled();
+    // The broad issue search now runs on GraphQL, so no REST is:issue search
+    // should ever be issued (is:pr affinity/vetting queries are unaffected).
+    const issueSearchCalls =
+      fakeOctokit.search.issuesAndPullRequests.mock.calls.filter(
+        ([arg]: [{ q?: string }]) =>
+          typeof arg?.q === "string" && arg.q.includes("is:issue"),
+      );
+    expect(issueSearchCalls).toHaveLength(0);
+
+    // The GraphQL boundary was exercised for the broad search.
+    expect(fakeOctokit.graphql).toHaveBeenCalled();
   });
 
   it("persists vetted results via saveResults (the command-layer bookkeeping)", async () => {

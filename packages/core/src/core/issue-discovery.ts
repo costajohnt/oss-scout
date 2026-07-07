@@ -48,11 +48,13 @@ import { getTopicsForCategories } from "./category-mapping.js";
 import {
   buildEffectiveLabels,
   interleaveArrays,
-  cachedSearchIssues,
+  searchIssuesGraphQLFirst,
   fetchIssuesFromMaintainedRepos,
   filterVetAndScore,
   fetchIssuesFromKnownRepos,
   searchAcrossLanguagesAndLabels,
+  getGraphQLSearchQueryCount,
+  resetGraphQLSearchQueryCount,
 } from "./search-phases.js";
 import {
   annotateBoost,
@@ -415,7 +417,7 @@ async function runPhase3(
       .trim();
 
   try {
-    const data = await cachedSearchIssues(
+    const data = await searchIssuesGraphQLFirst(
       octokit,
       {
         q: phase3Query,
@@ -623,6 +625,9 @@ export class IssueDiscovery {
 
     // Pre-flight rate limit check
     this.rateLimitWarning = null;
+    // Fresh GraphQL broad-search counter for this run so the summary reports
+    // only this search's GraphQL query spend.
+    resetGraphQLSearchQueryCount();
     const tracker = this.budgetTracker;
     let searchBudget = LOW_BUDGET_THRESHOLD - 1;
     try {
@@ -640,12 +645,12 @@ export class IssueDiscovery {
       if (searchBudget < CRITICAL_BUDGET_THRESHOLD) {
         info(
           MODULE,
-          `Search budget critical (${searchBudget} remaining) — running only Phase 0`,
+          `Search budget critical (${searchBudget} remaining) — skipping the starred phase; broad/maintained still run on GraphQL (points bucket)`,
         );
       } else if (searchBudget < LOW_BUDGET_THRESHOLD) {
         info(
           MODULE,
-          `Search budget low (${searchBudget} remaining) — skipping heavy phases (2, 3)`,
+          `Search budget low (${searchBudget} remaining) — broad/maintained run on GraphQL (points bucket), unaffected by REST search quota`,
         );
       }
     } catch (error) {
@@ -797,11 +802,7 @@ export class IssueDiscovery {
         ? Math.min(configuredSkipThreshold, maxResults - 1)
         : 0;
 
-    if (
-      allCandidates.length < maxResults &&
-      searchBudget >= LOW_BUDGET_THRESHOLD &&
-      enabledStrategies.has("broad")
-    ) {
+    if (allCandidates.length < maxResults && enabledStrategies.has("broad")) {
       // Skip broad search only if we already have enough candidates from NEW
       // repos. Phases 0/1 only ever search the user's affinity + starred repos,
       // so counting their candidates here would gate off the broad phase — the
@@ -862,7 +863,6 @@ export class IssueDiscovery {
     // Phase 3: Actively maintained repos
     if (
       allCandidates.length < maxResults &&
-      searchBudget >= LOW_BUDGET_THRESHOLD &&
       enabledStrategies.has("maintained")
     ) {
       await applyInterPhaseDelay();
@@ -885,14 +885,14 @@ export class IssueDiscovery {
       strategiesUsed.push("maintained");
     }
 
-    // Build result / error summary
-    const phasesSkippedForBudget = searchBudget < LOW_BUDGET_THRESHOLD;
-    let budgetNote = "";
-    if (searchBudget < CRITICAL_BUDGET_THRESHOLD) {
-      budgetNote = ` Most search phases were skipped due to critically low API quota (${searchBudget} remaining).`;
-    } else if (phasesSkippedForBudget) {
-      budgetNote = ` Some search phases were skipped due to low API quota (${searchBudget} remaining).`;
-    }
+    // Build result / error summary. With broad/maintained now on GraphQL (which
+    // does not draw from the REST Search bucket), only the starred phase is
+    // still REST-budget-gated (CRITICAL). So "phases skipped for budget" now
+    // means the starred phase was dropped, not the heavy broad/maintained ones.
+    const phasesSkippedForBudget = searchBudget < CRITICAL_BUDGET_THRESHOLD;
+    const budgetNote = phasesSkippedForBudget
+      ? ` The starred-repo phase was skipped due to critically low API quota (${searchBudget} remaining); broad and maintained phases still ran on GraphQL.`
+      : "";
 
     if (allCandidates.length === 0) {
       const errorDetails = [
@@ -984,7 +984,7 @@ export class IssueDiscovery {
 
     info(
       MODULE,
-      `Search complete: ${tracker.getTotalCalls()} Search API calls used, ${finalPicks.length} candidates returned`,
+      `Search complete: ${tracker.getTotalCalls()} REST Search API call(s) + ${getGraphQLSearchQueryCount()} GraphQL broad-search query/queries used, ${finalPicks.length} candidates returned`,
     );
     return { candidates: finalPicks, strategiesUsed };
   }
