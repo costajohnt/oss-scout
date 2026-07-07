@@ -1186,6 +1186,79 @@ describe("searchAcrossLanguagesAndLabels", () => {
     ).mock.calls[0][0];
     expect(call.q).not.toContain("language:");
   });
+
+  describe("startOffset rotation (#249 follow-up)", () => {
+    it("rotates the variant order so the offset-th language leads", async () => {
+      const items = [makeItem("https://github.com/a/b/issues/1", "a/b")];
+      const octokit = makeMockOctokit(items);
+
+      await searchAcrossLanguagesAndLabels(
+        octokit,
+        ["typescript", "python", "rust"],
+        false,
+        ["good first issue", "help wanted"],
+        (langQ) => `is:issue is:open ${langQ} no:assignee`,
+        10,
+        undefined,
+        1,
+      );
+
+      const calls = (
+        octokit.search.issuesAndPullRequests as ReturnType<typeof vi.fn>
+      ).mock.calls;
+      const queries = calls.map((c) => c[0].q);
+      // offset 1 → [python, rust, typescript]
+      expect(queries[0]).toContain("language:python");
+      expect(queries[1]).toContain("language:rust");
+      expect(queries[2]).toContain("language:typescript");
+    });
+
+    it("wraps via modulo when the offset is >= the variant count", async () => {
+      const items = [makeItem("https://github.com/a/b/issues/1", "a/b")];
+      const octokit = makeMockOctokit(items);
+
+      await searchAcrossLanguagesAndLabels(
+        octokit,
+        ["typescript", "python", "rust"],
+        false,
+        ["good first issue", "help wanted"],
+        (langQ) => `is:issue is:open ${langQ} no:assignee`,
+        10,
+        undefined,
+        4, // 4 % 3 === 1, same rotation as offset 1
+      );
+
+      const calls = (
+        octokit.search.issuesAndPullRequests as ReturnType<typeof vi.fn>
+      ).mock.calls;
+      const queries = calls.map((c) => c[0].q);
+      expect(queries[0]).toContain("language:python");
+      expect(queries[1]).toContain("language:rust");
+      expect(queries[2]).toContain("language:typescript");
+    });
+
+    it("is a no-op with a single variant regardless of offset", async () => {
+      const items = [makeItem("https://github.com/a/b/issues/1", "a/b")];
+      const octokit = makeMockOctokit(items);
+
+      await searchAcrossLanguagesAndLabels(
+        octokit,
+        ["typescript"],
+        false,
+        ["good first issue"],
+        (langQ) => `is:issue is:open ${langQ} no:assignee`,
+        10,
+        undefined,
+        5,
+      );
+
+      expect(octokit.search.issuesAndPullRequests).toHaveBeenCalledTimes(1);
+      const call = (
+        octokit.search.issuesAndPullRequests as ReturnType<typeof vi.fn>
+      ).mock.calls[0][0];
+      expect(call.q).toContain("language:typescript");
+    });
+  });
 });
 
 describe("fetchIssuesFromMaintainedRepos", () => {

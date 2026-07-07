@@ -1164,6 +1164,67 @@ describe("mergeStates", () => {
 
     expect(merged.gistId).toBe("remote-gist");
   });
+
+  describe("searchRotation (#249 follow-up)", () => {
+    it("picks the side with the fresher lastRotatedAt", () => {
+      const local = makeState({
+        searchRotation: {
+          languageOffset: 1,
+          lastRotatedAt: "2026-06-02T00:00:00Z",
+        },
+      });
+      const remote = makeState({
+        searchRotation: {
+          languageOffset: 5,
+          lastRotatedAt: "2026-06-01T00:00:00Z",
+        },
+      });
+
+      // Local is fresher despite a smaller offset — timestamp wins.
+      expect(mergeStates(local, remote).searchRotation).toEqual({
+        languageOffset: 1,
+        lastRotatedAt: "2026-06-02T00:00:00Z",
+      });
+      // ...and remote wins when remote is fresher.
+      expect(mergeStates(remote, local).searchRotation).toEqual({
+        languageOffset: 1,
+        lastRotatedAt: "2026-06-02T00:00:00Z",
+      });
+    });
+
+    it("falls back to the larger languageOffset when neither side has a timestamp", () => {
+      const local = makeState({
+        searchRotation: { languageOffset: 2 },
+      });
+      const remote = makeState({
+        searchRotation: { languageOffset: 7 },
+      });
+
+      expect(mergeStates(local, remote).searchRotation).toEqual({
+        languageOffset: 7,
+      });
+      expect(mergeStates(remote, local).searchRotation).toEqual({
+        languageOffset: 7,
+      });
+    });
+
+    it("prefers the side with a timestamp over the side without one", () => {
+      const local = makeState({
+        searchRotation: {
+          languageOffset: 0,
+          lastRotatedAt: "2026-06-01T00:00:00Z",
+        },
+      });
+      const remote = makeState({
+        searchRotation: { languageOffset: 9 },
+      });
+
+      expect(mergeStates(local, remote).searchRotation).toEqual({
+        languageOffset: 0,
+        lastRotatedAt: "2026-06-01T00:00:00Z",
+      });
+    });
+  });
 });
 
 describe("mergeStates unknown-key round-trip (#137)", () => {

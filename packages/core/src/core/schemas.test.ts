@@ -373,3 +373,42 @@ describe("parseScoutState", () => {
     expect(() => parseScoutState({ version: 2 })).toThrow();
   });
 });
+
+// ── searchRotation (#249 follow-up) ──────────────────────────────────
+
+describe("searchRotation", () => {
+  it("defaults on legacy state with no searchRotation key", () => {
+    const state = parseScoutState({ version: 1 });
+    expect(state.searchRotation).toEqual({ languageOffset: 0 });
+  });
+
+  it("defaults languageOffset when searchRotation is present but empty", () => {
+    const state = parseScoutState({ version: 1, searchRotation: {} });
+    expect(state.searchRotation.languageOffset).toBe(0);
+    expect(state.searchRotation.lastRotatedAt).toBeUndefined();
+  });
+
+  it("round-trips a persisted offset and timestamp", () => {
+    const state = parseScoutState({
+      version: 1,
+      searchRotation: {
+        languageOffset: 3,
+        lastRotatedAt: "2026-07-01T00:00:00Z",
+      },
+    });
+    expect(state.searchRotation).toEqual({
+      languageOffset: 3,
+      lastRotatedAt: "2026-07-01T00:00:00Z",
+    });
+  });
+
+  it("round-trips unknown keys on searchRotation (loose object)", () => {
+    const parsed = parseScoutState({
+      version: 1,
+      searchRotation: { languageOffset: 1, futureField: "kept" },
+    });
+    expect(
+      (parsed.searchRotation as Record<string, unknown>).futureField,
+    ).toBe("kept");
+  });
+});

@@ -288,4 +288,30 @@ describe("search pipeline e2e (#161)", () => {
       true,
     );
   });
+
+  it("advances the persisted language-rotation offset across consecutive runs (#249 follow-up)", async () => {
+    const scout = freshScout();
+    expect(scout.getState().searchRotation.languageOffset).toBe(0);
+
+    const first = await scout.search({
+      maxResults: 5,
+      interPhaseDelayMs: 0,
+      broadPhaseDelayMs: 0,
+    });
+    expect(first.strategiesUsed).toContain("broad");
+    expect(scout.getState().searchRotation.languageOffset).toBe(1);
+    const firstRotatedAt = scout.getState().searchRotation.lastRotatedAt;
+    expect(firstRotatedAt).toBeDefined();
+
+    // A second, consecutive run reads back the advanced cursor and moves it
+    // forward again, so the broad phase's language fan-out starts somewhere
+    // new each time instead of always at languages[0].
+    const second = await scout.search({
+      maxResults: 5,
+      interPhaseDelayMs: 0,
+      broadPhaseDelayMs: 0,
+    });
+    expect(second.strategiesUsed).toContain("broad");
+    expect(scout.getState().searchRotation.languageOffset).toBe(2);
+  });
 });

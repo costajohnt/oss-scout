@@ -1282,10 +1282,12 @@ describe("IssueDiscovery", () => {
       // Pre-flight init() ran on the injected instance, not the singleton.
       expect(tracker.init).toHaveBeenCalledOnce();
 
-      // The same instance is threaded into the search-phases helper as its
-      // trailing argument, so concurrent searches no longer share budget state.
+      // The same instance is threaded into the search-phases helper as the
+      // `tracker` argument (now second-to-last: `languageRotationOffset`
+      // trails it, #249 follow-up), so concurrent searches no longer share
+      // budget state.
       const phaseCall = mockSearchAcrossLanguagesAndLabels.mock.calls.at(-1)!;
-      expect(phaseCall.at(-1)).toBe(tracker);
+      expect(phaseCall.at(-2)).toBe(tracker);
     });
 
     it("falls back to the shared singleton when no tracker is injected", async () => {
@@ -1306,9 +1308,56 @@ describe("IssueDiscovery", () => {
       await discovery.searchIssues({ maxResults: 5 });
 
       // Default path threads the mocked singleton (a defined tracker object),
-      // never undefined, into the search-phases helper.
+      // never undefined, into the search-phases helper (second-to-last arg;
+      // `languageRotationOffset` trails it, #249 follow-up).
       const phaseCall = mockSearchAcrossLanguagesAndLabels.mock.calls.at(-1)!;
-      expect(phaseCall.at(-1)).toBeDefined();
+      expect(phaseCall.at(-2)).toBeDefined();
+    });
+  });
+
+  describe("languageRotationOffset threading (#249 follow-up)", () => {
+    it("passes languageRotationOffset through to searchAcrossLanguagesAndLabels", async () => {
+      const item: GitHubSearchItem = {
+        html_url: "https://github.com/broad/repo/issues/1",
+        repository_url: "https://api.github.com/repos/broad/repo",
+        updated_at: "2026-01-01T00:00:00Z",
+      };
+      mockSearchAcrossLanguagesAndLabels.mockResolvedValue([item]);
+      mockFilterVetAndScore.mockResolvedValue({
+        candidates: [makeCandidate("broad/repo", "normal")],
+        allVetFailed: false,
+        rateLimitHit: false,
+      });
+
+      const discovery = makeDiscovery();
+      await discovery.searchIssues({
+        maxResults: 5,
+        languageRotationOffset: 3,
+      });
+
+      // Trailing arg on the search-phases helper (tracker, languageRotationOffset).
+      const phaseCall = mockSearchAcrossLanguagesAndLabels.mock.calls.at(-1)!;
+      expect(phaseCall.at(-1)).toBe(3);
+    });
+
+    it("defaults languageRotationOffset to 0 when not provided", async () => {
+      const item: GitHubSearchItem = {
+        html_url: "https://github.com/broad/repo/issues/1",
+        repository_url: "https://api.github.com/repos/broad/repo",
+        updated_at: "2026-01-01T00:00:00Z",
+      };
+      mockSearchAcrossLanguagesAndLabels.mockResolvedValue([item]);
+      mockFilterVetAndScore.mockResolvedValue({
+        candidates: [makeCandidate("broad/repo", "normal")],
+        allVetFailed: false,
+        rateLimitHit: false,
+      });
+
+      const discovery = makeDiscovery();
+      await discovery.searchIssues({ maxResults: 5 });
+
+      const phaseCall = mockSearchAcrossLanguagesAndLabels.mock.calls.at(-1)!;
+      expect(phaseCall.at(-1)).toBe(0);
     });
   });
 });

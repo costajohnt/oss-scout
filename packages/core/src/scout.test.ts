@@ -971,3 +971,76 @@ describe("OssScout.search recently-surfaced rotation (#249)", () => {
     expect(skipped!.has(RECENT_URL)).toBe(false);
   });
 });
+
+describe("OssScout.search language rotation cursor (#249 follow-up)", () => {
+  function makeRotationScout(searchRotation?: {
+    languageOffset: number;
+    lastRotatedAt?: string;
+  }) {
+    return new OssScout(
+      "test-token",
+      ScoutStateSchema.parse({
+        version: 1,
+        ...(searchRotation ? { searchRotation } : {}),
+      }),
+    );
+  }
+
+  function mockDiscoverySearch(strategiesUsed: string[]) {
+    let capturedOffset: number | undefined;
+    vi.spyOn(IssueDiscovery.prototype, "searchIssues").mockImplementation(
+      async (opts: { languageRotationOffset?: number }) => {
+        capturedOffset = opts.languageRotationOffset;
+        return {
+          candidates: [],
+          strategiesUsed: strategiesUsed as never[],
+        };
+      },
+    );
+    return () => capturedOffset;
+  }
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("reads the persisted offset and passes it to searchIssues", async () => {
+    const scout = makeRotationScout({ languageOffset: 2 });
+    const getCapturedOffset = mockDiscoverySearch(["broad"]);
+
+    await scout.search();
+
+    expect(getCapturedOffset()).toBe(2);
+  });
+
+  it("advances the offset and stamps lastRotatedAt when the broad phase ran", async () => {
+    const scout = makeRotationScout({ languageOffset: 2 });
+    mockDiscoverySearch(["merged", "broad"]);
+
+    await scout.search();
+
+    const rotation = scout.getState().searchRotation;
+    expect(rotation.languageOffset).toBe(3);
+    expect(rotation.lastRotatedAt).toBeDefined();
+  });
+
+  it("does not advance the offset when the broad phase did not run", async () => {
+    const scout = makeRotationScout({ languageOffset: 2 });
+    mockDiscoverySearch(["merged", "starred"]);
+
+    await scout.search();
+
+    const rotation = scout.getState().searchRotation;
+    expect(rotation.languageOffset).toBe(2);
+  });
+
+  it("starts at offset 0 for a fresh state with no prior rotation", async () => {
+    const scout = makeRotationScout();
+    const getCapturedOffset = mockDiscoverySearch(["broad"]);
+
+    await scout.search();
+
+    expect(getCapturedOffset()).toBe(0);
+    expect(scout.getState().searchRotation.languageOffset).toBe(1);
+  });
+});
