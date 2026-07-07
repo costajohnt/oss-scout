@@ -268,6 +268,10 @@ export class OssScout implements ScoutStateReader, ScoutStateWriter {
       (prefBoostTypes.length > 0 ? prefBoostTypes : undefined);
     const diversityRatio = options?.diversityRatio ?? prefs.diversityRatio ?? 0;
 
+    // Rotation cursor (#249 follow-up): start Phase 2's broad-search language
+    // fan-out at a different variant each run instead of always index 0.
+    const rotation = this.state.searchRotation ?? { languageOffset: 0 };
+
     const { candidates, strategiesUsed } = await discovery.searchIssues({
       maxResults: options?.maxResults,
       strategies: options?.strategies,
@@ -279,7 +283,20 @@ export class OssScout implements ScoutStateReader, ScoutStateWriter {
       diversityRatio,
       interPhaseDelayMs: options?.interPhaseDelayMs,
       broadPhaseDelayMs: options?.broadPhaseDelayMs,
+      languageRotationOffset: rotation.languageOffset,
     });
+
+    // Advance the rotation cursor only when the broad phase actually ran —
+    // otherwise a search that skipped it (e.g. sufficient results from
+    // cheaper phases) would still shift the next run's starting variant.
+    if (strategiesUsed.includes("broad")) {
+      this.state.searchRotation = {
+        ...rotation,
+        languageOffset: rotation.languageOffset + 1,
+        lastRotatedAt: new Date().toISOString(),
+      };
+      this.dirty = true;
+    }
 
     // Feed the freshly observed maintainer-responsiveness signals back into the
     // repo scores so the next search ranks responsive/active repos higher (#167).

@@ -229,6 +229,7 @@ async function runPhase2(
   existingCandidates: IssueCandidate[],
   filterIssues: (items: GitHubSearchItem[]) => GitHubSearchItem[],
   tracker: SearchBudgetTracker,
+  languageRotationOffset = 0,
 ): Promise<PhaseResult> {
   info(MODULE, "Phase 2: General issue search...");
   const seenRepos = new Set(existingCandidates.map((c) => c.issue.repo));
@@ -271,6 +272,7 @@ async function runPhase2(
           `is:issue is:open ${langQ} no:assignee`.replace(/  +/g, " ").trim(),
         budgetPerTier * 3,
         tracker,
+        languageRotationOffset,
       );
 
       info(MODULE, `Phase 2 [${tier}]: processing ${allItems.length} items...`);
@@ -565,6 +567,13 @@ export class IssueDiscovery {
       diversityRatio?: number;
       interPhaseDelayMs?: number;
       broadPhaseDelayMs?: number;
+      /**
+       * Rotation cursor (#249 follow-up) for Phase 2's language-variant
+       * fan-out. Rotates which language leads the broad search each run
+       * instead of always starting at languages[0]. Modulo'd against the
+       * variant count at use site, so any value is safe to pass.
+       */
+      languageRotationOffset?: number;
     } = {},
   ): Promise<{
     candidates: IssueCandidate[];
@@ -852,6 +861,7 @@ export class IssueDiscovery {
           allCandidates,
           filterIssues,
           tracker,
+          options.languageRotationOffset ?? 0,
         );
         recordPhaseResult("2", result);
         // Recorded only when the phase actually queried, not when the

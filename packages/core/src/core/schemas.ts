@@ -313,6 +313,22 @@ export const ScoutStateSchema = z.looseObject({
   lastRunAt: z.string().default(() => new Date().toISOString()),
 
   gistId: z.string().optional(),
+
+  /**
+   * Diversity cursor for Phase 2's broad search (#249 follow-up). Without
+   * this, every run started the language-variant fan-out at index 0, so the
+   * broad phase only ever queried the first configured language before
+   * moving on. Not a rate-limit mechanism — purely rotates which language
+   * variant leads each run. `languageOffset` advances (no modulo; the
+   * consumer wraps at use time so a shrinking language list never needs
+   * clamping here).
+   */
+  searchRotation: z
+    .looseObject({
+      languageOffset: z.number().int().min(0).default(0),
+      lastRotatedAt: z.string().optional(),
+    })
+    .default(() => ({ languageOffset: 0 })),
 });
 
 /**
@@ -347,3 +363,4 @@ export type Horizon = z.infer<typeof HorizonSchema>;
 export type SavedCandidate = z.infer<typeof SavedCandidateSchema>;
 export type SkippedIssue = z.infer<typeof SkippedIssueSchema>;
 export type ScoutState = z.infer<typeof ScoutStateSchema>;
+export type SearchRotation = ScoutState["searchRotation"];

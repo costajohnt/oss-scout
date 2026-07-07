@@ -536,6 +536,12 @@ export function buildLanguageVariants(
  * @param buildBaseQuery  Builds the query prefix from a language qualifier string;
  *                        e.g. `(langQ) => `is:issue is:open ${langQ} no:assignee`.trim()`
  * @param perPage         Results per API call
+ * @param startOffset     Rotation cursor (#249 follow-up): rotates the
+ *                        language-variant list so consecutive runs don't all
+ *                        start the fan-out at the same variant. Wrapped via
+ *                        modulo here, so a persisted offset that outgrew the
+ *                        current variant count (or a shrunk language list)
+ *                        never needs clamping by the caller.
  */
 export async function searchAcrossLanguagesAndLabels(
   octokit: Octokit,
@@ -545,12 +551,15 @@ export async function searchAcrossLanguagesAndLabels(
   buildBaseQuery: (langQuery: string) => string,
   perPage: number,
   tracker: SearchBudgetTracker = getSearchBudgetTracker(),
+  startOffset = 0,
 ): Promise<GitHubSearchItem[]> {
-  const langVariants = buildLanguageVariants(
+  const variants = buildLanguageVariants(
     languages,
     isAnyLanguage,
     labels.length > 0,
   );
+  const k = variants.length > 0 ? startOffset % variants.length : 0;
+  const langVariants = [...variants.slice(k), ...variants.slice(0, k)];
   const seenUrls = new Set<string>();
   const allItems: GitHubSearchItem[] = [];
 
