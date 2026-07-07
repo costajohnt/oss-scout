@@ -507,7 +507,36 @@ export function mergeStates(local: ScoutState, remote: ScoutState): ScoutState {
       pickFresherTimestamp(local.lastRunAt, remote.lastRunAt) ??
       new Date().toISOString(),
     gistId: remote.gistId ?? local.gistId,
+    searchRotation: mergeSearchRotation(
+      local.searchRotation,
+      remote.searchRotation,
+    ),
   };
+}
+
+/**
+ * Merge the language-rotation cursor: prefer the side with the fresher
+ * `lastRotatedAt`; if neither (or both) have a timestamp, fall back to the
+ * larger `languageOffset` so a merge never regresses the rotation cursor.
+ */
+function mergeSearchRotation(
+  local: ScoutState["searchRotation"],
+  remote: ScoutState["searchRotation"],
+): ScoutState["searchRotation"] {
+  const localRotation = local ?? { languageOffset: 0 };
+  const remoteRotation = remote ?? { languageOffset: 0 };
+  const localTs = localRotation.lastRotatedAt;
+  const remoteTs = remoteRotation.lastRotatedAt;
+
+  if (localTs && remoteTs) {
+    return localTs >= remoteTs ? localRotation : remoteRotation;
+  }
+  if (localTs) return localRotation;
+  if (remoteTs) return remoteRotation;
+
+  return remoteRotation.languageOffset >= localRotation.languageOffset
+    ? remoteRotation
+    : localRotation;
 }
 
 function mergeRepoScores(

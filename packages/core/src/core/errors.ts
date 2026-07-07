@@ -27,7 +27,17 @@ export class ConfigurationError extends OssScoutError {
 }
 
 export class ValidationError extends OssScoutError {
-  constructor(message: string) {
+  constructor(
+    message: string,
+    /**
+     * Strategies that actually ran before this error was thrown (#249
+     * follow-up). searchIssues() attaches this on its zero-candidate throw so
+     * scout.search() can still advance the language-rotation cursor when the
+     * broad phase ran but found nothing — the exact case rotation exists to
+     * fix, since a barren language slice should not lead the next run too.
+     */
+    public readonly strategiesUsed?: string[],
+  ) {
     super(message, "VALIDATION_ERROR");
     this.name = "ValidationError";
   }

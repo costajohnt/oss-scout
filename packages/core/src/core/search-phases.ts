@@ -25,6 +25,7 @@ import {
   getSearchBudgetTracker,
   type SearchBudgetTracker,
 } from "./search-budget.js";
+import { graphqlSearchIssues } from "./issue-graphql.js";
 
 const MODULE = "search-phases";
 
@@ -35,6 +36,33 @@ const GITHUB_MAX_BOOLEAN_OPS = 5;
  * Set to 2000ms as a safety floor (max 30/min at the limit). The SearchBudgetTracker
  * adds additional adaptive delays when needed. */
 const INTER_QUERY_DELAY_MS = 2000;
+
+/**
+ * Delay between broad GraphQL search queries (Phase 2 chunked-label and
+ * language fan-out loops). GraphQL `search` bills the points bucket (5000/hr)
+ * rather than the REST Search bucket (30/min), so it does not need the 2000ms
+ * secondary-rate-limit floor the REST paths use — a lighter 500ms pace keeps
+ * the loops civil without the old broad-phase stall.
+ */
+const GRAPHQL_INTER_QUERY_DELAY_MS = 500;
+
+/**
+ * Count of broad GraphQL `search` queries actually issued (cache misses that
+ * reached GraphQL) since the last reset. Threaded into the final search
+ * summary so the GraphQL points spend is observable alongside the REST Search
+ * call count. Module-level to keep the call sites simple; reset per search run.
+ */
+let graphqlSearchQueryCount = 0;
+
+/** Read the broad GraphQL search query count for the current run. */
+export function getGraphQLSearchQueryCount(): number {
+  return graphqlSearchQueryCount;
+}
+
+/** Reset the broad GraphQL search query counter at the start of a search run. */
+export function resetGraphQLSearchQueryCount(): void {
+  graphqlSearchQueryCount = 0;
+}
 
 /**
  * Chunk labels into groups that fit within the operator budget.
@@ -158,6 +186,69 @@ export async function cachedSearchIssues(
   }
 
   return data;
+}
+
+/**
+ * GraphQL-first broad issue search with a REST fallback.
+ *
+ * Same param shape as {@link cachedSearchIssues}. Tries GraphQL
+ * `search(type: ISSUE)` first (points bucket, 5000/hr — NOT charged to the
+ * SearchBudgetTracker), caching non-empty results under a dedicated
+ * `gqlsearch:` cache key so a GraphQL hit and a REST hit never collide. On a
+ * non-fatal GraphQL failure it warns and delegates to the existing
+ * budget-tracked `cachedSearchIssues` REST path unchanged. Fatal errors (401 /
+ * rate limit) propagate from either layer.
+ */
+export async function searchIssuesGraphQLFirst(
+  octokit: Octokit,
+  params: {
+    q: string;
+    sort: "created" | "updated" | "comments" | "reactions" | "interactions";
+    order: "asc" | "desc";
+    per_page: number;
+  },
+  tracker: SearchBudgetTracker = getSearchBudgetTracker(),
+): Promise<{ total_count: number; items: GitHubSearchItem[] }> {
+  const cacheKey = versionedCacheKey(
+    `gqlsearch:${params.q}:${params.sort}:${params.order}:${params.per_page}`,
+  );
+  const cache = getHttpCache();
+
+  const cached = cache.getIfFresh(cacheKey, SEARCH_CACHE_TTL_MS);
+  if (cached) {
+    debug(MODULE, `GraphQL search cache hit for query`);
+    return cached as { total_count: number; items: GitHubSearchItem[] };
+  }
+
+  // GraphQL `search` has no `sort` argument — fold ordering into the query.
+  const gqlQuery = `${params.q} sort:${params.sort}-${params.order}`;
+  const gql = await graphqlSearchIssues(
+    octokit,
+    gqlQuery,
+    Math.min(params.per_page, 100),
+  );
+
+  if (gql) {
+    graphqlSearchQueryCount++;
+    // Mirror cachedSearchIssues: only cache non-empty results so a transient
+    // empty response can't poison the cache for the TTL.
+    if (gql.items.length > 0) {
+      cache.set(cacheKey, "", gql);
+    } else {
+      debug(
+        MODULE,
+        `Skipping cache for empty GraphQL search result (possible transient artifact)`,
+      );
+    }
+    return gql;
+  }
+
+  // Non-fatal GraphQL failure: fall back to the REST Search path (budget-tracked).
+  warn(
+    MODULE,
+    `GraphQL broad search unavailable; falling back to REST search API`,
+  );
+  return cachedSearchIssues(octokit, params, tracker);
 }
 
 // ── REST-based search functions ──
@@ -388,10 +479,10 @@ export async function searchWithChunkedLabels(
   const allItems: GitHubSearchItem[] = [];
 
   for (let i = 0; i < labelChunks.length; i++) {
-    if (i > 0) await sleep(INTER_QUERY_DELAY_MS);
+    if (i > 0) await sleep(GRAPHQL_INTER_QUERY_DELAY_MS);
 
     const query = buildQuery(buildLabelQuery(labelChunks[i]));
-    const data = await cachedSearchIssues(
+    const data = await searchIssuesGraphQLFirst(
       octokit,
       {
         q: query,
@@ -445,6 +536,12 @@ export function buildLanguageVariants(
  * @param buildBaseQuery  Builds the query prefix from a language qualifier string;
  *                        e.g. `(langQ) => `is:issue is:open ${langQ} no:assignee`.trim()`
  * @param perPage         Results per API call
+ * @param startOffset     Rotation cursor (#249 follow-up): rotates the
+ *                        language-variant list so consecutive runs don't all
+ *                        start the fan-out at the same variant. Wrapped via
+ *                        modulo here, so a persisted offset that outgrew the
+ *                        current variant count (or a shrunk language list)
+ *                        never needs clamping by the caller.
  */
 export async function searchAcrossLanguagesAndLabels(
   octokit: Octokit,
@@ -454,17 +551,20 @@ export async function searchAcrossLanguagesAndLabels(
   buildBaseQuery: (langQuery: string) => string,
   perPage: number,
   tracker: SearchBudgetTracker = getSearchBudgetTracker(),
+  startOffset = 0,
 ): Promise<GitHubSearchItem[]> {
-  const langVariants = buildLanguageVariants(
+  const variants = buildLanguageVariants(
     languages,
     isAnyLanguage,
     labels.length > 0,
   );
+  const k = variants.length > 0 ? startOffset % variants.length : 0;
+  const langVariants = [...variants.slice(k), ...variants.slice(0, k)];
   const seenUrls = new Set<string>();
   const allItems: GitHubSearchItem[] = [];
 
   for (let i = 0; i < langVariants.length; i++) {
-    if (i > 0) await sleep(INTER_QUERY_DELAY_MS);
+    if (i > 0) await sleep(GRAPHQL_INTER_QUERY_DELAY_MS);
     const items = await searchWithChunkedLabels(
       octokit,
       labels,

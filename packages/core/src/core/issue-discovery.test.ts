@@ -65,7 +65,10 @@ vi.mock("./category-mapping.js", () => ({
 vi.mock("./errors.js", () => ({
   ValidationError: class ValidationError extends Error {
     code = "VALIDATION_ERROR";
-    constructor(message: string) {
+    constructor(
+      message: string,
+      public readonly strategiesUsed?: string[],
+    ) {
       super(message);
       this.name = "ValidationError";
     }
@@ -110,7 +113,7 @@ const mockFilterVetAndScore = vi.fn().mockResolvedValue({
   rateLimitHit: false,
 });
 
-const mockCachedSearchIssues = vi.fn().mockResolvedValue({
+const mockSearchIssuesGraphQLFirst = vi.fn().mockResolvedValue({
   total_count: 0,
   items: [],
 });
@@ -118,6 +121,8 @@ const mockCachedSearchIssues = vi.fn().mockResolvedValue({
 const mockFetchIssuesFromMaintainedRepos = vi
   .fn()
   .mockResolvedValue([] as GitHubSearchItem[]);
+
+let mockGraphqlSearchQueryCount = 0;
 
 vi.mock("./search-phases.js", () => ({
   buildEffectiveLabels: vi.fn((_scopes: string[], labels: string[]) =>
@@ -129,9 +134,14 @@ vi.mock("./search-phases.js", () => ({
   searchAcrossLanguagesAndLabels: (...args: unknown[]) =>
     mockSearchAcrossLanguagesAndLabels(...args),
   filterVetAndScore: (...args: unknown[]) => mockFilterVetAndScore(...args),
-  cachedSearchIssues: (...args: unknown[]) => mockCachedSearchIssues(...args),
+  searchIssuesGraphQLFirst: (...args: unknown[]) =>
+    mockSearchIssuesGraphQLFirst(...args),
   fetchIssuesFromMaintainedRepos: (...args: unknown[]) =>
     mockFetchIssuesFromMaintainedRepos(...args),
+  getGraphQLSearchQueryCount: () => mockGraphqlSearchQueryCount,
+  resetGraphQLSearchQueryCount: () => {
+    mockGraphqlSearchQueryCount = 0;
+  },
 }));
 
 import { IssueDiscovery } from "./issue-discovery.js";
@@ -272,7 +282,7 @@ describe("IssueDiscovery", () => {
       allVetFailed: false,
       rateLimitHit: false,
     });
-    mockCachedSearchIssues.mockResolvedValue({
+    mockSearchIssuesGraphQLFirst.mockResolvedValue({
       total_count: 0,
       items: [],
     });
@@ -609,7 +619,7 @@ describe("IssueDiscovery", () => {
       // REST returns empty
       mockFetchIssuesFromMaintainedRepos.mockResolvedValue([]);
 
-      mockCachedSearchIssues.mockResolvedValue({
+      mockSearchIssuesGraphQLFirst.mockResolvedValue({
         total_count: 5,
         items: [
           {
@@ -639,7 +649,7 @@ describe("IssueDiscovery", () => {
       await discovery.searchIssues({ maxResults: 5 });
 
       // Should fall back to Search API
-      expect(mockCachedSearchIssues).toHaveBeenCalled();
+      expect(mockSearchIssuesGraphQLFirst).toHaveBeenCalled();
     });
 
     it("Phase 3: propagates 401 from Search API fallback instead of swallowing", async () => {
@@ -648,7 +658,7 @@ describe("IssueDiscovery", () => {
 
       // The Search API call rejects with 401.
       const authErr = Object.assign(new Error("Unauthorized"), { status: 401 });
-      mockCachedSearchIssues.mockRejectedValue(authErr);
+      mockSearchIssuesGraphQLFirst.mockRejectedValue(authErr);
 
       // Phase 2 returns empty so we get to Phase 3.
       mockFilterVetAndScore.mockResolvedValue({
@@ -667,7 +677,7 @@ describe("IssueDiscovery", () => {
     });
 
     it("Phase 3: falls back to Search API when no starred repos available", async () => {
-      mockCachedSearchIssues.mockResolvedValue({
+      mockSearchIssuesGraphQLFirst.mockResolvedValue({
         total_count: 5,
         items: [
           {
@@ -696,7 +706,7 @@ describe("IssueDiscovery", () => {
 
       // No starred repos, so REST is skipped, falls back to Search API
       expect(mockFetchIssuesFromMaintainedRepos).not.toHaveBeenCalled();
-      expect(mockCachedSearchIssues).toHaveBeenCalled();
+      expect(mockSearchIssuesGraphQLFirst).toHaveBeenCalled();
     });
   });
 
@@ -750,7 +760,9 @@ describe("IssueDiscovery", () => {
   });
 
   describe("searchIssues — budget management", () => {
-    it("only runs Phase 0 when budget is critical (<10)", async () => {
+    it("skips only the starred phase when REST budget is critical (<10)", async () => {
+      // Critical REST budget gates the starred phase (still REST-based) but not
+      // broad/maintained, which now run on the GraphQL points bucket.
       vi.mocked(checkRateLimit).mockResolvedValue({
         remaining: 5,
         limit: 30,
@@ -771,19 +783,31 @@ describe("IssueDiscovery", () => {
 
       const { strategiesUsed } = await discovery.searchIssues({
         maxResults: 10,
+        interPhaseDelayMs: 0,
+        broadPhaseDelayMs: 0,
       });
 
       expect(strategiesUsed).toContain("merged");
       expect(strategiesUsed).not.toContain("starred");
-      expect(strategiesUsed).not.toContain("broad");
-      expect(strategiesUsed).not.toContain("maintained");
+      expect(strategiesUsed).toContain("broad");
+      expect(strategiesUsed).toContain("maintained");
     });
 
-    it("skips Phases 2 and 3 when budget is low (<20)", async () => {
+    it("still runs Phases 2 and 3 when REST budget is low (<20) since they use GraphQL", async () => {
+      // Broad/maintained now bill the GraphQL points bucket, not the REST
+      // Search bucket, so a low REST budget must NOT gate them off anymore.
       vi.mocked(checkRateLimit).mockResolvedValue({
         remaining: 15,
         limit: 30,
         resetAt: new Date(Date.now() + 60000).toISOString(),
+      });
+
+      // A merged-PR candidate keeps allCandidates > 0 (so the run doesn't throw)
+      // while staying in the affinity set, so it doesn't trip the broad-skip gate.
+      mockFetchIssuesFromKnownRepos.mockResolvedValue({
+        candidates: [makeCandidate("org/merged", "merged_pr")],
+        allReposFailed: false,
+        rateLimitHit: false,
       });
 
       const discovery = makeDiscovery({
@@ -793,10 +817,12 @@ describe("IssueDiscovery", () => {
 
       const { strategiesUsed } = await discovery.searchIssues({
         maxResults: 10,
+        interPhaseDelayMs: 0,
+        broadPhaseDelayMs: 0,
       });
 
-      expect(strategiesUsed).not.toContain("broad");
-      expect(strategiesUsed).not.toContain("maintained");
+      expect(strategiesUsed).toContain("broad");
+      expect(strategiesUsed).toContain("maintained");
     });
   });
 
@@ -999,6 +1025,19 @@ describe("IssueDiscovery", () => {
       await expect(discovery.searchIssues({ maxResults: 5 })).rejects.toThrow(
         "No issue candidates found",
       );
+    });
+
+    it("attaches strategiesUsed to the zero-candidate ValidationError", async () => {
+      // scout.search() reads strategiesUsed off the error to advance the
+      // language-rotation cursor even when the search found nothing — a broad
+      // phase that ran and came up empty must still rotate (#249 follow-up).
+      const discovery = makeDiscovery();
+      await expect(
+        discovery.searchIssues({ maxResults: 5 }),
+      ).rejects.toMatchObject({
+        name: "ValidationError",
+        strategiesUsed: expect.any(Array),
+      });
     });
 
     it("returns empty with warning when rate limited", async () => {
@@ -1259,10 +1298,12 @@ describe("IssueDiscovery", () => {
       // Pre-flight init() ran on the injected instance, not the singleton.
       expect(tracker.init).toHaveBeenCalledOnce();
 
-      // The same instance is threaded into the search-phases helper as its
-      // trailing argument, so concurrent searches no longer share budget state.
+      // The same instance is threaded into the search-phases helper as the
+      // `tracker` argument (now second-to-last: `languageRotationOffset`
+      // trails it, #249 follow-up), so concurrent searches no longer share
+      // budget state.
       const phaseCall = mockSearchAcrossLanguagesAndLabels.mock.calls.at(-1)!;
-      expect(phaseCall.at(-1)).toBe(tracker);
+      expect(phaseCall.at(-2)).toBe(tracker);
     });
 
     it("falls back to the shared singleton when no tracker is injected", async () => {
@@ -1283,9 +1324,56 @@ describe("IssueDiscovery", () => {
       await discovery.searchIssues({ maxResults: 5 });
 
       // Default path threads the mocked singleton (a defined tracker object),
-      // never undefined, into the search-phases helper.
+      // never undefined, into the search-phases helper (second-to-last arg;
+      // `languageRotationOffset` trails it, #249 follow-up).
       const phaseCall = mockSearchAcrossLanguagesAndLabels.mock.calls.at(-1)!;
-      expect(phaseCall.at(-1)).toBeDefined();
+      expect(phaseCall.at(-2)).toBeDefined();
+    });
+  });
+
+  describe("languageRotationOffset threading (#249 follow-up)", () => {
+    it("passes languageRotationOffset through to searchAcrossLanguagesAndLabels", async () => {
+      const item: GitHubSearchItem = {
+        html_url: "https://github.com/broad/repo/issues/1",
+        repository_url: "https://api.github.com/repos/broad/repo",
+        updated_at: "2026-01-01T00:00:00Z",
+      };
+      mockSearchAcrossLanguagesAndLabels.mockResolvedValue([item]);
+      mockFilterVetAndScore.mockResolvedValue({
+        candidates: [makeCandidate("broad/repo", "normal")],
+        allVetFailed: false,
+        rateLimitHit: false,
+      });
+
+      const discovery = makeDiscovery();
+      await discovery.searchIssues({
+        maxResults: 5,
+        languageRotationOffset: 3,
+      });
+
+      // Trailing arg on the search-phases helper (tracker, languageRotationOffset).
+      const phaseCall = mockSearchAcrossLanguagesAndLabels.mock.calls.at(-1)!;
+      expect(phaseCall.at(-1)).toBe(3);
+    });
+
+    it("defaults languageRotationOffset to 0 when not provided", async () => {
+      const item: GitHubSearchItem = {
+        html_url: "https://github.com/broad/repo/issues/1",
+        repository_url: "https://api.github.com/repos/broad/repo",
+        updated_at: "2026-01-01T00:00:00Z",
+      };
+      mockSearchAcrossLanguagesAndLabels.mockResolvedValue([item]);
+      mockFilterVetAndScore.mockResolvedValue({
+        candidates: [makeCandidate("broad/repo", "normal")],
+        allVetFailed: false,
+        rateLimitHit: false,
+      });
+
+      const discovery = makeDiscovery();
+      await discovery.searchIssues({ maxResults: 5 });
+
+      const phaseCall = mockSearchAcrossLanguagesAndLabels.mock.calls.at(-1)!;
+      expect(phaseCall.at(-1)).toBe(0);
     });
   });
 });

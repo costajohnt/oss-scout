@@ -224,7 +224,11 @@ export const ScoutPreferencesSchema = z.looseObject({
   // Soft boost for candidates whose issue labels match one of these types,
   // case-insensitive (e.g. "bug", "good first issue") (#168).
   boostIssueTypes: z.array(z.string()).default([]),
-  broadPhaseDelayMs: z.number().min(0).max(300000).default(90000),
+  // Broad-phase cooldown. Now that the broad phase runs on GraphQL (points
+  // bucket, 5000/hr) rather than the REST Search bucket (30/min), the long
+  // secondary-rate-limit cooldown is no longer needed; defaults to 0 (no extra
+  // pause). Retained as a knob for hosts that still want to throttle the phase.
+  broadPhaseDelayMs: z.number().min(0).max(300000).default(0),
   /**
    * Skip the expensive broad phase once this many candidates were found by
    * the cheaper phases. Clamped at runtime to maxResults - 1 so it stays
@@ -309,6 +313,22 @@ export const ScoutStateSchema = z.looseObject({
   lastRunAt: z.string().default(() => new Date().toISOString()),
 
   gistId: z.string().optional(),
+
+  /**
+   * Diversity cursor for Phase 2's broad search (#249 follow-up). Without
+   * this, every run started the language-variant fan-out at index 0, so the
+   * broad phase only ever queried the first configured language before
+   * moving on. Not a rate-limit mechanism — purely rotates which language
+   * variant leads each run. `languageOffset` advances (no modulo; the
+   * consumer wraps at use time so a shrinking language list never needs
+   * clamping here).
+   */
+  searchRotation: z
+    .looseObject({
+      languageOffset: z.number().int().min(0).default(0),
+      lastRotatedAt: z.string().optional(),
+    })
+    .default(() => ({ languageOffset: 0 })),
 });
 
 /**
@@ -343,3 +363,4 @@ export type Horizon = z.infer<typeof HorizonSchema>;
 export type SavedCandidate = z.infer<typeof SavedCandidateSchema>;
 export type SkippedIssue = z.infer<typeof SkippedIssueSchema>;
 export type ScoutState = z.infer<typeof ScoutStateSchema>;
+export type SearchRotation = ScoutState["searchRotation"];

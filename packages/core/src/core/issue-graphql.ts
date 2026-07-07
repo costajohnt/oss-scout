@@ -22,6 +22,7 @@ import { rethrowIfFatal, errorMessage } from "./errors.js";
 import { warn } from "./logger.js";
 import { getHttpCache } from "./http-cache.js";
 import { mergedPRsCacheKey } from "./issue-eligibility.js";
+import type { GitHubSearchItem } from "./issue-filtering.js";
 
 const MODULE = "issue-graphql";
 
@@ -358,4 +359,111 @@ async function fetchMergedPRBatch(
     if (typeof count !== "number") return;
     cache.set(mergedPRsCacheKey(r.owner, r.repo), "", count);
   });
+}
+
+// ---------------------------------------------------------------------------
+// Broad issue search via GraphQL (Phase 2 / Phase 3 fallback)
+// ---------------------------------------------------------------------------
+
+/** A single node from a GraphQL `search(type: ISSUE)` connection. */
+interface GraphQLSearchIssueNode {
+  url?: string;
+  title?: string;
+  updatedAt?: string;
+  labels?: { nodes: { name: string }[] } | null;
+  repository?: { nameWithOwner: string } | null;
+}
+
+/** Shape of the `search` connection response. */
+interface GraphQLSearchResponse {
+  search?: {
+    issueCount: number;
+    nodes: (GraphQLSearchIssueNode | null)[];
+  };
+}
+
+/**
+ * Broad issue search via GraphQL `search(type: ISSUE)`.
+ *
+ * This is the GraphQL-first replacement for the REST `search/issues` broad
+ * queries (Phase 2 chunked-label search and Phase 3's Search-API fallback).
+ * A GraphQL `search` connection bills the GraphQL points bucket (5000/hr)
+ * rather than the scarce REST Search bucket (30/min), so it is NOT recorded
+ * against the SearchBudgetTracker — the caller reserves that accounting for
+ * the REST fallback.
+ *
+ * The query text is passed as a GraphQL *variable* (`$q`), never interpolated
+ * into the query document. GitHub's `search` has no `sort` argument, so the
+ * caller folds any ordering into the query string (e.g. `sort:created-desc`).
+ *
+ * Returns `null` on a non-fatal error (so the caller can degrade to REST);
+ * fatal errors (401 / rate limit) propagate via {@link rethrowIfFatal}. A
+ * partial-data GraphQL error keeps whatever nodes resolved.
+ *
+ * @param first Requested result count; clamped to GitHub's [1, 100] range.
+ */
+export async function graphqlSearchIssues(
+  octokit: Octokit,
+  query: string,
+  first: number,
+): Promise<{ total_count: number; items: GitHubSearchItem[] } | null> {
+  const clampedFirst = Math.min(Math.max(Math.trunc(first) || 1, 1), 100);
+
+  const document = `query searchIssuesBroad($q: String!, $first: Int!) {
+    search(query: $q, type: ISSUE, first: $first) {
+      issueCount
+      nodes {
+        ... on Issue {
+          url
+          title
+          updatedAt
+          labels(first: 20) { nodes { name } }
+          repository { nameWithOwner }
+        }
+      }
+    }
+  }`;
+
+  let data: GraphQLSearchResponse | undefined;
+  try {
+    data = await octokit.graphql<GraphQLSearchResponse>(document, {
+      q: query,
+      first: clampedFirst,
+    });
+  } catch (err) {
+    rethrowIfFatal(err);
+    // octokit attaches resolved data to `.data` when only some nodes errored.
+    const partial = (err as { data?: GraphQLSearchResponse }).data;
+    if (partial) {
+      data = partial;
+    } else {
+      warn(
+        MODULE,
+        `GraphQL broad search failed, falling back to REST: ${errorMessage(err)}`,
+      );
+      return null;
+    }
+  }
+
+  const search = data?.search;
+  if (!search) return null;
+
+  const items: GitHubSearchItem[] = [];
+  for (const node of search.nodes ?? []) {
+    // Empty objects (non-Issue nodes the `... on Issue` fragment skipped) and
+    // partial-error nulls have no `url` — drop them so only real issues remain.
+    if (!node?.url) continue;
+    const nameWithOwner = node.repository?.nameWithOwner;
+    if (!nameWithOwner) continue;
+    items.push({
+      html_url: node.url,
+      // Same construction as the REST search adapter (search-phases.ts).
+      repository_url: `https://api.github.com/repos/${nameWithOwner}`,
+      updated_at: node.updatedAt ?? "",
+      title: node.title,
+      labels: node.labels?.nodes ?? [],
+    });
+  }
+
+  return { total_count: search.issueCount ?? 0, items };
 }
