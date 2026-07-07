@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.0](https://github.com/costajohnt/oss-scout/compare/core-v1.3.0...core-v1.4.0) (2026-07-07)
+
+
+### Features
+
+* **core:** move broad issue search to GraphQL and rotate language slices across runs ([#262](https://github.com/costajohnt/oss-scout/issues/262)) ([6edac7a](https://github.com/costajohnt/oss-scout/commit/6edac7a63b7428050dd30c2d0301e2a95f7be629))
+
 ## [1.3.0](https://github.com/costajohnt/oss-scout/compare/core-v1.2.4...core-v1.3.0) (2026-07-06)
 
 
