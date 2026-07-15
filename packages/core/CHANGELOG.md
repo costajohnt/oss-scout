@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.1](https://github.com/costajohnt/oss-scout/compare/core-v1.4.0...core-v1.4.1) (2026-07-15)
+
+
+### Bug Fixes
+
+* **discovery:** gate broad/maintained phases on viable candidates and log gate skips ([#267](https://github.com/costajohnt/oss-scout/issues/267)) ([16ac299](https://github.com/costajohnt/oss-scout/commit/16ac299267cd870d0af5ec89077dc8a429726e4a))
+
 ## [1.4.0](https://github.com/costajohnt/oss-scout/compare/core-v1.3.0...core-v1.4.0) (2026-07-07)
 
 
