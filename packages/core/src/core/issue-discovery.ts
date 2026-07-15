@@ -89,8 +89,8 @@ const CONTRIBUTED_REPO_MAX_AGE_DAYS = 365;
 /**
  * Cap on Phase 0's share of `maxResults`. Phase 0 (contributed repos) fetches
  * deeply (`PHASE0_PER_PAGE`) and can otherwise fill the entire result budget,
- * which makes the `allCandidates.length < maxResults` gate false for every
- * later phase so starred (Phase 1) and broad (Phases 2/3) never run. Reserving
+ * which closes the still-need-results gate for every later phase (raw length
+ * for starred, viable count for broad/maintained) so they never run. Reserving
  * half the budget for the other strategies keeps each search round varied
  * instead of returning only contributed-repo results.
  */
@@ -632,6 +632,14 @@ export class IssueDiscovery {
       if (result.rateLimitHit) rateLimitHitDuringSearch = true;
     };
 
+    // Skip-recommended candidates (already claimed, linked PR merged, etc.)
+    // are not actionable results, so the gates deciding whether phases 2/3
+    // still need to run count only viable (non-skip) candidates (#265).
+    // Gating on allCandidates.length let a run hit the cap with zero
+    // actionable candidates and never reach the phases that surface new repos.
+    const viableCandidateCount = (): number =>
+      allCandidates.filter((c) => c.recommendation !== "skip").length;
+
     // Pre-flight rate limit check
     this.rateLimitWarning = null;
     // Fresh GraphQL broad-search counter for this run so the summary reports
@@ -753,7 +761,7 @@ export class IssueDiscovery {
 
     if (phase0Repos.length > 0 && enabledStrategies.has("merged")) {
       // Cap Phase 0's share so it can't consume the whole budget and starve
-      // the starred/broad phases (which gate on allCandidates < maxResults).
+      // the starred/broad phases (which only run while results are needed).
       const phase0Cap = otherStrategiesCanRun
         ? Math.max(1, Math.ceil(maxResults * PHASE0_MAX_SHARE))
         : maxResults;
@@ -811,21 +819,32 @@ export class IssueDiscovery {
         ? Math.min(configuredSkipThreshold, maxResults - 1)
         : 0;
 
-    if (allCandidates.length < maxResults && enabledStrategies.has("broad")) {
-      // Skip broad search only if we already have enough candidates from NEW
-      // repos. Phases 0/1 only ever search the user's affinity + starred repos,
-      // so counting their candidates here would gate off the broad phase — the
-      // one phase that surfaces repos the user hasn't touched. Counting
-      // only new-repo candidates keeps "sufficient results" meaning "enough NEW
-      // work", not "we re-found issues in the same repos".
+    const viableBeforeBroad = viableCandidateCount();
+    if (viableBeforeBroad >= maxResults && enabledStrategies.has("broad")) {
+      // Log the gate skip (#266): without this line a gated-off phase is
+      // indistinguishable in the log from one that silently failed.
+      info(
+        MODULE,
+        `Skipping broad search: ${viableBeforeBroad} viable candidate(s) already meet maxResults (${maxResults})`,
+      );
+    } else if (enabledStrategies.has("broad")) {
+      // Skip broad search only if we already have enough VIABLE candidates from
+      // NEW repos. Phases 0/1 only ever search the user's affinity + starred
+      // repos, so counting their candidates here would gate off the broad phase
+      // — the one phase that surfaces repos the user hasn't touched. Counting
+      // only viable new-repo candidates keeps "sufficient results" meaning
+      // "enough NEW work" — not "we re-found issues in the same repos" and not
+      // "we found issues the vetter already ruled out" (#265).
       const newRepoCandidateCount = allCandidates.filter(
         (c) =>
-          !phase0RepoSet.has(c.issue.repo) && !starredRepoSet.has(c.issue.repo),
+          c.recommendation !== "skip" &&
+          !phase0RepoSet.has(c.issue.repo) &&
+          !starredRepoSet.has(c.issue.repo),
       ).length;
       if (skipThreshold > 0 && newRepoCandidateCount >= skipThreshold) {
         info(
           MODULE,
-          `Skipping broad search: already found ${newRepoCandidateCount} candidate(s) from new repos (threshold: ${skipThreshold})`,
+          `Skipping broad search: already found ${newRepoCandidateCount} viable candidate(s) from new repos (threshold: ${skipThreshold})`,
         );
       } else {
         // Always apply baseline inter-phase delay
@@ -845,7 +864,9 @@ export class IssueDiscovery {
           );
         }
 
-        const remaining = maxResults - allCandidates.length;
+        // Viable shortfall, not raw length: skip candidates already in
+        // allCandidates must not shrink what phase 2 is asked to find (#265).
+        const remaining = maxResults - viableBeforeBroad;
         const result = await runPhase2(
           this.octokit,
           this.vetter,
@@ -871,12 +892,19 @@ export class IssueDiscovery {
     }
 
     // Phase 3: Actively maintained repos
+    const viableBeforeMaintained = viableCandidateCount();
     if (
-      allCandidates.length < maxResults &&
+      viableBeforeMaintained >= maxResults &&
       enabledStrategies.has("maintained")
     ) {
+      // Gate-skip log (#266), same reason as the broad phase above.
+      info(
+        MODULE,
+        `Skipping maintained search: ${viableBeforeMaintained} viable candidate(s) already meet maxResults (${maxResults})`,
+      );
+    } else if (enabledStrategies.has("maintained")) {
       await applyInterPhaseDelay();
-      const remaining = maxResults - allCandidates.length;
+      const remaining = maxResults - viableBeforeMaintained;
       const result = await runPhase3(
         this.octokit,
         this.vetter,
@@ -981,7 +1009,18 @@ export class IssueDiscovery {
       return b.viabilityScore - a.viabilityScore;
     });
 
-    const capped = applyPerRepoCap(ranked, 2);
+    // Viable candidates fill the final slots first (#265): the sort above
+    // ranks searchPriority before recommendation, so a skip-recommended
+    // phase-0/1 candidate would otherwise displace a viable broad-phase one
+    // from the maxResults slice — exactly the candidates the viable-count
+    // gate ran phases 2/3 to find. Stable partition: order within each group
+    // is preserved; skips only occupy leftover slots.
+    const viableFirst = [
+      ...ranked.filter((c) => c.recommendation !== "skip"),
+      ...ranked.filter((c) => c.recommendation === "skip"),
+    ];
+
+    const capped = applyPerRepoCap(viableFirst, 2);
 
     // Diversity counterweight (#1244): when `diversityRatio > 0`, reserve
     // a fraction of the final slots for candidates that matched neither

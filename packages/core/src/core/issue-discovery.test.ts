@@ -146,6 +146,7 @@ vi.mock("./search-phases.js", () => ({
 
 import { IssueDiscovery } from "./issue-discovery.js";
 import { checkRateLimit } from "./github.js";
+import { info } from "./logger.js";
 import { applyPerRepoCap } from "./issue-filtering.js";
 import { sleep, daysBetween } from "./utils.js";
 import type { ScoutStateReader } from "./issue-vetting.js";
@@ -1269,6 +1270,128 @@ describe("IssueDiscovery", () => {
 
       // Phase 2 should have run (searchWithChunkedLabels called)
       expect(mockSearchAcrossLanguagesAndLabels).toHaveBeenCalled();
+    });
+  });
+
+  describe("searchIssues — viable-candidate gate (#265, #266)", () => {
+    const skipCandidates = (n: number) =>
+      Array.from({ length: n }, (_, i) =>
+        makeCandidate(`org/merged-${i}`, "merged_pr", "skip"),
+      );
+
+    it("skip-recommended candidates do not gate off Phases 2/3", async () => {
+      // Phase 0 fills maxResults with skip-only candidates. The old
+      // allCandidates.length gate would stop here with zero actionable
+      // results; the viable-count gate must still run broad + maintained.
+      mockFetchIssuesFromKnownRepos.mockResolvedValue({
+        candidates: skipCandidates(3),
+        allReposFailed: false,
+        rateLimitHit: false,
+      });
+
+      const discovery = makeDiscovery({
+        getReposWithMergedPRs: vi.fn(() => ["org/merged-0"]),
+      });
+
+      const { strategiesUsed } = await discovery.searchIssues({
+        maxResults: 3,
+        interPhaseDelayMs: 0,
+        broadPhaseDelayMs: 0,
+      });
+
+      expect(strategiesUsed).toContain("broad");
+      expect(strategiesUsed).toContain("maintained");
+      expect(mockSearchAcrossLanguagesAndLabels).toHaveBeenCalled();
+    });
+
+    it("asks Phase 2 for the viable shortfall, not maxResults minus raw length", async () => {
+      // 3 skips in allCandidates, 0 viable: remaining must be 3, not 0.
+      mockFetchIssuesFromKnownRepos.mockResolvedValue({
+        candidates: skipCandidates(3),
+        allReposFailed: false,
+        rateLimitHit: false,
+      });
+
+      const discovery = makeDiscovery({
+        getReposWithMergedPRs: vi.fn(() => ["org/merged-0"]),
+      });
+
+      await discovery.searchIssues({
+        maxResults: 3,
+        interPhaseDelayMs: 0,
+        broadPhaseDelayMs: 0,
+      });
+
+      // filterVetAndScore(vetter, items, filter, seenSets, maxResults, ...)
+      const phase2Call = mockFilterVetAndScore.mock.calls[0]!;
+      expect(phase2Call[4]).toBe(3);
+    });
+
+    it("still skips Phases 2/3 when viable candidates meet maxResults, and logs why (#266)", async () => {
+      mockFetchIssuesFromKnownRepos.mockResolvedValue({
+        candidates: [
+          makeCandidate("org/merged-0", "merged_pr", "approve"),
+          makeCandidate("org/merged-1", "merged_pr", "approve"),
+          makeCandidate("org/merged-2", "merged_pr", "needs_review"),
+        ],
+        allReposFailed: false,
+        rateLimitHit: false,
+      });
+
+      const discovery = makeDiscovery({
+        getReposWithMergedPRs: vi.fn(() => ["org/merged-0"]),
+      });
+
+      const { strategiesUsed } = await discovery.searchIssues({
+        maxResults: 3,
+        interPhaseDelayMs: 0,
+        broadPhaseDelayMs: 0,
+      });
+
+      expect(strategiesUsed).not.toContain("broad");
+      expect(strategiesUsed).not.toContain("maintained");
+      expect(mockSearchAcrossLanguagesAndLabels).not.toHaveBeenCalled();
+      expect(vi.mocked(info)).toHaveBeenCalledWith(
+        "issue-discovery",
+        "Skipping broad search: 3 viable candidate(s) already meet maxResults (3)",
+      );
+      expect(vi.mocked(info)).toHaveBeenCalledWith(
+        "issue-discovery",
+        "Skipping maintained search: 3 viable candidate(s) already meet maxResults (3)",
+      );
+    });
+
+    it("viable candidates fill the final slots before skip-recommended ones", async () => {
+      // Phase 0 returns 3 merged_pr skips (highest searchPriority); the broad
+      // phase finds 3 viable normal-priority candidates. The final maxResults
+      // slice must return the viable ones, not the higher-priority skips.
+      mockFetchIssuesFromKnownRepos.mockResolvedValue({
+        candidates: skipCandidates(3),
+        allReposFailed: false,
+        rateLimitHit: false,
+      });
+      mockFilterVetAndScore.mockResolvedValueOnce({
+        candidates: [
+          makeCandidate("broad/repo-0", "normal", "approve"),
+          makeCandidate("broad/repo-1", "normal", "approve"),
+          makeCandidate("broad/repo-2", "normal", "needs_review"),
+        ],
+        allVetFailed: false,
+        rateLimitHit: false,
+      });
+
+      const discovery = makeDiscovery({
+        getReposWithMergedPRs: vi.fn(() => ["org/merged-0"]),
+      });
+
+      const { candidates } = await discovery.searchIssues({
+        maxResults: 3,
+        interPhaseDelayMs: 0,
+        broadPhaseDelayMs: 0,
+      });
+
+      expect(candidates).toHaveLength(3);
+      expect(candidates.every((c) => c.recommendation !== "skip")).toBe(true);
     });
   });
 
