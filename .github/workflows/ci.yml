@@ -63,5 +63,10 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      # continue-on-error until pnpm ships the bulk advisory endpoint (#268):
+      # npm retired the legacy audit endpoint 2026-07-15 (HTTP 410), so this
+      # step fails on every branch through no fault of the diff. Revert to
+      # hard-fail once a fixed pnpm version is pinned in packageManager.
       - name: Security audit
         run: pnpm audit --audit-level=high
+        continue-on-error: true
