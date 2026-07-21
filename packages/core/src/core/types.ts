@@ -44,6 +44,23 @@ export interface ProjectHealthData {
   stargazersCount?: number;
   forksCount?: number;
   language?: string | null;
+  /**
+   * Repo-wide merged PRs in the last 90 days. Repo-intrinsic — independent of
+   * the viewer's own contribution history — so it distinguishes a repo that
+   * merges outside work from a high-star repo that merges nobody (#248, #249,
+   * #1575). `null` when the count could not be computed (API failure) or was
+   * not fetched; callers treat `null` as inconclusive, never a hard skip.
+   */
+  recentMergedPRCount?: number | null;
+  /**
+   * Fraction of recently-closed PRs that were merged — merged / (merged +
+   * closed-unmerged) over the last 90 days. `null` when there were no closed
+   * PRs in the window or the counts could not be computed. Repo-intrinsic and
+   * part of the candidate output contract: consumed by the downstream success
+   * grade (oss-autopilot) so a healthy new repo grades on its own merits rather
+   * than the viewer's contribution relationship (#248). Not read within scout.
+   */
+  recentMergeRate?: number | null;
   /** Discriminant: a real snapshot is never `checkFailed`. */
   checkFailed?: false;
   failureReason?: undefined;

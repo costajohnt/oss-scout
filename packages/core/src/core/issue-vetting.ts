@@ -15,6 +15,7 @@ import {
   type SearchPriority,
   type IssueCandidate,
   type ProjectCategory,
+  type ProjectHealth,
   type ScoutPreferences,
   type ScoutState,
   type MergedPRRecord,
@@ -160,6 +161,33 @@ export interface ScoutStateWriter {
 }
 
 /**
+ * Repo-intrinsic contribution-acceptance signal from the health snapshot
+ * (#248/#249/#1575). Does the repo merge PR-based contributions at all over the
+ * last 90 days?
+ *   - `true`  — merged at least one PR
+ *   - `false` — had closed PRs but merged none (it rejects the work it receives)
+ *   - `null`  — no PR activity in the window, or health/counts unavailable;
+ *               inconclusive → needs_review, never a hard skip
+ *
+ * This deliberately does NOT distinguish maintainer self-merges from outside
+ * contributions — a solo repo that merges only its own PRs still reads `true`.
+ * That contributor-diversity refinement is deferred (#248 secondary); the point
+ * here is only to stop auto-approving repos that merge nothing at all.
+ */
+export function repoAcceptsContributionsFromHealth(
+  projectHealth: ProjectHealth,
+): boolean | null {
+  if (projectHealth.checkFailed || projectHealth.recentMergedPRCount == null) {
+    return null;
+  }
+  if (projectHealth.recentMergedPRCount > 0) return true;
+  // No merged PRs. A number (0) for the rate means there WERE closed PRs, none
+  // merged — real evidence the repo rejects contributions. A null rate means no
+  // closed PRs in the window at all (new/quiet repo) — too little to skip on.
+  return projectHealth.recentMergeRate == null ? null : false;
+}
+
+/**
  * Inputs to deriveRecommendation: the already-computed check results and
  * affinity signals. Kept as a flat record of primitives so the derivation is a
  * pure function, independently unit-testable (#157).
@@ -203,6 +231,16 @@ export interface RecommendationInput {
   issueClosed: boolean;
   /** noExistingPR && notClaimed && projectActive && clearRequirements. */
   passedAllChecks: boolean;
+  /**
+   * Whether the repo merges PR-based contributions, from repo-wide recent merge
+   * history (#248/#249/#1575). `true` = has recent merged PRs; `false` = had
+   * closed PRs but merged none, so "approve" is withheld even when the
+   * eligibility checks pass (the high-star zero-merge spam case); `null` =
+   * couldn't compute or no PR activity in the window, treated as inconclusive →
+   * needs_review, never a hard skip. Distinct from effectiveMergedCount, which
+   * is the VIEWER's own history. See repoAcceptsContributionsFromHealth.
+   */
+  repoAcceptsContributions: boolean | null;
 }
 
 export interface RecommendationOutput {
@@ -257,6 +295,10 @@ export function deriveRecommendation(
   if (!input.clearRequirements) notes.push("Issue requirements are unclear");
   if (!input.contributionGuidelinesFound)
     notes.push("No CONTRIBUTING.md found");
+  if (input.repoAcceptsContributions === false)
+    notes.push("Repo has merged no PRs in the last 90 days");
+  else if (input.repoAcceptsContributions === null)
+    notes.push("Could not verify whether the repo merges PRs");
 
   // Reasons to skip / approve.
   if (!input.noExistingPR) {
@@ -271,6 +313,8 @@ export function deriveRecommendation(
   if (!input.projectIsActive && !input.projectCheckFailed)
     reasonsToSkip.push("Inactive project");
   if (!input.clearRequirements) reasonsToSkip.push("Unclear requirements");
+  if (input.repoAcceptsContributions === false)
+    reasonsToSkip.push("Repo has no recent merged PRs");
 
   if (input.noExistingPR) reasonsToApprove.push("No existing PR");
   if (input.notClaimed) reasonsToApprove.push("Not claimed");
@@ -309,7 +353,13 @@ export function deriveRecommendation(
   } else if (input.ownPR) {
     // You're already working on this; don't re-surface it as competition.
     recommendation = "skip";
-  } else if (input.passedAllChecks) {
+  } else if (
+    input.passedAllChecks &&
+    input.repoAcceptsContributions !== false
+  ) {
+    // Withhold "approve" from a repo that merges nobody, even when the
+    // eligibility checks pass — the high-star zero-merge spam case (#249/#1575).
+    // A `null` (couldn't compute) still reaches here and is downgraded below.
     recommendation = "approve";
   } else if (reasonsToSkip.length > 2) {
     recommendation = "skip";
@@ -323,7 +373,8 @@ export function deriveRecommendation(
     input.projectCheckFailed ||
     input.existingPRInconclusive ||
     input.claimInconclusive ||
-    input.mergedCountInconclusive;
+    input.mergedCountInconclusive ||
+    input.repoAcceptsContributions === null;
   if (recommendation === "approve" && hasInconclusiveChecks) {
     recommendation = "needs_review";
     notes.push(
@@ -425,7 +476,7 @@ export class IssueVetter {
     ] = await Promise.all([
       checkNoExistingPR(this.octokit, owner, repo, number),
       checkNotClaimed(this.octokit, owner, repo, number, core.commentCount),
-      checkProjectHealth(this.octokit, owner, repo),
+      checkProjectHealth(this.octokit, owner, repo, this.budgetTracker),
       fetchContributionGuidelines(this.octokit, owner, repo),
       hasMergedPRsInRepo
         ? Promise.resolve(0)
@@ -480,6 +531,13 @@ export class IssueVetter {
     const projectActive = projectHealth.checkFailed
       ? true
       : projectHealth.isActive;
+
+    // Repo-intrinsic merge-acceptance gate (#248/#249/#1575): does this repo
+    // merge PR-based contributions at all? A high-star repo that merges nothing
+    // is exactly the spam case that used to get auto-approved. Independent of
+    // our own contribution history, unlike effectiveMergedCount below.
+    const repoAcceptsContributions =
+      repoAcceptsContributionsFromHealth(projectHealth);
 
     const vettingResult: IssueVettingResult = {
       passedAllChecks:
@@ -546,7 +604,8 @@ export class IssueVetter {
       projectHealth.checkFailed ||
       !!existingPRCheck.inconclusive ||
       !!claimCheck.inconclusive ||
-      mergedCountInconclusive;
+      mergedCountInconclusive ||
+      repoAcceptsContributions === null;
 
     const { notes, reasonsToApprove, reasonsToSkip, recommendation } =
       deriveRecommendation({
@@ -575,6 +634,7 @@ export class IssueVetter {
         matchesCategory,
         issueClosed,
         passedAllChecks: vettingResult.passedAllChecks,
+        repoAcceptsContributions,
       });
     vettingResult.notes = notes;
 
