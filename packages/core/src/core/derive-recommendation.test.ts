@@ -1,8 +1,26 @@
 import { describe, it, expect } from "vitest";
 import {
   deriveRecommendation,
+  repoAcceptsContributionsFromHealth,
   type RecommendationInput,
 } from "./issue-vetting.js";
+import type { ProjectHealth } from "./types.js";
+
+// Minimal healthy snapshot; override the merge fields per case.
+function health(overrides: Partial<ProjectHealth> = {}): ProjectHealth {
+  return {
+    repo: "owner/repo",
+    lastCommitAt: "2026-07-01T00:00:00Z",
+    daysSinceLastCommit: 1,
+    openIssuesCount: 5,
+    avgIssueResponseDays: 0,
+    ciStatus: "unknown",
+    isActive: true,
+    recentMergedPRCount: 10,
+    recentMergeRate: 0.8,
+    ...overrides,
+  } as ProjectHealth;
+}
 
 // All checks passing, no affinity signals — the "clean approve" baseline.
 function baseInput(
@@ -25,6 +43,7 @@ function baseInput(
     matchesCategory: false,
     issueClosed: false,
     passedAllChecks: true,
+    repoAcceptsContributions: true,
     ...overrides,
   };
 }
@@ -140,5 +159,80 @@ describe("deriveRecommendation (#157)", () => {
     );
     expect(out.recommendation).toBe("needs_review");
     expect(out.reasonsToSkip).toContain("Has existing PR");
+  });
+
+  // Repo-intrinsic merge-acceptance gate (#248/#249/#1575).
+  it("withholds approve from a repo that merges no external PRs", () => {
+    // The spam case: high-star, active, clear requirements, no existing PR,
+    // not claimed — every eligibility check passes — but the repo has merged
+    // nobody in 90 days. Must not be auto-approved.
+    const out = deriveRecommendation(
+      baseInput({ repoAcceptsContributions: false }),
+    );
+    expect(out.recommendation).not.toBe("approve");
+    expect(out.reasonsToSkip).toContain("Repo has no recent merged PRs");
+    expect(out.notes).toContain("Repo has merged no PRs in the last 90 days");
+  });
+
+  it("downgrades approve to needs_review when merge-acceptance is unknown", () => {
+    const out = deriveRecommendation(
+      baseInput({ repoAcceptsContributions: null }),
+    );
+    expect(out.recommendation).toBe("needs_review");
+    expect(out.notes).toContain(
+      "Recommendation downgraded: one or more checks were inconclusive",
+    );
+    expect(out.notes).toContain("Could not verify whether the repo merges PRs");
+  });
+
+  it("still approves a repo with recent merged PRs", () => {
+    const out = deriveRecommendation(
+      baseInput({ repoAcceptsContributions: true }),
+    );
+    expect(out.recommendation).toBe("approve");
+  });
+});
+
+describe("repoAcceptsContributionsFromHealth (#248/#249/#1575)", () => {
+  it("true when the repo merged at least one PR", () => {
+    expect(
+      repoAcceptsContributionsFromHealth(
+        health({ recentMergedPRCount: 3, recentMergeRate: 0.5 }),
+      ),
+    ).toBe(true);
+  });
+
+  it("false when it had closed PRs but merged none (rejects contributions)", () => {
+    expect(
+      repoAcceptsContributionsFromHealth(
+        health({ recentMergedPRCount: 0, recentMergeRate: 0 }),
+      ),
+    ).toBe(false);
+  });
+
+  it("null when there was no PR activity in the window (new/quiet repo)", () => {
+    expect(
+      repoAcceptsContributionsFromHealth(
+        health({ recentMergedPRCount: 0, recentMergeRate: null }),
+      ),
+    ).toBeNull();
+  });
+
+  it("null when the health check failed", () => {
+    expect(
+      repoAcceptsContributionsFromHealth({
+        repo: "owner/repo",
+        checkFailed: true,
+        failureReason: "boom",
+      }),
+    ).toBeNull();
+  });
+
+  it("null when the merge count was not fetched", () => {
+    expect(
+      repoAcceptsContributionsFromHealth(
+        health({ recentMergedPRCount: undefined, recentMergeRate: undefined }),
+      ),
+    ).toBeNull();
   });
 });

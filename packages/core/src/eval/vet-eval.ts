@@ -125,6 +125,10 @@ export function runFixture(
       !fixture.vetTimeFacts.isClaimed &&
       fixture.vetTimeFacts.projectActive &&
       clearRequirements,
+    // Historical fixtures predate the repo-wide merge signal (#248/#249/#1575);
+    // assume acceptance so the new gate stays inert and the benchmark keeps
+    // measuring the rest of the pipeline unchanged.
+    repoAcceptsContributions: true,
   };
   const { recommendation } = deriveRecommendation(recInput);
 

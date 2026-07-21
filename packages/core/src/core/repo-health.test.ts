@@ -54,6 +54,13 @@ describe("checkProjectHealth", () => {
           data: [{ commit: { author: { date: recentDate } } }],
         }),
       },
+      search: {
+        // Two calls: merged count, then closed-unmerged count.
+        issuesAndPullRequests: vi
+          .fn()
+          .mockResolvedValueOnce({ data: { total_count: 9 } })
+          .mockResolvedValueOnce({ data: { total_count: 1 } }),
+      },
     } as unknown as Octokit;
 
     const health = await checkProjectHealth(
@@ -67,6 +74,10 @@ describe("checkProjectHealth", () => {
     expect(health.forksCount).toBe(50);
     expect(health.language).toBe("TypeScript");
     expect(health.checkFailed).toBeUndefined();
+    if (!health.checkFailed) {
+      expect(health.recentMergedPRCount).toBe(9);
+      expect(health.recentMergeRate).toBeCloseTo(0.9);
+    }
   });
 
   it("returns inactive health for an old repo", async () => {
@@ -87,6 +98,11 @@ describe("checkProjectHealth", () => {
           data: [{ commit: { author: { date: oldDate } } }],
         }),
       },
+      search: {
+        issuesAndPullRequests: vi
+          .fn()
+          .mockResolvedValue({ data: { total_count: 0 } }),
+      },
     } as unknown as Octokit;
 
     const health = await checkProjectHealth(
@@ -96,6 +112,38 @@ describe("checkProjectHealth", () => {
     );
     expect(health.isActive).toBe(false);
     expect(health.daysSinceLastCommit).toBeGreaterThan(30);
+  });
+
+  it("propagates a non-fatal merge-stats failure as checkFailed (not a cached success)", async () => {
+    // Issue-2 guard: a transient Search API blip must not be baked into the 4h
+    // health snapshot as a null merge signal — it fails the whole check so the
+    // next call self-heals, mirroring a real health-check failure.
+    const recentDate = new Date().toISOString();
+    const octokit = {
+      repos: {
+        get: vi.fn().mockResolvedValue({
+          data: {
+            open_issues_count: 3,
+            pushed_at: recentDate,
+            stargazers_count: 100,
+            forks_count: 5,
+            language: "Go",
+          },
+          headers: {},
+        }),
+        listCommits: vi.fn().mockResolvedValue({
+          data: [{ commit: { author: { date: recentDate } } }],
+        }),
+      },
+      search: {
+        issuesAndPullRequests: vi
+          .fn()
+          .mockRejectedValue(new Error("search blip")),
+      },
+    } as unknown as Octokit;
+
+    const health = await checkProjectHealth(octokit, "blip-org", "blip-repo");
+    expect(health.checkFailed).toBe(true);
   });
 
   it("returns checkFailed: true on API error", async () => {

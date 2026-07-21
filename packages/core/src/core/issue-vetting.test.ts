@@ -82,6 +82,8 @@ vi.mock("./repo-health.js", () => ({
     isActive: true,
     stargazersCount: 500,
     forksCount: 50,
+    recentMergedPRCount: 20,
+    recentMergeRate: 0.9,
   } satisfies ProjectHealth),
   fetchContributionGuidelines: vi.fn().mockResolvedValue({
     url: "https://github.com/owner/repo/blob/main/CONTRIBUTING.md",
@@ -195,6 +197,8 @@ describe("IssueVetter", () => {
       isActive: true,
       stargazersCount: 500,
       forksCount: 50,
+      recentMergedPRCount: 20,
+      recentMergeRate: 0.9,
     });
     vi.mocked(fetchContributionGuidelines).mockResolvedValue({
       url: "https://github.com/owner/repo/blob/main/CONTRIBUTING.md",
