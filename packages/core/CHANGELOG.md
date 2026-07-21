@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.0](https://github.com/costajohnt/oss-scout/compare/core-v1.4.1...core-v1.5.0) (2026-07-21)
+
+
+### Features
+
+* **vetting:** gate approve on repo-intrinsic merge acceptance ([#270](https://github.com/costajohnt/oss-scout/issues/270)) ([4f56e83](https://github.com/costajohnt/oss-scout/commit/4f56e8313a5a50cd3868fbb3b3fa99ab51aa40f3))
+
 ## [1.4.1](https://github.com/costajohnt/oss-scout/compare/core-v1.4.0...core-v1.4.1) (2026-07-15)
 
 
