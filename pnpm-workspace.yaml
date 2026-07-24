@@ -18,5 +18,7 @@ overrides:
   hono: '>=4.12.25'
   # Transitive via @modelcontextprotocol/sdk. Pinned alongside hono.
   '@hono/node-server': '>=1.19.13'
-  # Transitive via @modelcontextprotocol/sdk -> ajv. Path-traversal advisory.
-  fast-uri: '>=3.1.2'
+  # Transitive via @modelcontextprotocol/sdk -> ajv. Path traversal plus two
+  # host-confusion advisories (GHSA-v2hh-gcrm-f6hx, GHSA-4c8g-83qw-93j6),
+  # all patched by 3.1.4.
+  fast-uri: '>=3.1.4'

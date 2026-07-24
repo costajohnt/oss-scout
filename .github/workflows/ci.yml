@@ -46,11 +46,8 @@ jobs:
       - name: Bundle
         run: pnpm -r run bundle
 
-  # Advisory-only: a new transitive advisory should not block unrelated PRs.
-  # Failures surface as a red job here without failing required checks.
   audit:
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v6
 
@@ -63,10 +60,7 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      # continue-on-error until pnpm ships the bulk advisory endpoint (#268):
-      # npm retired the legacy audit endpoint 2026-07-15 (HTTP 410), so this
-      # step fails on every branch through no fault of the diff. Revert to
-      # hard-fail once a fixed pnpm version is pinned in packageManager.
+      # Blocking on production deps only: dev-tooling advisories (eslint,
+      # vite chains) don't ship to users and shouldn't block releases.
       - name: Security audit
-        run: pnpm audit --audit-level=high
-        continue-on-error: true
+        run: pnpm audit --prod --audit-level=high
