@@ -24,13 +24,13 @@ values inside it are not.
 
 ```bash
 if [ ! -f "${CLAUDE_PLUGIN_ROOT}/packages/core/dist/cli.bundle.cjs" ]; then
-  if ! BUILD_LOG=$(cd "${CLAUDE_PLUGIN_ROOT}/packages/core" && npm install --silent 2>&1 && npm run bundle --silent 2>&1); then
+  if ! BUILD_LOG=$(cd "${CLAUDE_PLUGIN_ROOT}/packages/core" && npm install --ignore-scripts --silent 2>&1 && npm run bundle --silent 2>&1); then
     echo "BUILD_FAILED"; echo "$BUILD_LOG" | tail -5; exit 1
   fi
 fi
 ```
 
-**If output starts with `BUILD_FAILED`**: Tell the user the CLI build failed and show the error lines. Suggest: `cd ${CLAUDE_PLUGIN_ROOT}/packages/core && npm install && npm run bundle`. Common causes: missing Node.js 20+, stale `node_modules`.
+**If output starts with `BUILD_FAILED`**: Tell the user the CLI build failed and show the error lines. Suggest: `cd ${CLAUDE_PLUGIN_ROOT}/packages/core && npm install --ignore-scripts && npm run bundle`. Common causes: missing Node.js 20+, stale `node_modules`.
 
 ## Step 1: Check Setup
 
@@ -143,7 +143,7 @@ After presenting results, offer:
 
 **If the CLI bundle is missing**: Build it:
 ```bash
-cd "${CLAUDE_PLUGIN_ROOT}/packages/core" && npm install && npm run bundle
+cd "${CLAUDE_PLUGIN_ROOT}/packages/core" && npm install --ignore-scripts && npm run bundle
 ```
 
 ## Rules
