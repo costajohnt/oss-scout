@@ -57,6 +57,18 @@ export function getHttpStatusCode(error: unknown): number | undefined {
   return undefined;
 }
 
+/**
+ * True for errors resolveErrorCode classifies as AUTH_REQUIRED: a 401, or a
+ * 403 that is not a rate-limit/abuse condition (fine-grained-token "Resource
+ * not accessible", SAML enforcement, ...). Retrying other work with the same
+ * token cannot succeed, so batch loops should abort on these (#290).
+ */
+export function isAuthError(error: unknown): boolean {
+  const status = getHttpStatusCode(error);
+  if (status === 401) return true;
+  return status === 403 && !isRateLimitError(error);
+}
+
 export function isRateLimitError(error: unknown): boolean {
   const status = getHttpStatusCode(error);
   if (status === 429) return true;

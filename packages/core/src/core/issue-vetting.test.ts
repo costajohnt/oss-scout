@@ -4,6 +4,12 @@ import { calculateViabilityScore } from "./issue-scoring.js";
 
 // ── Mocks ──────────────────────────────────────────────────────────
 
+// Hoisted so both the errors-module mock's isRateLimitError and isAuthError
+// share one fn, keeping their classifications consistent when tests flip it.
+const mockIsRateLimitError = vi.hoisted(() =>
+  vi.fn((_e?: unknown) => false),
+);
+
 vi.mock("./logger.js", () => ({
   debug: vi.fn(),
   warn: vi.fn(),
@@ -43,7 +49,16 @@ vi.mock("./errors.js", () => ({
     }
     return undefined;
   }),
-  isRateLimitError: vi.fn(() => false),
+  isRateLimitError: mockIsRateLimitError,
+  // Mirrors the real classification, deferring to the mocked
+  // isRateLimitError so tests that flip it stay consistent (#290).
+  isAuthError: vi.fn((e: unknown) => {
+    const s =
+      e && typeof e === "object" && "status" in e
+        ? (e as { status: unknown }).status
+        : undefined;
+    return s === 401 || (s === 403 && !mockIsRateLimitError(e));
+  }),
   // No-op by default: the prefetch path (#169) calls this on a GraphQL error;
   // these tests exercise the REST fallback, so nothing here is fatal.
   rethrowIfFatal: vi.fn(),
@@ -960,6 +975,48 @@ describe("IssueVetter", () => {
           10,
         ),
       ).rejects.toThrow("Bad credentials");
+    });
+
+    it("propagates non-rate-limit 403s (SAML, token scope) like 401s (#290)", async () => {
+      // Previously only 401 aborted the batch; a SAML-enforcement 403 was
+      // counted as N per-item transient failures that burned the budget.
+      const samlErr = Object.assign(
+        new Error("Resource protected by organization SAML enforcement"),
+        { status: 403 },
+      );
+      const octokit = {
+        issues: { get: vi.fn().mockRejectedValue(samlErr) },
+      } as unknown as Octokit;
+
+      const stateReader = makeStubStateReader();
+      const vetter = new IssueVetter(octokit, stateReader);
+      await expect(
+        vetter.vetIssuesParallel(
+          [
+            "https://github.com/owner/repo/issues/1",
+            "https://github.com/owner/repo/issues/2",
+          ],
+          10,
+        ),
+      ).rejects.toThrow("SAML enforcement");
+    });
+
+    it("does NOT abort the batch on a rate-limit 403", async () => {
+      mockIsRateLimitError.mockReturnValue(true);
+      const rlErr = Object.assign(new Error("API rate limit exceeded"), {
+        status: 403,
+      });
+      const octokit = {
+        issues: { get: vi.fn().mockRejectedValue(rlErr) },
+      } as unknown as Octokit;
+
+      const stateReader = makeStubStateReader();
+      const vetter = new IssueVetter(octokit, stateReader);
+      const result = await vetter.vetIssuesParallel(
+        ["https://github.com/owner/repo/issues/1"],
+        10,
+      );
+      expect(result.rateLimitHit).toBe(true);
     });
   });
 
