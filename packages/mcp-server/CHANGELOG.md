@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.10.1](https://github.com/costajohnt/oss-scout/compare/mcp-server-v0.10.0...mcp-server-v0.10.1) (2026-08-07)
+
+
+### Bug Fixes
+
+* address all 27 findings from the 2026-08-07 repository audit ([9fd4e70](https://github.com/costajohnt/oss-scout/commit/9fd4e705de9f38c9ae4a3d73c33d48b1baa2ff27))
+* address all 27 findings from the 2026-08-07 repository audit ([#301](https://github.com/costajohnt/oss-scout/issues/301)) ([9fd4e70](https://github.com/costajohnt/oss-scout/commit/9fd4e705de9f38c9ae4a3d73c33d48b1baa2ff27))
+* **mcp:** tighten tool schemas and error messages ([d76ebaf](https://github.com/costajohnt/oss-scout/commit/d76ebafd8760d91b84686b9e5270f1873c068aa4)), closes [#295](https://github.com/costajohnt/oss-scout/issues/295)
+* **packaging:** put types first in conditional exports; drop dangling sourcemap ([f84d911](https://github.com/costajohnt/oss-scout/commit/f84d9117f47471ae3513de211480c2b738965474)), closes [#280](https://github.com/costajohnt/oss-scout/issues/280)
+
 ## [0.10.0](https://github.com/costajohnt/oss-scout/compare/mcp-server-v0.9.0...mcp-server-v0.10.0) (2026-06-12)
 
 

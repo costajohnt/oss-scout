@@ -1,5 +1,29 @@
 # Changelog
 
+## [1.5.1](https://github.com/costajohnt/oss-scout/compare/core-v1.5.0...core-v1.5.1) (2026-08-07)
+
+
+### Bug Fixes
+
+* address all 27 findings from the 2026-08-07 repository audit ([9fd4e70](https://github.com/costajohnt/oss-scout/commit/9fd4e705de9f38c9ae4a3d73c33d48b1baa2ff27))
+* address all 27 findings from the 2026-08-07 repository audit ([#301](https://github.com/costajohnt/oss-scout/issues/301)) ([9fd4e70](https://github.com/costajohnt/oss-scout/commit/9fd4e705de9f38c9ae4a3d73c33d48b1baa2ff27))
+* **cli:** reject numeric arguments with trailing garbage ([13fc68a](https://github.com/costajohnt/oss-scout/commit/13fc68a431c143373efb8c8b5a493a98b904f097)), closes [#291](https://github.com/costajohnt/oss-scout/issues/291)
+* **cli:** reject numeric arguments with trailing garbage ([a8aa743](https://github.com/costajohnt/oss-scout/commit/a8aa743eb531786f7447a9eb9cc0b8b4a9235b84)), closes [#291](https://github.com/costajohnt/oss-scout/issues/291)
+* **config:** restrict slmTriageHost to local/private addresses ([dc16e5b](https://github.com/costajohnt/oss-scout/commit/dc16e5bc99f7875c96291d7b69b092fe3914acb5)), closes [#300](https://github.com/costajohnt/oss-scout/issues/300)
+* **discovery:** don't abort the whole search on exhausted Search-API quota ([5476b35](https://github.com/costajohnt/oss-scout/commit/5476b3551334941f74b8fdd5d2f9c2b621c55732)), closes [#284](https://github.com/costajohnt/oss-scout/issues/284)
+* **discovery:** don't let an unparseable updated_at bypass the age filter ([ad45e83](https://github.com/costajohnt/oss-scout/commit/ad45e83039d2b070788cdad48586d08b1e1ad9a2)), closes [#289](https://github.com/costajohnt/oss-scout/issues/289)
+* **discovery:** make the preflight-failure fallback actually conservative ([d58f035](https://github.com/costajohnt/oss-scout/commit/d58f035ef6d86ee75c59cc5f71812edc99b6dc53)), closes [#288](https://github.com/costajohnt/oss-scout/issues/288)
+* **eligibility:** fetch past a full last comment page in checkNotClaimed ([83a238b](https://github.com/costajohnt/oss-scout/commit/83a238b26803ec2d701c14bdf24e81611cb1d432)), closes [#293](https://github.com/costajohnt/oss-scout/issues/293)
+* **gist:** don't overwrite a remote gist whose content fails validation ([fcd55a8](https://github.com/costajohnt/oss-scout/commit/fcd55a887a8097d79f6f70b767e9a42f2e9d7564)), closes [#286](https://github.com/costajohnt/oss-scout/issues/286)
+* **gist:** drop tombstones with an unparseable removedAt during GC ([eaa8fe1](https://github.com/costajohnt/oss-scout/commit/eaa8fe19aaa7766d757070a152b3a55257c73fb5)), closes [#292](https://github.com/costajohnt/oss-scout/issues/292)
+* **packaging:** put types first in conditional exports; drop dangling sourcemap ([f84d911](https://github.com/costajohnt/oss-scout/commit/f84d9117f47471ae3513de211480c2b738965474)), closes [#280](https://github.com/costajohnt/oss-scout/issues/280)
+* **repo-health:** schema-version the health cache key ([6747b85](https://github.com/costajohnt/oss-scout/commit/6747b85e2261078a21675e3255986a4857ca929d)), closes [#285](https://github.com/costajohnt/oss-scout/issues/285)
+* **results:** record tombstones when clearing saved results ([0bf0781](https://github.com/costajohnt/oss-scout/commit/0bf07812bb1364b4489dd36e7e435a4ce7d9e53f)), closes [#276](https://github.com/costajohnt/oss-scout/issues/276)
+* **scout:** merge on-disk changes into local-mode checkpoint ([0cd54cd](https://github.com/costajohnt/oss-scout/commit/0cd54cdc681fd8203223f5f03211666502e3cb2d)), closes [#294](https://github.com/costajohnt/oss-scout/issues/294)
+* **search-budget:** reserve the granted slot in waitForBudget ([2df2675](https://github.com/costajohnt/oss-scout/commit/2df26751b72bbfc29e5bb62163bd6fde835f5120)), closes [#287](https://github.com/costajohnt/oss-scout/issues/287)
+* **sync:** persist state after sync in the CLI's local persistence mode ([0b208e0](https://github.com/costajohnt/oss-scout/commit/0b208e0380e9982570278ba6abbb57fde1823346)), closes [#275](https://github.com/costajohnt/oss-scout/issues/275)
+* **vetting:** abort the batch on non-rate-limit 403s, not just 401 ([a2261e4](https://github.com/costajohnt/oss-scout/commit/a2261e4e8e3bb987d3ab81ef34c24935d18025bb)), closes [#290](https://github.com/costajohnt/oss-scout/issues/290)
+
 ## [1.5.0](https://github.com/costajohnt/oss-scout/compare/core-v1.4.1...core-v1.5.0) (2026-07-21)
 
 
