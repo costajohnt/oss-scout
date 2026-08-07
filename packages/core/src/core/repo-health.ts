@@ -15,7 +15,12 @@ import {
   rethrowIfFatal,
 } from "./errors.js";
 import { warn } from "./logger.js";
-import { getHttpCache, cachedRequest, cachedTimeBased } from "./http-cache.js";
+import {
+  getHttpCache,
+  cachedRequest,
+  cachedTimeBased,
+  versionedCacheKey,
+} from "./http-cache.js";
 import { probeRepoFile } from "./probe-repo-file.js";
 import {
   type SearchBudgetTracker,
@@ -128,7 +133,11 @@ export async function checkProjectHealth(
   tracker: SearchBudgetTracker = getSearchBudgetTracker(),
 ): Promise<ProjectHealth> {
   const cache = getHttpCache();
-  const healthCacheKey = `health:${owner}/${repo}`;
+  // Versioned (#158): the cached ProjectHealth is read back with an unchecked
+  // cast, and its shape has changed before (#248 added recentMergedPRCount) —
+  // a stale-shaped entry degraded every approve to needs_review for the
+  // cache TTL (#285).
+  const healthCacheKey = versionedCacheKey(`health:${owner}/${repo}`);
 
   try {
     return await cachedTimeBased(
