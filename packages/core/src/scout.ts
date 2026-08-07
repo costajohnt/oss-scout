@@ -1007,6 +1007,11 @@ export class OssScout implements ScoutStateReader, ScoutStateWriter {
       // claimed success while saving nothing (#116). A failed write keeps
       // the dirty flag and reports failure.
       try {
+        // Reload-and-merge before writing: a long-lived scout (the MCP
+        // server runs for days) would otherwise last-writer-wins clobber
+        // state.json changes made by the CLI since boot (#294). The
+        // tombstone-aware merge preserves both sides, mirroring gist mode.
+        this.state = mergeStates(this.state, loadLocalState());
         saveLocalState(this.state);
       } catch {
         return false;
