@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.5.2](https://github.com/costajohnt/oss-scout/compare/core-v1.5.1...core-v1.5.2) (2026-08-07)
+
+
+### Bug Fixes
+
+* address all 15 findings from the round-2 audit ([3ecfcf0](https://github.com/costajohnt/oss-scout/commit/3ecfcf0b74b073568c83d0f685a42809be8e6527))
+* address all 15 findings from the round-2 audit ([#318](https://github.com/costajohnt/oss-scout/issues/318)) ([3ecfcf0](https://github.com/costajohnt/oss-scout/commit/3ecfcf0b74b073568c83d0f685a42809be8e6527))
+* **bootstrap:** report saved counts, not partial or pre-existing ones ([a9300a3](https://github.com/costajohnt/oss-scout/commit/a9300a3a07ada9faee8a6c1a491036832bb242f1)), closes [#313](https://github.com/costajohnt/oss-scout/issues/313)
+* **commands:** degrade gist mode to local when no token is available ([c32cce9](https://github.com/costajohnt/oss-scout/commit/c32cce9afb6c640cfe6fd0d08f560f59c7881957)), closes [#304](https://github.com/costajohnt/oss-scout/issues/304)
+* **discovery:** say quota-unknown when the preflight failed, not a fabricated number ([41bd010](https://github.com/costajohnt/oss-scout/commit/41bd010c59b9cd12fccc1980f93e451349416c47)), closes [#309](https://github.com/costajohnt/oss-scout/issues/309)
+* **features:** clamp splitRatio so results can't exceed count ([4044f50](https://github.com/costajohnt/oss-scout/commit/4044f5040c4dfaf1cab91871faf76ae99bd21dcb)), closes [#312](https://github.com/costajohnt/oss-scout/issues/312)
+* **features:** honor excludeRepos, excludeOrgs, and aiPolicyBlocklist ([dc8b9e8](https://github.com/costajohnt/oss-scout/commit/dc8b9e8bbd4762ae71d6e5f8a00608d72830da0d)), closes [#307](https://github.com/costajohnt/oss-scout/issues/307)
+* **markdown:** neutralize markdown injection from untrusted issue titles ([8ddf21a](https://github.com/costajohnt/oss-scout/commit/8ddf21ad241120e609ba9047b2ec7e596420249b)), closes [#308](https://github.com/costajohnt/oss-scout/issues/308)
+* **roadmap:** skip code fences and inline code when scanning #N refs ([25f4b42](https://github.com/costajohnt/oss-scout/commit/25f4b426bc2d6b925797c4690fd4b3ad4f3cb4e2)), closes [#315](https://github.com/costajohnt/oss-scout/issues/315)
+* **setup:** surface dropped tokens, floor minStars, warn on empty username ([98e4708](https://github.com/costajohnt/oss-scout/commit/98e4708013c300fd42d2d3677a04c0e784e406eb)), closes [#314](https://github.com/costajohnt/oss-scout/issues/314)
+* **slm-triage:** refuse redirects on the triage POST ([b169d0b](https://github.com/costajohnt/oss-scout/commit/b169d0b29863e5687538c561fad838500e998b4e)), closes [#310](https://github.com/costajohnt/oss-scout/issues/310)
+* **state:** never resurrect a resolved PR into openPRs during merge ([c332650](https://github.com/costajohnt/oss-scout/commit/c332650fcd9e99281965e92c39424016a8f421c1)), closes [#303](https://github.com/costajohnt/oss-scout/issues/303)
+* **vetting:** treat bare 403s as repo-scoped instead of aborting the batch ([4cac0ba](https://github.com/costajohnt/oss-scout/commit/4cac0bae8dd09c5e77abde109ec11933f2506ce0)), closes [#305](https://github.com/costajohnt/oss-scout/issues/305)
+
 ## [1.5.1](https://github.com/costajohnt/oss-scout/compare/core-v1.5.0...core-v1.5.1) (2026-08-07)
 
 
