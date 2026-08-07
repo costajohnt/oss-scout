@@ -6,9 +6,7 @@ import { calculateViabilityScore } from "./issue-scoring.js";
 
 // Hoisted so both the errors-module mock's isRateLimitError and isAuthError
 // share one fn, keeping their classifications consistent when tests flip it.
-const mockIsRateLimitError = vi.hoisted(() =>
-  vi.fn((_e?: unknown) => false),
-);
+const mockIsRateLimitError = vi.hoisted(() => vi.fn((_e?: unknown) => false));
 
 vi.mock("./logger.js", () => ({
   debug: vi.fn(),

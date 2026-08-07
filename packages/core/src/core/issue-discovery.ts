@@ -651,7 +651,10 @@ export class IssueDiscovery {
     // only this search's GraphQL query spend.
     resetGraphQLSearchQueryCount();
     const tracker = this.budgetTracker;
-    let searchBudget = LOW_BUDGET_THRESHOLD - 1;
+    // Fallback below the critical threshold so a failed preflight actually
+    // skips the starred phase — the old fallback of 19 passed the gate and
+    // made the "conservative budget" warning a lie (#288).
+    let searchBudget = CRITICAL_BUDGET_THRESHOLD - 1;
     try {
       const rateLimit = await checkRateLimit(this.githubToken);
       searchBudget = rateLimit.remaining;
@@ -681,10 +684,6 @@ export class IssueDiscovery {
         CRITICAL_BUDGET_THRESHOLD,
         new Date(Date.now() + 60000).toISOString(),
       );
-      // Below the critical threshold so the starred-phase gate actually
-      // skips it — the fallback previously left searchBudget at 19, which
-      // passed the gate and made this log line a lie (#288).
-      searchBudget = CRITICAL_BUDGET_THRESHOLD - 1;
       warn(
         MODULE,
         "Could not check rate limit — using conservative budget, skipping the starred phase:",

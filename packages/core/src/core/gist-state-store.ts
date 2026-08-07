@@ -313,7 +313,9 @@ export class GistStateStore {
   private async fetchGistState(
     gistId: string,
   ): Promise<
-    { kind: "ok"; state: ScoutState } | { kind: "missing" } | { kind: "invalid" }
+    | { kind: "ok"; state: ScoutState }
+    | { kind: "missing" }
+    | { kind: "invalid" }
   > {
     const { data } = await this.octokit.gists.get({ gist_id: gistId });
     const file = data.files?.[GIST_FILENAME];
