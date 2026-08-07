@@ -269,6 +269,21 @@ describe("splitByHorizon 60/40 split", () => {
     mkCand("b5", 80, "bigger-bet"),
   ];
 
+  it("clamps out-of-range ratios so the result never exceeds count (#312)", () => {
+    const over = splitByHorizon([...quickWinPool, ...biggerBetPool], 10, 1.5);
+    expect(over.quickWins.length + over.biggerBets.length).toBeLessThanOrEqual(
+      10,
+    );
+    // ratio 1.5 clamps to 1: all-quick allocation.
+    expect(over.quickWins).toHaveLength(8);
+    expect(over.biggerBets).toHaveLength(2);
+
+    const under = splitByHorizon([...quickWinPool, ...biggerBetPool], 10, -1);
+    expect(
+      under.quickWins.length + under.biggerBets.length,
+    ).toBeLessThanOrEqual(10);
+  });
+
   it("returns 6 quick + 4 bigger when count=10 and both abundant", () => {
     const out = splitByHorizon([...quickWinPool, ...biggerBetPool], 10);
     expect(out.quickWins).toHaveLength(6);

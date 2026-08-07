@@ -101,7 +101,11 @@ export function splitByHorizon(
     .filter((c) => c.horizon === "bigger-bet")
     .sort((a, b) => b.viabilityScore - a.viabilityScore);
 
-  const targetQuick = Math.round(count * ratio);
+  // Clamp: the public library API validates nothing, and an out-of-range
+  // ratio made targetBigger negative and the result exceed count (#312).
+  // Same pattern as applyDiversityRatio.
+  const clampedRatio = Math.max(0, Math.min(1, ratio));
+  const targetQuick = Math.round(count * clampedRatio);
   const targetBigger = count - targetQuick;
 
   const quickTaken = Math.min(allQuick.length, targetQuick);
