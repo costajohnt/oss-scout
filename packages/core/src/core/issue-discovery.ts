@@ -136,7 +136,12 @@ function buildIssueFilter(
       if (config.aiBlocklisted.has(repoLower)) return false;
       if (config.lowScoringRepos.has(repoLower)) return false;
       if (config.skippedUrls.has(item.html_url)) return false;
+      // An unparseable updated_at (the adapters map a missing timestamp to
+      // "") makes daysBetween return NaN, and NaN > maxAgeDays is false — so
+      // undated issues sailed through the staleness filter (#289). Treat an
+      // unknown age as failing it.
       const updatedAt = new Date(item.updated_at);
+      if (Number.isNaN(updatedAt.getTime())) return false;
       const ageDays = daysBetween(updatedAt, config.now);
       if (ageDays > config.maxAgeDays) return false;
       if (!config.includeDocIssues && isDocOnlyIssue(item)) return false;

@@ -1030,6 +1030,25 @@ describe("IssueDiscovery", () => {
   });
 
   describe("searchIssues — filtering", () => {
+    it("filterIssues excludes issues with an unparseable updated_at (#289)", async () => {
+      // The REST adapters map a missing timestamp to "", whose NaN age used
+      // to bypass the maxAgeDays comparison (NaN > n is false).
+      const items: GitHubSearchItem[] = [
+        {
+          html_url: "https://github.com/some/repo/issues/1",
+          repository_url: "https://api.github.com/repos/some/repo",
+          updated_at: "",
+        },
+      ];
+      mockSearchAcrossLanguagesAndLabels.mockResolvedValue(items);
+
+      const discovery = makeDiscovery();
+
+      await expect(discovery.searchIssues({ maxResults: 5 })).rejects.toThrow(
+        "No issue candidates found",
+      );
+    });
+
     it("filterIssues excludes repos in excludeRepos", async () => {
       const items: GitHubSearchItem[] = [
         {
