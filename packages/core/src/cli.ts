@@ -28,6 +28,7 @@ import {
   saveLocalState,
 } from "./core/local-state.js";
 import { CONCRETE_STRATEGIES, SearchStrategySchema } from "./core/schemas.js";
+import { parseStrictInt } from "./commands/validation.js";
 import type { SearchStrategy } from "./core/schemas.js";
 
 function handleCommandError(err: unknown, options: { json?: boolean }): never {
@@ -193,8 +194,8 @@ program
           );
         }
         const { runSearch } = await import("./commands/search.js");
-        const maxResults = count ? parseInt(count, 10) : 10;
-        if (isNaN(maxResults) || maxResults < 1) {
+        const maxResults = count ? parseStrictInt(count, "count") : 10;
+        if (maxResults < 1) {
           throw new ValidationError("count must be a positive integer");
         }
         const state = loadLocalState();
@@ -296,16 +297,19 @@ program
     ) =>
       runAction(options, async () => {
         const { runFeatures } = await import("./commands/features.js");
-        const maxResults = count ? parseInt(count, 10) : 10;
-        if (isNaN(maxResults) || maxResults < 1 || maxResults > 50) {
+        const maxResults = count ? parseStrictInt(count, "count") : 10;
+        if (maxResults < 1 || maxResults > 50) {
           throw new ValidationError(
             "count must be an integer between 1 and 50",
           );
         }
         let anchorThreshold: number | undefined;
         if (options.anchorThreshold !== undefined) {
-          const parsed = parseInt(options.anchorThreshold, 10);
-          if (isNaN(parsed) || parsed < 1 || parsed > 50) {
+          const parsed = parseStrictInt(
+            options.anchorThreshold,
+            "--anchor-threshold",
+          );
+          if (parsed < 1 || parsed > 50) {
             throw new ValidationError(
               "--anchor-threshold must be an integer between 1 and 50",
             );
@@ -314,7 +318,8 @@ program
         }
         let splitRatio: number | undefined;
         if (options.splitRatio !== undefined) {
-          const parsed = Number.parseFloat(options.splitRatio);
+          // Number() rejects trailing garbage ("0.6abc"), unlike parseFloat.
+          const parsed = Number(options.splitRatio);
           if (isNaN(parsed) || parsed < 0 || parsed > 1) {
             throw new ValidationError(
               "--split-ratio must be a number between 0 and 1",
@@ -456,31 +461,32 @@ program
     "Re-vet all saved search results and classify their current status",
   )
   .option("--prune", "Remove unavailable issues from saved results")
-  .option(
-    "--concurrency <n>",
-    "Max concurrent API requests (default: 5)",
-    parseInt,
-  )
+  .option("--concurrency <n>", "Max concurrent API requests (default: 5)")
   .option("--json", "Output as JSON")
   .action(
     async (options: {
       prune?: boolean;
-      concurrency?: number;
+      concurrency?: string;
       json?: boolean;
     }) =>
       runAction(options, async () => {
-        if (
-          options.concurrency !== undefined &&
-          (isNaN(options.concurrency) || options.concurrency < 1)
-        ) {
-          throw new ValidationError("--concurrency must be a positive integer");
+        let concurrency: number | undefined;
+        if (options.concurrency !== undefined) {
+          // Parsed in the action (not a commander argParser) so a bad value
+          // honors the --json error contract instead of a raw parse error.
+          concurrency = parseStrictInt(options.concurrency, "--concurrency");
+          if (concurrency < 1) {
+            throw new ValidationError(
+              "--concurrency must be a positive integer",
+            );
+          }
         }
         const { runVetList } = await import("./commands/vet-list.js");
         const state = loadLocalState();
         const result = await runVetList({
           state,
           prune: options.prune,
-          concurrency: options.concurrency,
+          concurrency,
         });
         if (options.json) {
           console.log(formatJsonSuccess(result));

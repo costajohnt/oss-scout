@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   validateUrl,
   validateGitHubUrl,
+  parseStrictInt,
   ISSUE_URL_PATTERN,
 } from "./validation.js";
 import { ValidationError } from "../core/errors.js";
@@ -132,5 +133,30 @@ describe("validation", () => {
         ),
       ).toBe(false);
     });
+  });
+});
+
+describe("parseStrictInt (#291)", () => {
+  it("parses a plain decimal integer", () => {
+    expect(parseStrictInt("50", "count")).toBe(50);
+    expect(parseStrictInt(" 7 ", "count")).toBe(7);
+  });
+
+  it("rejects trailing garbage that parseInt would accept", () => {
+    expect(() => parseStrictInt("50O", "count")).toThrow(ValidationError);
+    expect(() => parseStrictInt("5x", "count")).toThrow(
+      'count must be an integer (got "5x")',
+    );
+    expect(() => parseStrictInt("3abc", "--concurrency")).toThrow(
+      ValidationError,
+    );
+  });
+
+  it("rejects floats, negatives, and empty strings", () => {
+    expect(() => parseStrictInt("5.9", "--anchor-threshold")).toThrow(
+      ValidationError,
+    );
+    expect(() => parseStrictInt("-3", "count")).toThrow(ValidationError);
+    expect(() => parseStrictInt("", "count")).toThrow(ValidationError);
   });
 });
