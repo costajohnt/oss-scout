@@ -503,6 +503,66 @@ describe("GistStateStore", () => {
       expect(update).not.toHaveBeenCalled();
     });
 
+    it("does not overwrite a remote whose content fails validation (#286)", async () => {
+      // The remote may hold a newer state version or recoverable corruption;
+      // push must fail (keeping the local cache) rather than clobber it.
+      const goodState = makeState();
+      const update = vi.fn().mockResolvedValue({ data: { id: "gist-1" } });
+      const get = vi
+        .fn()
+        // Bootstrap sees valid content so the store binds to gist-1...
+        .mockResolvedValueOnce(gistResponse(goodState, "gist-1"))
+        // ...but by push time the remote no longer parses.
+        .mockResolvedValue({
+          data: {
+            id: "gist-1",
+            files: { "state.json": { content: "{ not valid json" } },
+          },
+        });
+      const octokit = makeOctokit({
+        list: vi.fn().mockResolvedValue({
+          data: [{ id: "gist-1", description: "oss-scout-state" }],
+        }),
+        get,
+        update,
+      });
+
+      const store = new GistStateStore(octokit);
+      await store.bootstrap();
+
+      const localState = makeState({
+        preferences: { githubUsername: "local-only" },
+      });
+      const ok = await store.push(localState);
+
+      expect(ok).toBe(false);
+      expect(update).not.toHaveBeenCalled();
+      // Local cache still captured the change.
+      const cached = JSON.parse(
+        fs.readFileSync(path.join(tempDir, "state-cache.json"), "utf-8"),
+      );
+      expect(cached.preferences.githubUsername).toBe("local-only");
+    });
+
+    it("still pushes when the remote gist has no state file yet (missing ≠ invalid, #286)", async () => {
+      const update = vi.fn().mockResolvedValue({ data: { id: "gist-1" } });
+      const octokit = makeOctokit({
+        list: vi.fn().mockResolvedValue({ data: [] }),
+        create: vi.fn().mockResolvedValue({ data: { id: "gist-1" } }),
+        get: vi.fn().mockResolvedValue({
+          data: { id: "gist-1", files: {} },
+        }),
+        update,
+      });
+
+      const store = new GistStateStore(octokit);
+      await store.bootstrap();
+
+      const ok = await store.push(makeState());
+      expect(ok).toBe(true);
+      expect(update).toHaveBeenCalled();
+    });
+
     it("merges the concurrent remote state before writing, not last-writer-wins (#117)", async () => {
       // A second machine pushed a merged PR the local copy never saw
       const remoteState = makeState({
