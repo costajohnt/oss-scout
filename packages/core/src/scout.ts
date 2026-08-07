@@ -410,6 +410,7 @@ export class OssScout implements ScoutStateReader, ScoutStateWriter {
           languages: this.state.preferences.languages,
           excludeRepos: this.state.preferences.excludeRepos,
           excludeOrgs: this.state.preferences.excludeOrgs,
+          aiPolicyBlocklist: this.state.preferences.aiPolicyBlocklist,
           splitRatio:
             options?.splitRatio ?? this.state.preferences.featuresSplitRatio,
         })
@@ -418,6 +419,9 @@ export class OssScout implements ScoutStateReader, ScoutStateWriter {
           vetter,
           repoScores: this.state.repoScores ?? {},
           count,
+          excludeRepos: this.state.preferences.excludeRepos,
+          excludeOrgs: this.state.preferences.excludeOrgs,
+          aiPolicyBlocklist: this.state.preferences.aiPolicyBlocklist,
           anchorThreshold:
             options?.anchorThreshold ??
             this.state.preferences.featuresAnchorThreshold,
