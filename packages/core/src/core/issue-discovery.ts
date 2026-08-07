@@ -655,6 +655,9 @@ export class IssueDiscovery {
     // skips the starred phase — the old fallback of 19 passed the gate and
     // made the "conservative budget" warning a lie (#288).
     let searchBudget = CRITICAL_BUDGET_THRESHOLD - 1;
+    // Tracked so the summary says "quota unknown" instead of presenting the
+    // fabricated fallback number as a real reading (#309).
+    let preflightFailed = false;
     try {
       const rateLimit = await checkRateLimit(this.githubToken);
       searchBudget = rateLimit.remaining;
@@ -680,6 +683,7 @@ export class IssueDiscovery {
       }
     } catch (error) {
       if (getHttpStatusCode(error) === 401) throw error;
+      preflightFailed = true;
       tracker.init(
         CRITICAL_BUDGET_THRESHOLD,
         new Date(Date.now() + 60000).toISOString(),
@@ -942,7 +946,9 @@ export class IssueDiscovery {
     // means the starred phase was dropped, not the heavy broad/maintained ones.
     const phasesSkippedForBudget = searchBudget < CRITICAL_BUDGET_THRESHOLD;
     const budgetNote = phasesSkippedForBudget
-      ? ` The starred-repo phase was skipped due to critically low API quota (${searchBudget} remaining); broad and maintained phases still ran on GraphQL.`
+      ? preflightFailed
+        ? " The starred-repo phase was skipped as a precaution because the rate-limit check failed (quota unknown); broad and maintained phases still ran on GraphQL."
+        : ` The starred-repo phase was skipped due to critically low API quota (${searchBudget} remaining); broad and maintained phases still ran on GraphQL.`
       : "";
 
     if (allCandidates.length === 0) {
