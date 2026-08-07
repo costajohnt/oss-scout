@@ -470,6 +470,36 @@ describe("checkNotClaimed", () => {
     expect(result.passed).toBe(false);
   });
 
+  it("fetches one page past a full last page so fresh claims aren't missed (#293)", async () => {
+    // commentCount says 100 (1 page), but a claim landed as comment 101
+    // after the prefetch. The full page-1 response signals a possible
+    // page boundary crossing; the tail page must be fetched.
+    const fullPage = Array.from({ length: 100 }, (_, i) => ({
+      body: `comment ${i}`,
+    }));
+    const listComments = vi
+      .fn()
+      .mockResolvedValueOnce({ data: fullPage })
+      .mockResolvedValueOnce({ data: [{ body: "I'll take this issue" }] });
+    const octokit = makeCommentsOctokit(listComments);
+    const result = await checkNotClaimed(octokit, "owner", "repo", 1, 100);
+    expect(listComments).toHaveBeenCalledTimes(2);
+    expect(listComments).toHaveBeenLastCalledWith(
+      expect.objectContaining({ page: 2 }),
+    );
+    expect(result.passed).toBe(false);
+  });
+
+  it("does not fetch an extra page when the last page is short", async () => {
+    const listComments = vi
+      .fn()
+      .mockResolvedValue({ data: [{ body: "normal discussion" }] });
+    const octokit = makeCommentsOctokit(listComments);
+    const result = await checkNotClaimed(octokit, "owner", "repo", 1, 50);
+    expect(listComments).toHaveBeenCalledTimes(1);
+    expect(result.passed).toBe(true);
+  });
+
   it("returns passed:true and inconclusive:true on API error", async () => {
     const octokit = makeCommentsOctokit(
       vi.fn().mockRejectedValue(new Error("Network error")),
