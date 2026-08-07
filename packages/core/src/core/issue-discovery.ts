@@ -684,9 +684,14 @@ export class IssueDiscovery {
     }
 
     if (searchBudget <= 0) {
+      // An exhausted REST Search bucket is no reason to abort the run:
+      // Phase 0/1 read the much larger Core API bucket and broad/maintained
+      // run on GraphQL (#284). The starred-phase gate below already skips the
+      // one budget-gated phase, and the tracker paces the remaining
+      // merge-stat search calls until the quota resets.
       this.rateLimitWarning =
-        "GitHub search API quota exhausted. Try again after the rate limit resets.";
-      return { candidates: [], strategiesUsed: [] };
+        "GitHub search API quota exhausted — skipping the starred phase; other phases don't use it.";
+      warn(MODULE, this.rateLimitWarning);
     }
 
     // Derive search context

@@ -794,6 +794,45 @@ describe("IssueDiscovery", () => {
       expect(strategiesUsed).toContain("maintained");
     });
 
+    it("still runs the non-Search phases when the REST Search quota is fully exhausted (#284)", async () => {
+      // remaining: 0 used to abort the entire search with zero candidates,
+      // even though Phase 0/1 bill the Core bucket and broad/maintained run
+      // on GraphQL. Only the starred phase should be skipped.
+      vi.mocked(checkRateLimit).mockResolvedValue({
+        remaining: 0,
+        limit: 30,
+        resetAt: new Date(Date.now() + 60000).toISOString(),
+      });
+
+      mockFetchIssuesFromKnownRepos.mockResolvedValue({
+        candidates: [makeCandidate("org/merged", "merged_pr")],
+        allReposFailed: false,
+        rateLimitHit: false,
+      });
+
+      const discovery = makeDiscovery({
+        getReposWithMergedPRs: vi.fn(() => ["org/merged"]),
+        getStarredRepos: vi.fn(() => ["org/starred"]),
+      });
+
+      const { candidates, strategiesUsed } = await discovery.searchIssues({
+        maxResults: 10,
+        interPhaseDelayMs: 0,
+        broadPhaseDelayMs: 0,
+      });
+
+      expect(candidates.length).toBeGreaterThan(0);
+      expect(strategiesUsed).toContain("merged");
+      expect(strategiesUsed).not.toContain("starred");
+      expect(strategiesUsed).toContain("broad");
+      expect(strategiesUsed).toContain("maintained");
+      // The end-of-run summary replaces the initial exhaustion warning with
+      // the fuller explanation of what was skipped.
+      expect(discovery.rateLimitWarning).toMatch(
+        /starred-repo phase was skipped/i,
+      );
+    });
+
     it("still runs Phases 2 and 3 when REST budget is low (<20) since they use GraphQL", async () => {
       // Broad/maintained now bill the GraphQL points bucket, not the REST
       // Search bucket, so a low REST budget must NOT gate them off anymore.
