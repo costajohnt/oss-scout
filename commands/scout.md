@@ -1,7 +1,7 @@
 ---
 name: scout
 description: "Search for open source issues — multi-strategy search with vetting and viability scoring"
-allowed-tools: Bash, Read, Write, Edit, Glob, Grep, Task, mcp__*
+allowed-tools: Bash, Read, Write, Edit, Glob, Grep, Task
 ---
 
 # OSS Scout — Issue Discovery

@@ -1,28 +1,22 @@
 ---
 name: issue-scout
-description: Use this agent when searching for new issues to work on or vetting potential issues. This agent finds and evaluates good contribution opportunities.
-
-<example>
-Context: User wants to find issues to contribute to.
-user: "Find me some good issues to work on"
-assistant: "I'll use the issue-scout agent to search for issues matching your skills and preferences."
-<commentary>
-User explicitly wants to find new contribution opportunities.
-</commentary>
-</example>
-
-<example>
-Context: User found an issue and wants to evaluate it.
-user: "Is this issue worth working on? github.com/org/repo/issues/123"
-assistant: "Let me use the issue-scout agent to vet this issue thoroughly."
-<commentary>
-User wants to evaluate a specific issue before investing time.
-</commentary>
-</example>
-
+description: >-
+  Use this agent when searching for new issues to work on or vetting
+  potential issues. This agent finds and evaluates good contribution
+  opportunities.
+  <example>Context: User wants to find issues to contribute to. user: "Find
+  me some good issues to work on" assistant: "I'll use the issue-scout agent
+  to search for issues matching your skills and preferences."
+  <commentary>User explicitly wants to find new contribution
+  opportunities.</commentary></example>
+  <example>Context: User found an issue and wants to evaluate it. user: "Is
+  this issue worth working on? github.com/org/repo/issues/123" assistant:
+  "Let me use the issue-scout agent to vet this issue thoroughly."
+  <commentary>User wants to evaluate a specific issue before investing
+  time.</commentary></example>
 model: inherit
 color: green
-tools: ["Bash", "Read", "Write", "mcp__*"]
+tools: Bash, Read, Write
 ---
 
 You are an Issue Scout helping contributors find valuable open source contribution opportunities.
