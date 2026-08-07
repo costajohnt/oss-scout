@@ -794,6 +794,36 @@ describe("IssueDiscovery", () => {
       expect(strategiesUsed).toContain("maintained");
     });
 
+    it("skips the starred phase when the rate-limit preflight fails (#288)", async () => {
+      // The fallback previously left searchBudget at 19 (>= critical), so no
+      // phase was skipped despite the "conservative budget" warning.
+      vi.mocked(checkRateLimit).mockRejectedValue(
+        Object.assign(new Error("boom"), { status: 500 }),
+      );
+
+      mockFetchIssuesFromKnownRepos.mockResolvedValue({
+        candidates: [makeCandidate("org/merged", "merged_pr")],
+        allReposFailed: false,
+        rateLimitHit: false,
+      });
+
+      const discovery = makeDiscovery({
+        getReposWithMergedPRs: vi.fn(() => ["org/merged"]),
+        getStarredRepos: vi.fn(() => ["org/starred"]),
+      });
+
+      const { strategiesUsed } = await discovery.searchIssues({
+        maxResults: 10,
+        interPhaseDelayMs: 0,
+        broadPhaseDelayMs: 0,
+      });
+
+      expect(strategiesUsed).toContain("merged");
+      expect(strategiesUsed).not.toContain("starred");
+      expect(strategiesUsed).toContain("broad");
+      expect(strategiesUsed).toContain("maintained");
+    });
+
     it("still runs the non-Search phases when the REST Search quota is fully exhausted (#284)", async () => {
       // remaining: 0 used to abort the entire search with zero candidates,
       // even though Phase 0/1 bill the Core bucket and broad/maintained run

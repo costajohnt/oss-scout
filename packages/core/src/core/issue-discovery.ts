@@ -676,9 +676,13 @@ export class IssueDiscovery {
         CRITICAL_BUDGET_THRESHOLD,
         new Date(Date.now() + 60000).toISOString(),
       );
+      // Below the critical threshold so the starred-phase gate actually
+      // skips it — the fallback previously left searchBudget at 19, which
+      // passed the gate and made this log line a lie (#288).
+      searchBudget = CRITICAL_BUDGET_THRESHOLD - 1;
       warn(
         MODULE,
-        "Could not check rate limit — using conservative budget, skipping heavy phases:",
+        "Could not check rate limit — using conservative budget, skipping the starred phase:",
         errorMessage(error),
       );
     }
