@@ -252,6 +252,8 @@ oss-scout config reset                               # reset to defaults
 | `persistence` | enum | local | State storage: local or gist |
 | `preferLanguages` | string[] | [] | Soft-boost ranking for these repo languages (the `--prefer-languages` flag overrides) |
 | `preferRepos` | string[] | [] | Soft-boost ranking for these `owner/repo` slugs (the `--prefer-repos` flag overrides) |
+| `avoidRepos` | string[] | [] | Soft-penalize ranking for these `owner/repo` slugs (the `--avoid-repos` flag overrides). Milder than `excludeRepos`: pushes them down without filtering |
+| `boostIssueTypes` | string[] | [] | Soft-boost ranking for issues whose labels match these types, case-insensitive (the `--boost-issue-types` flag overrides) |
 | `diversityRatio` | number | 0 | Fraction of result slots (0-1) reserved for unboosted candidates (the `--diversity-ratio` flag overrides) |
 | `slmTriageModel` | string | (disabled) | Ollama model id for local SLM pre-triage during vetting (e.g. `gemma4:e4b`); empty disables it |
 | `slmTriageHost` | string | (127.0.0.1:11434) | Override the Ollama HTTP host when it runs on another machine |
@@ -291,7 +293,7 @@ Agents (dispatched automatically by Claude):
   "mcpServers": {
     "oss-scout": {
       "command": "npx",
-      "args": ["@oss-scout/mcp@latest"]
+      "args": ["-y", "@oss-scout/mcp@latest"]
     }
   }
 }
@@ -399,6 +401,8 @@ Search:
     --strategy <s>              Strategies: merged,starred,broad,maintained,all
     --prefer-languages <list>   Soft-boost ranking for matching repo languages
     --prefer-repos <list>       Soft-boost ranking for these owner/repo slugs
+    --avoid-repos <list>        Soft-penalize ranking for these owner/repo slugs
+    --boost-issue-types <list>  Soft-boost ranking for matching label types
     --diversity-ratio <n>       Reserve a fraction (0-1) of slots for unboosted
   features [count]              Feature opportunities in repos with 3+ merged PRs
     --anchor-threshold <n>      Override featuresAnchorThreshold (1-50)
