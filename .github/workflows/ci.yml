@@ -6,6 +6,16 @@ on:
   pull_request:
     branches: [main]
 
+# CI only reads the repo; release-please.yml holds the write grants.
+permissions:
+  contents: read
+
+# Supersede in-flight runs for the same ref (but never cancel main pushes,
+# so every landed commit keeps a complete CI record).
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   ci:
     runs-on: ubuntu-latest
