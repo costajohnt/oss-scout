@@ -975,9 +975,7 @@ describe("IssueVetter", () => {
       ).rejects.toThrow("Bad credentials");
     });
 
-    it("propagates non-rate-limit 403s (SAML, token scope) like 401s (#290)", async () => {
-      // Previously only 401 aborted the batch; a SAML-enforcement 403 was
-      // counted as N per-item transient failures that burned the budget.
+    it("surfaces an auth error when every attempted vet is forbidden (#290/#305)", async () => {
       const samlErr = Object.assign(
         new Error("Resource protected by organization SAML enforcement"),
         { status: 403 },
@@ -993,10 +991,62 @@ describe("IssueVetter", () => {
           [
             "https://github.com/owner/repo/issues/1",
             "https://github.com/owner/repo/issues/2",
+            "https://github.com/owner/repo/issues/3",
+            "https://github.com/owner/repo/issues/4",
+            "https://github.com/owner/repo/issues/5",
           ],
           10,
         ),
       ).rejects.toThrow("SAML enforcement");
+      // Once the first 403 settles, the repo is skipped — at most the first
+      // concurrent wave (MAX_CONCURRENT_VETTING = 3) is attempted, not all 5.
+      expect(
+        (octokit.issues.get as ReturnType<typeof vi.fn>).mock.calls.length,
+      ).toBeLessThanOrEqual(3);
+    });
+
+    it("keeps partial results when a bare 403 is repo-scoped (#305)", async () => {
+      // owner1's org enforces SAML; owner2 vets fine. The batch must return
+      // owner2's candidate instead of discarding everything.
+      const samlErr = Object.assign(
+        new Error("Resource protected by organization SAML enforcement"),
+        { status: 403 },
+      );
+      const goodIssue = {
+        data: {
+          id: 123,
+          html_url: "https://github.com/owner2/repo/issues/9",
+          title: "Fix the bug",
+          body: "1. Steps\n2. Expected\n```js\ncode\n```",
+          comments: 0,
+          labels: [{ name: "bug" }],
+          created_at: "2026-01-01T00:00:00Z",
+          updated_at: "2026-03-01T00:00:00Z",
+        },
+      };
+      const octokit = {
+        issues: {
+          get: vi.fn().mockImplementation(({ owner }: { owner: string }) =>
+            owner === "owner1"
+              ? Promise.reject(samlErr)
+              : Promise.resolve(goodIssue),
+          ),
+        },
+        graphql: vi.fn().mockResolvedValue({}),
+      } as unknown as Octokit;
+
+      const stateReader = makeStubStateReader();
+      const vetter = new IssueVetter(octokit, stateReader);
+      const result = await vetter.vetIssuesParallel(
+        [
+          "https://github.com/owner1/repo/issues/1",
+          "https://github.com/owner2/repo/issues/9",
+        ],
+        10,
+      );
+      expect(result.candidates).toHaveLength(1);
+      expect(result.candidates[0].issue.repo).toBe("owner2/repo");
+      expect(result.allFailed).toBe(false);
     });
 
     it("does NOT abort the batch on a rate-limit 403", async () => {
