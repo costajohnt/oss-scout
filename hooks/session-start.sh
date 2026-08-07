@@ -67,7 +67,9 @@ if [ -n "$CURRENT" ]; then
     # the releases API is publish-date ordered, not version ordered, so
     # take the semver max of the core releases specifically (#146)
     LATEST=$(gh api repos/costajohnt/oss-scout/releases --jq '.[].tag_name' 2>/dev/null | sed -n 's/^core-v//p' | sort -V | tail -1 || echo "")
-    if [ -n "$LATEST" ] && echo "$LATEST" | grep -qE '^[0-9]+\.'; then
+    # Fully anchored: the tag text comes from the releases API, so accept
+    # only a bare semver — nothing after the last number (#316).
+    if [ -n "$LATEST" ] && echo "$LATEST" | grep -qE '^[0-9]+(\.[0-9]+)+$'; then
       touch "$LAST_CHECK"
       # Nag only when the release is strictly newer than the local version;
       # inequality alone nagged users running ahead of the latest release
