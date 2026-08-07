@@ -23,6 +23,8 @@ fi
 
 # Block `git push --force` (without --force-with-lease)
 # Match --force or -f but NOT --force-with-lease
+# This is a guardrail against accidental agent behavior, not a security
+# boundary: wrappers like `command git push -f` or `sh -c '...'` bypass it.
 if echo "$command" | grep -qE 'git\s+push\b' && echo "$command" | grep -qE '(\s--force\b|\s-f\b)' && ! echo "$command" | grep -qE '\s--force-with-lease'; then
   cat <<'EOF'
 {
