@@ -26,6 +26,21 @@ describe("buildCommandScout (#115)", () => {
     });
   });
 
+  it("degrades gist mode to provided when no token is available (#304)", async () => {
+    // Unauthenticated gist bootstrap 401s by design, which crashed
+    // local-only commands (results clear, skip ops) for gist users.
+    const state = ScoutStateSchema.parse({
+      version: 1,
+      preferences: { persistence: "gist" },
+    });
+    await buildCommandScout(state, "");
+    expect(createScoutMock).toHaveBeenCalledWith({
+      githubToken: "",
+      persistence: "provided",
+      initialState: state,
+    });
+  });
+
   it("uses provided mode (local file) when the preference is local", async () => {
     const state = ScoutStateSchema.parse({
       version: 1,
