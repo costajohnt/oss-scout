@@ -132,6 +132,51 @@ describe("SearchBudgetTracker", () => {
     await tracker.waitForBudget(); // must not hang
   });
 
+  describe("reservation (#287)", () => {
+    it("waitForBudget reserves the slot it grants until recordCall lands", async () => {
+      tracker.init(2, new Date(Date.now() + 60_000).toISOString());
+
+      await tracker.waitForBudget();
+      // One of the two external slots is now reserved by the in-flight call.
+      expect(tracker.canAfford(2)).toBe(false);
+      expect(tracker.canAfford(1)).toBe(true);
+
+      tracker.recordCall(); // converts the reservation into a recorded call
+      expect(tracker.canAfford(1)).toBe(true); // 2 - 1 recorded = 1 left
+      expect(tracker.canAfford(2)).toBe(false);
+    });
+
+    it("a second concurrent waiter blocks until the reserved call is recorded", async () => {
+      const { sleep } = await import("./utils.js");
+      vi.mocked(sleep).mockReset();
+      const realNow = Date.now();
+      // External quota of exactly 1: pre-fix, both waiters passed and the
+      // second call overshot into a real 429.
+      tracker.init(1, new Date(realNow + 30_000).toISOString());
+
+      await tracker.waitForBudget(); // first caller claims the only slot
+
+      let sleepCount = 0;
+      vi.mocked(sleep).mockImplementation(async () => {
+        sleepCount++;
+        if (sleepCount === 1) {
+          // First poll: the in-flight call lands, releasing the reservation
+          // but consuming the external quota.
+          tracker.recordCall();
+        } else {
+          // Later waits: advance the clock past the quota reset.
+          vi.spyOn(Date, "now").mockReturnValue(realNow + 31_000);
+        }
+      });
+
+      await tracker.waitForBudget();
+      // The second waiter had to wait (for the in-flight call, then for the
+      // quota reset) instead of sharing the first caller's slot.
+      expect(sleepCount).toBeGreaterThanOrEqual(2);
+      vi.restoreAllMocks();
+    });
+  });
+
   describe("external budget replenishment (#119)", () => {
     it("replenishes once resetAt passes and keeps the diagnostics counter", () => {
       const realNow = Date.now();

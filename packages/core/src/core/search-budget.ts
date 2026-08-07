@@ -44,6 +44,14 @@ export class SearchBudgetTracker {
   private callsSinceReset: number = 0;
 
   /**
+   * Slots handed out by waitForBudget() but not yet recorded. Without this,
+   * concurrent callers (vetting runs 3 tasks) could all pass waitForBudget()
+   * on an effective budget of 1 before any recordCall() landed, overshooting
+   * the external quota into real 429s (#287).
+   */
+  private reservedCalls: number = 0;
+
+  /**
    * Initialize with pre-flight rate limit data from GitHub.
    */
   init(remaining: number, resetAt: string): void {
@@ -52,6 +60,7 @@ export class SearchBudgetTracker {
     this.callTimestamps = [];
     this.totalCalls = 0;
     this.callsSinceReset = 0;
+    this.reservedCalls = 0;
     debug(
       MODULE,
       `Initialized: ${remaining} remaining, resets at ${new Date(this.resetAt).toLocaleTimeString()}`,
@@ -59,9 +68,12 @@ export class SearchBudgetTracker {
   }
 
   /**
-   * Record that a Search API call was just made.
+   * Record that a Search API call was just made. Releases the reservation
+   * taken by the preceding waitForBudget() (every call site pairs them, with
+   * recordCall in a finally).
    */
   recordCall(): void {
+    if (this.reservedCalls > 0) this.reservedCalls--;
     this.callTimestamps.push(Date.now());
     this.totalCalls++;
     this.callsSinceReset++;
@@ -111,9 +123,12 @@ export class SearchBudgetTracker {
   private getEffectiveBudget(): number {
     this.refreshExternalBudget();
     // Use the stricter of: local window limit vs. known remaining quota
-    // minus calls made since the last reset
-    const localBudget = EFFECTIVE_BUDGET - this.callTimestamps.length;
-    const externalBudget = this.knownRemaining - this.callsSinceReset;
+    // minus calls made since the last reset. Outstanding reservations count
+    // against both so concurrent waiters can't share one remaining slot.
+    const localBudget =
+      EFFECTIVE_BUDGET - this.callTimestamps.length - this.reservedCalls;
+    const externalBudget =
+      this.knownRemaining - this.callsSinceReset - this.reservedCalls;
     return Math.max(0, Math.min(localBudget, externalBudget));
   }
 
@@ -126,7 +141,9 @@ export class SearchBudgetTracker {
   }
 
   /**
-   * Wait if necessary to stay within the Search API rate limit.
+   * Wait if necessary to stay within the Search API rate limit, then reserve
+   * one call slot. The reservation is released by the paired recordCall(), so
+   * concurrent callers cannot all claim the same last remaining slot (#287).
    * If the sliding window is at capacity, sleeps until the oldest
    * call ages out of the window.
    */
@@ -137,12 +154,19 @@ export class SearchBudgetTracker {
       this.pruneOldTimestamps();
 
       if (this.getEffectiveBudget() > 0) {
+        this.reservedCalls++;
         return; // Budget available, no wait needed
       }
 
       // Wait until the oldest call in the window ages out
       const oldestInWindow = this.callTimestamps[0];
       if (!oldestInWindow) {
+        if (this.reservedCalls > 0) {
+          // Budget is consumed only by outstanding reservations; their calls
+          // will land shortly. Poll rather than waiting for the quota reset.
+          await sleep(250);
+          continue;
+        }
         // No calls in window — the external quota is exhausted. Wait for
         // GitHub's reset when we know it, otherwise proceed (#119).
         const untilReset = this.resetAt - Date.now();
@@ -154,6 +178,7 @@ export class SearchBudgetTracker {
           await sleep(untilReset + 100);
           continue;
         }
+        this.reservedCalls++;
         return;
       }
       const waitUntil = oldestInWindow + SEARCH_WINDOW_MS;
