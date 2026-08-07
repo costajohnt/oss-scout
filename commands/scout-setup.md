@@ -1,7 +1,7 @@
 ---
 name: scout-setup
 description: Configure OSS Scout preferences for personalized issue discovery
-allowed-tools: Bash, Read, Write
+allowed-tools: Bash(node:*), Bash(gh:*), Bash(npm:*), Bash(cd:*), Read
 ---
 
 # OSS Scout Setup

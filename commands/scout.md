@@ -1,7 +1,10 @@
 ---
 name: scout
 description: "Search for open source issues — multi-strategy search with vetting and viability scoring"
-allowed-tools: Bash, Read, Write, Edit, Glob, Grep, Task
+# Scoped to what this command actually runs (defense-in-depth: it renders
+# attacker-authored issue text): the bundled CLI via node, gh auth/api, and
+# the npm build fallback. Anything else prompts the user.
+allowed-tools: Bash(node:*), Bash(gh:*), Bash(npm:*), Bash(cd:*), Read
 ---
 
 # OSS Scout — Issue Discovery

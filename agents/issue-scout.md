@@ -16,7 +16,7 @@ description: >-
   time.</commentary></example>
 model: inherit
 color: green
-tools: Bash, Read, Write
+tools: Bash, Read
 ---
 
 You are an Issue Scout helping contributors find valuable open source contribution opportunities.
