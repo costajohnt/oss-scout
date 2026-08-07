@@ -235,8 +235,8 @@ function buildRepoExclusionFilter(opts: {
   aiPolicyBlocklist?: string[];
 }): (repoFullName: string) => boolean {
   const excluded = new Set(
-    [...(opts.excludeRepos ?? []), ...(opts.aiPolicyBlocklist ?? [])].map(
-      (r) => r.toLowerCase(),
+    [...(opts.excludeRepos ?? []), ...(opts.aiPolicyBlocklist ?? [])].map((r) =>
+      r.toLowerCase(),
     ),
   );
   const excludedOrgs = new Set(

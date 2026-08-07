@@ -1026,11 +1026,13 @@ describe("IssueVetter", () => {
       };
       const octokit = {
         issues: {
-          get: vi.fn().mockImplementation(({ owner }: { owner: string }) =>
-            owner === "owner1"
-              ? Promise.reject(samlErr)
-              : Promise.resolve(goodIssue),
-          ),
+          get: vi
+            .fn()
+            .mockImplementation(({ owner }: { owner: string }) =>
+              owner === "owner1"
+                ? Promise.reject(samlErr)
+                : Promise.resolve(goodIssue),
+            ),
         },
         graphql: vi.fn().mockResolvedValue({}),
       } as unknown as Octokit;

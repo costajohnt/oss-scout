@@ -1018,8 +1018,8 @@ describe("discoverFeaturesBroad", () => {
     });
 
     const vettedUrls = (
-      (vetter as { vetIssue: ReturnType<typeof vi.fn> }).vetIssue
-    ).mock.calls.map((c: [string]) => c[0]);
+      vetter as { vetIssue: ReturnType<typeof vi.fn> }
+    ).vetIssue.mock.calls.map((c: [string]) => c[0]);
     expect(vettedUrls).toHaveLength(1);
     expect(vettedUrls[0]).toContain("good/repo");
   });
