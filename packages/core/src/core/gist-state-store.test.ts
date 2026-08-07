@@ -784,6 +784,35 @@ describe("mergeStates", () => {
     expect(merged.skippedIssues.find((s) => s.url === url)).toBeDefined();
   });
 
+  it("does not resurrect a resolved PR into openPRs (#303)", () => {
+    // Sync recorded PR A as merged and pruned it from openPRs; the other
+    // side (on-disk copy in local mode, or another machine's gist) still
+    // lists A as open. The union must not bring it back.
+    const url = "https://github.com/a/b/pull/5";
+    const local = makeState({
+      openPRs: [],
+      mergedPRs: [{ url, title: "t", mergedAt: "2026-06-02T00:00:00Z" }],
+    });
+    const remote = makeState({
+      openPRs: [{ url, title: "t", openedAt: "2026-06-01T00:00:00Z" }],
+    });
+
+    const merged = mergeStates(local, remote);
+    expect(merged.openPRs.find((p) => p.url === url)).toBeUndefined();
+    expect(merged.mergedPRs.find((p) => p.url === url)).toBeDefined();
+
+    // Same for closed-without-merge, and symmetric (remote resolved).
+    const local2 = makeState({
+      openPRs: [{ url, title: "t", openedAt: "2026-06-01T00:00:00Z" }],
+    });
+    const remote2 = makeState({
+      openPRs: [],
+      closedPRs: [{ url, title: "t", closedAt: "2026-06-02T00:00:00Z" }],
+    });
+    const merged2 = mergeStates(local2, remote2);
+    expect(merged2.openPRs.find((p) => p.url === url)).toBeUndefined();
+  });
+
   it("drops tombstones with an unparseable removedAt instead of keeping them forever (#292)", () => {
     // A corrupt removedAt never ages past the 90-day TTL and, compared
     // lexically in applyTombstones, would suppress its URL on every merge.

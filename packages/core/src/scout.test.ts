@@ -126,6 +126,28 @@ describe("createScout", () => {
     expect(urls).toContain("https://github.com/o/r/pull/2");
   });
 
+  it("local-mode checkpoint does not resurrect a PR that was just resolved (#303)", async () => {
+    // The on-disk state still lists the PR as open (written before this
+    // process resolved it); the checkpoint merge must not union it back.
+    const url = "https://github.com/o/r/pull/7";
+    localStateStore.current = ScoutStateSchema.parse({
+      version: 1,
+      openPRs: [{ url, title: "t", openedAt: "2026-06-01T00:00:00Z" }],
+    });
+    const scout = await createScout({ githubToken: "test-token" });
+    scout.recordMergedPR({
+      url,
+      title: "t",
+      mergedAt: "2026-06-02T00:00:00Z",
+      repo: "o/r",
+    });
+
+    expect(await scout.checkpoint()).toBe(true);
+    const saved = localStateStore.current as ScoutState;
+    expect(saved.openPRs.find((p) => p.url === url)).toBeUndefined();
+    expect(saved.mergedPRs.find((p) => p.url === url)).toBeDefined();
+  });
+
   it("creates instance with provided state", async () => {
     const state = makeState({
       preferences: {
