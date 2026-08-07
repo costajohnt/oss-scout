@@ -57,7 +57,9 @@ packages/core/src/
 │   ├── preference-fields.ts # Shared config-set field map (CLI + MCP)
 │   ├── search-phases.ts  # Search helpers, caching, batched search
 │   ├── search-budget.ts  # Rate limit management (30 req/min sliding window)
+│   ├── issue-graphql.ts  # GraphQL broad search + batched merged-PR prefetch
 │   ├── repo-health.ts    # Project health checks, CONTRIBUTING.md parsing
+│   ├── probe-repo-file.ts # Cheap existence probes for repo files
 │   ├── category-mapping.ts # Project categories → GitHub topics
 │   ├── github.ts         # Throttled Octokit client
 │   ├── http-cache.ts     # ETag response caching, in-flight deduplication
@@ -68,30 +70,40 @@ packages/core/src/
 │   ├── logger.ts         # Debug/info/warn logger (stderr)
 │   ├── errors.ts         # Error hierarchy + strategy documentation
 │   └── pagination.ts     # Auto-pagination helper
-└── formatters/
-    └── json.ts           # JSON output formatter
+├── formatters/
+│   ├── json.ts           # JSON output formatter (--json envelope)
+│   ├── human.ts          # Human-readable terminal output
+│   └── markdown.ts       # Markdown output (results --markdown; used by action.yml)
+├── e2e/
+│   └── search-flow.test.ts # End-to-end search flow (only Octokit mocked)
+└── eval/                 # Vet eval suite (eval:vet scripts; excluded from dist)
 
 packages/mcp-server/src/
-├── index.ts              # MCP server entry point (stdio transport)
+├── index.ts              # Library entry: createServer wiring (side-effect free)
+├── bin.ts                # Stdio executable entry point
 ├── tools.ts              # 7 tools: search, scout-features, vet, skip, config, config-set, sync
-├── resources.ts          # 3 resources: scout://config, results, scores
-└── tools.test.ts         # Tool registration tests
+└── resources.ts          # 3 resources: scout://config, results, scores
 
 Plugin (repo root):
 ├── commands/scout.md, scout-setup.md
 ├── agents/issue-scout.md, repo-evaluator.md
 ├── skills/oss-search/SKILL.md
-└── .claude-plugin/plugin.json
+├── hooks/                # hooks.json + session-start, git guard, auto-format
+├── .claude-plugin/       # plugin.json, marketplace.json
+├── action.yml            # Composite GitHub Action (scheduled digest issue)
+└── examples/             # Example workflows (weekly digest)
 ```
 
 ## Development Commands
 
 ```bash
 pnpm install              # Install all workspace dependencies
-pnpm test                 # Run all tests (~900 tests across 44 files)
+pnpm -r build             # Build both packages (required before mcp-server tests)
+pnpm test                 # Run all tests (~1,100 tests across ~58 files)
 pnpm run bundle           # Rebuild CLI bundle
 pnpm run lint             # ESLint
 pnpm run format:check     # Prettier check
+pnpm run eval:vet         # Score the vetter against historical outcomes
 pnpm start -- search 5    # Run CLI via tsx (dev mode)
 pnpm start -- search 5 --json --strategy starred  # Test specific strategy
 ```

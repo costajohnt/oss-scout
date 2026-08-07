@@ -8,23 +8,22 @@
   },
   "exports": {
     ".": {
-      "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
     },
     "./types": {
-      "import": "./dist/core/types.js",
-      "types": "./dist/core/types.d.ts"
+      "types": "./dist/core/types.d.ts",
+      "import": "./dist/core/types.js"
     }
   },
   "files": [
     "dist/",
     "!dist/**/*.map",
-    "!dist/core/test-utils.*",
     "!dist/eval/**"
   ],
   "scripts": {
     "build": "tsc",
-    "bundle": "esbuild src/cli.ts --bundle --platform=node --target=node20 --format=cjs --minify --sourcemap --outfile=dist/cli.bundle.cjs",
+    "bundle": "esbuild src/cli.ts --bundle --platform=node --target=node20 --format=cjs --minify --outfile=dist/cli.bundle.cjs",
     "start": "tsx src/cli.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",

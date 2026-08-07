@@ -142,11 +142,28 @@ export class GistStateStore {
     // tombstones in mergeStates keep removals from resurfacing. A fetch
     // failure (not auth/rate-limit, which propagate) degrades to writing the
     // local snapshot, the prior best-effort behavior.
+    //
+    // Known limitation: the Gists API has no conditional update, so this
+    // read-merge-write has a small race window — two machines pushing
+    // near-simultaneously can drop additions made between the loser's fetch
+    // and write (tombstones protect only deletions). Union-merge keeps the
+    // window's blast radius to the most recent additions.
     let toWrite = state;
     try {
       const remote = await this.fetchGistState(this.gistId);
-      if (remote) {
-        toWrite = mergeStates(state, remote);
+      if (remote.kind === "ok") {
+        toWrite = mergeStates(state, remote.state);
+      } else if (remote.kind === "invalid") {
+        // The remote holds content this binary can't validate — possibly a
+        // newer state version or recoverable corruption. Overwriting would
+        // destroy it; mirror the bootstrap guard ("using local cache to
+        // avoid data loss") and report sync failure instead (#286).
+        this.writeCache(state);
+        warn(
+          MODULE,
+          "Remote gist content failed validation — not overwriting it. Changes saved locally; gist sync skipped.",
+        );
+        return false;
       }
     } catch (err) {
       rethrowIfFatal(err);
@@ -200,9 +217,9 @@ export class GistStateStore {
       debug(MODULE, `Trying cached gist ID: ${cachedId}`);
       try {
         const fetched = await this.fetchGistState(cachedId);
-        if (fetched) {
+        if (fetched.kind === "ok") {
           this.gistId = cachedId;
-          const state = this.mergeCacheInto(fetched);
+          const state = this.mergeCacheInto(fetched.state);
           this.writeCache(state);
           return { gistId: cachedId, state, created: false };
         }
@@ -225,8 +242,8 @@ export class GistStateStore {
       this.saveGistId(search.id);
       this.gistId = search.id;
       const fetched = await this.fetchGistState(search.id);
-      if (fetched) {
-        const state = this.mergeCacheInto(fetched);
+      if (fetched.kind === "ok") {
+        const state = this.mergeCacheInto(fetched.state);
         this.writeCache(state);
         return { gistId: search.id, state, created: false };
       }
@@ -286,17 +303,30 @@ export class GistStateStore {
 
   // ── Gist API operations ──────────────────────────────────────────────
 
-  private async fetchGistState(gistId: string): Promise<ScoutState | null> {
+  /**
+   * "missing" (no file/content) and "invalid" (content that fails parse or
+   * schema validation) are distinct outcomes: an invalid remote may be a
+   * corrupted-but-recoverable state or a newer state version written by a
+   * newer binary, so callers must not treat it as "nothing there" and
+   * overwrite it (#286).
+   */
+  private async fetchGistState(
+    gistId: string,
+  ): Promise<
+    | { kind: "ok"; state: ScoutState }
+    | { kind: "missing" }
+    | { kind: "invalid" }
+  > {
     const { data } = await this.octokit.gists.get({ gist_id: gistId });
     const file = data.files?.[GIST_FILENAME];
-    if (!file?.content) return null;
+    if (!file?.content) return { kind: "missing" };
 
     try {
       const parsed = JSON.parse(file.content);
-      return parseScoutState(parsed);
+      return { kind: "ok", state: parseScoutState(parsed) };
     } catch (err) {
       warn(MODULE, `Gist content failed validation: ${errorMessage(err)}`);
-      return null;
+      return { kind: "invalid" };
     }
   }
 
@@ -421,8 +451,11 @@ function mergeTombstones(local: Tombstone[], remote: Tombstone[]): Tombstone[] {
     if (!existing || t.removedAt > existing.removedAt) byUrl.set(t.url, t);
   }
   return [...byUrl.values()].filter((t) => {
+    // An unparseable removedAt is dropped: keeping it (the old behavior)
+    // made it immortal — it never aged past the TTL and, compared lexically
+    // in applyTombstones, suppressed its URL on every merge forever (#292).
     const ts = new Date(t.removedAt).getTime();
-    return !Number.isFinite(ts) || ts >= cutoff;
+    return Number.isFinite(ts) && ts >= cutoff;
   });
 }
 
@@ -543,7 +576,12 @@ function mergeRepoScores(
   local: Record<string, RepoScore>,
   remote: Record<string, RepoScore>,
 ): Record<string, RepoScore> {
-  const merged: Record<string, RepoScore> = { ...local };
+  // Null prototype: repo names are parsed record keys, so a "__proto__" key
+  // must land as an own property, not a prototype assignment.
+  const merged: Record<string, RepoScore> = Object.assign(
+    Object.create(null),
+    local,
+  );
   for (const [repo, remoteScore] of Object.entries(remote)) {
     const localScore = merged[repo];
     if (!localScore) {

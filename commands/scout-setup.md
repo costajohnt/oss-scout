@@ -1,7 +1,7 @@
 ---
 name: scout-setup
 description: Configure OSS Scout preferences for personalized issue discovery
-allowed-tools: Bash, Read, Write, mcp__*
+allowed-tools: Bash(node:*), Bash(gh:*), Bash(npm:*), Bash(cd:*), Read
 ---
 
 # OSS Scout Setup
@@ -12,13 +12,13 @@ Customize your OSS Scout preferences. This is **optional** — the tool works ou
 
 ```bash
 if [ ! -f "${CLAUDE_PLUGIN_ROOT}/packages/core/dist/cli.bundle.cjs" ]; then
-  if ! BUILD_LOG=$(cd "${CLAUDE_PLUGIN_ROOT}/packages/core" && npm install --silent 2>&1 && npm run bundle --silent 2>&1); then
+  if ! BUILD_LOG=$(cd "${CLAUDE_PLUGIN_ROOT}/packages/core" && npm install --ignore-scripts --silent 2>&1 && npm run bundle --silent 2>&1); then
     echo "BUILD_FAILED"; echo "$BUILD_LOG" | tail -5; exit 1
   fi
 fi
 ```
 
-**If output starts with `BUILD_FAILED`**: Tell the user the CLI build failed and show the error lines. Suggest: `cd ${CLAUDE_PLUGIN_ROOT}/packages/core && npm install && npm run bundle`. Common causes: missing Node.js 20+, stale `node_modules`.
+**If output starts with `BUILD_FAILED`**: Tell the user the CLI build failed and show the error lines. Suggest: `cd ${CLAUDE_PLUGIN_ROOT}/packages/core && npm install --ignore-scripts && npm run bundle`. Common causes: missing Node.js 20+, stale `node_modules`.
 
 ## Step 1: Check Prerequisites
 

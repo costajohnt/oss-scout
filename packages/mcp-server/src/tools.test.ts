@@ -250,6 +250,16 @@ describe("registerTools", () => {
       expect(scout.checkpoint).toHaveBeenCalled();
     });
 
+    it("returns a readable error for an invalid strategy, not a raw ZodError (#295)", async () => {
+      const handler = getToolHandler(server, "search");
+      const result = await handler({ strategies: "broad,bogus" }, {});
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('Invalid strategy "bogus"');
+      expect(result.content[0].text).toContain("merged");
+      expect(scout.search).not.toHaveBeenCalled();
+    });
+
     it("returns isError on failure", async () => {
       const errorScout = createMockScout({
         search: vi.fn().mockRejectedValue(new Error("API rate limited")),

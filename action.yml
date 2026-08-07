@@ -47,27 +47,36 @@ runs:
   using: "composite"
   steps:
     - name: Set up Node
-      uses: actions/setup-node@v4
+      uses: actions/setup-node@v6
       with:
         node-version: "20"
 
+    # Inputs are passed through env and referenced as "$VAR" rather than
+    # interpolated into the scripts, so a caller wiring event-derived data
+    # (e.g. an issue title) into an input can't inject shell.
     - name: Bootstrap and search
       shell: bash
       env:
         GITHUB_TOKEN: ${{ inputs.search-token }}
+        SCOUT_VERSION: ${{ inputs.version }}
+        SCOUT_USERNAME: ${{ inputs.github-username }}
+        SCOUT_MAX_RESULTS: ${{ inputs.max-results }}
+        SCOUT_STRATEGY: ${{ inputs.strategy }}
       run: |
         set -euo pipefail
-        PKG="@oss-scout/core@${{ inputs.version }}"
-        npx -y "$PKG" config set githubUsername "${{ inputs.github-username }}"
+        PKG="@oss-scout/core@${SCOUT_VERSION}"
+        npx -y "$PKG" config set githubUsername "$SCOUT_USERNAME"
         # Bootstrap is best-effort: a repo-scoped token may not see full history.
         npx -y "$PKG" bootstrap || echo "bootstrap skipped (limited token scope)"
-        npx -y "$PKG" search "${{ inputs.max-results }}" --strategy "${{ inputs.strategy }}" > /dev/null
+        npx -y "$PKG" search "$SCOUT_MAX_RESULTS" --strategy "$SCOUT_STRATEGY" > /dev/null
 
     - name: Render digest
       shell: bash
+      env:
+        SCOUT_VERSION: ${{ inputs.version }}
       run: |
         set -euo pipefail
-        PKG="@oss-scout/core@${{ inputs.version }}"
+        PKG="@oss-scout/core@${SCOUT_VERSION}"
         npx -y "$PKG" results --markdown > digest.md
         {
           echo ""
@@ -79,20 +88,29 @@ runs:
       env:
         GH_TOKEN: ${{ inputs.issue-token }}
         GH_REPO: ${{ github.repository }}
+        SCOUT_ISSUE_TITLE: ${{ inputs.issue-title }}
+        SCOUT_ISSUE_LABEL: ${{ inputs.issue-label }}
       run: |
         set -euo pipefail
-        # Ensure the label exists (ignore "already exists").
-        gh label create "${{ inputs.issue-label }}" --color ededed \
-          --description "oss-scout scheduled digest" 2>/dev/null || true
+        # Ensure the label exists, tolerating only "already exists" — a
+        # permission failure here would otherwise surface confusingly at the
+        # gh issue step below.
+        if ! create_err=$(gh label create "$SCOUT_ISSUE_LABEL" --color ededed \
+          --description "oss-scout scheduled digest" 2>&1); then
+          if ! grep -qi "already exists" <<<"$create_err"; then
+            echo "$create_err" >&2
+            exit 1
+          fi
+        fi
 
-        existing=$(gh issue list --label "${{ inputs.issue-label }}" --state open \
+        existing=$(gh issue list --label "$SCOUT_ISSUE_LABEL" --state open \
           --json number --jq '.[0].number // empty')
 
         if [ -n "$existing" ]; then
           gh issue edit "$existing" --body-file digest.md
           echo "Updated digest issue #$existing"
         else
-          gh issue create --title "${{ inputs.issue-title }}" \
-            --label "${{ inputs.issue-label }}" --body-file digest.md
+          gh issue create --title "$SCOUT_ISSUE_TITLE" \
+            --label "$SCOUT_ISSUE_LABEL" --body-file digest.md
           echo "Created a new digest issue"
         fi

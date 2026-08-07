@@ -794,6 +794,75 @@ describe("IssueDiscovery", () => {
       expect(strategiesUsed).toContain("maintained");
     });
 
+    it("skips the starred phase when the rate-limit preflight fails (#288)", async () => {
+      // The fallback previously left searchBudget at 19 (>= critical), so no
+      // phase was skipped despite the "conservative budget" warning.
+      vi.mocked(checkRateLimit).mockRejectedValue(
+        Object.assign(new Error("boom"), { status: 500 }),
+      );
+
+      mockFetchIssuesFromKnownRepos.mockResolvedValue({
+        candidates: [makeCandidate("org/merged", "merged_pr")],
+        allReposFailed: false,
+        rateLimitHit: false,
+      });
+
+      const discovery = makeDiscovery({
+        getReposWithMergedPRs: vi.fn(() => ["org/merged"]),
+        getStarredRepos: vi.fn(() => ["org/starred"]),
+      });
+
+      const { strategiesUsed } = await discovery.searchIssues({
+        maxResults: 10,
+        interPhaseDelayMs: 0,
+        broadPhaseDelayMs: 0,
+      });
+
+      expect(strategiesUsed).toContain("merged");
+      expect(strategiesUsed).not.toContain("starred");
+      expect(strategiesUsed).toContain("broad");
+      expect(strategiesUsed).toContain("maintained");
+    });
+
+    it("still runs the non-Search phases when the REST Search quota is fully exhausted (#284)", async () => {
+      // remaining: 0 used to abort the entire search with zero candidates,
+      // even though Phase 0/1 bill the Core bucket and broad/maintained run
+      // on GraphQL. Only the starred phase should be skipped.
+      vi.mocked(checkRateLimit).mockResolvedValue({
+        remaining: 0,
+        limit: 30,
+        resetAt: new Date(Date.now() + 60000).toISOString(),
+      });
+
+      mockFetchIssuesFromKnownRepos.mockResolvedValue({
+        candidates: [makeCandidate("org/merged", "merged_pr")],
+        allReposFailed: false,
+        rateLimitHit: false,
+      });
+
+      const discovery = makeDiscovery({
+        getReposWithMergedPRs: vi.fn(() => ["org/merged"]),
+        getStarredRepos: vi.fn(() => ["org/starred"]),
+      });
+
+      const { candidates, strategiesUsed } = await discovery.searchIssues({
+        maxResults: 10,
+        interPhaseDelayMs: 0,
+        broadPhaseDelayMs: 0,
+      });
+
+      expect(candidates.length).toBeGreaterThan(0);
+      expect(strategiesUsed).toContain("merged");
+      expect(strategiesUsed).not.toContain("starred");
+      expect(strategiesUsed).toContain("broad");
+      expect(strategiesUsed).toContain("maintained");
+      // The end-of-run summary replaces the initial exhaustion warning with
+      // the fuller explanation of what was skipped.
+      expect(discovery.rateLimitWarning).toMatch(
+        /starred-repo phase was skipped/i,
+      );
+    });
+
     it("still runs Phases 2 and 3 when REST budget is low (<20) since they use GraphQL", async () => {
       // Broad/maintained now bill the GraphQL points bucket, not the REST
       // Search bucket, so a low REST budget must NOT gate them off anymore.
@@ -961,6 +1030,25 @@ describe("IssueDiscovery", () => {
   });
 
   describe("searchIssues — filtering", () => {
+    it("filterIssues excludes issues with an unparseable updated_at (#289)", async () => {
+      // The REST adapters map a missing timestamp to "", whose NaN age used
+      // to bypass the maxAgeDays comparison (NaN > n is false).
+      const items: GitHubSearchItem[] = [
+        {
+          html_url: "https://github.com/some/repo/issues/1",
+          repository_url: "https://api.github.com/repos/some/repo",
+          updated_at: "",
+        },
+      ];
+      mockSearchAcrossLanguagesAndLabels.mockResolvedValue(items);
+
+      const discovery = makeDiscovery();
+
+      await expect(discovery.searchIssues({ maxResults: 5 })).rejects.toThrow(
+        "No issue candidates found",
+      );
+    });
+
     it("filterIssues excludes repos in excludeRepos", async () => {
       const items: GitHubSearchItem[] = [
         {

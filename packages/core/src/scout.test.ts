@@ -94,6 +94,38 @@ describe("createScout", () => {
     expect(saved.mergedPRs).toHaveLength(1);
   });
 
+  it("local-mode checkpoint merges concurrent on-disk changes instead of clobbering them (#294)", async () => {
+    // A long-lived scout (the MCP server) checkpoints days after boot; any
+    // state.json change the CLI made in between must survive the write.
+    const scout = await createScout({ githubToken: "test-token" });
+    scout.recordMergedPR({
+      url: "https://github.com/o/r/pull/1",
+      title: "from scout",
+      mergedAt: "2026-01-01T00:00:00Z",
+      repo: "o/r",
+    });
+
+    // Simulate the CLI writing a different merged PR to disk after the
+    // scout booted.
+    localStateStore.current = ScoutStateSchema.parse({
+      version: 1,
+      mergedPRs: [
+        {
+          url: "https://github.com/o/r/pull/2",
+          title: "from CLI",
+          mergedAt: "2026-01-02T00:00:00Z",
+          repo: "o/r",
+        },
+      ],
+    });
+
+    expect(await scout.checkpoint()).toBe(true);
+    const saved = localStateStore.current as ScoutState;
+    const urls = saved.mergedPRs.map((p) => p.url);
+    expect(urls).toContain("https://github.com/o/r/pull/1");
+    expect(urls).toContain("https://github.com/o/r/pull/2");
+  });
+
   it("creates instance with provided state", async () => {
     const state = makeState({
       preferences: {

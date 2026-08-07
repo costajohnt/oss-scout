@@ -30,6 +30,12 @@ function withPersistWarning<T extends object>(payload: T, persisted: boolean) {
   return persisted ? payload : { ...payload, persistWarning: PERSIST_WARNING };
 }
 
+/**
+ * Rejects when `ms` elapses, but does NOT cancel the underlying work — the
+ * scout call keeps running (consuming API budget and mutating scout state)
+ * after the tool has returned its timeout error. Acceptable for a local
+ * stdio server; revisit with AbortSignal threading if it ever matters (#295).
+ */
 function withTimeout<T>(
   promise: Promise<T>,
   ms: number = TOOL_TIMEOUT_MS,
@@ -51,8 +57,11 @@ export function registerTools(server: McpServer, scout: OssScout): void {
     {
       maxResults: z
         .number()
+        .int()
+        .min(1)
+        .max(50)
         .optional()
-        .describe("Maximum number of results to return (default 10)"),
+        .describe("Maximum number of results to return (1-50, default 10)"),
       strategies: z
         .string()
         .optional()
@@ -102,10 +111,19 @@ export function registerTools(server: McpServer, scout: OssScout): void {
       diversityRatio,
     }) => {
       try {
+        // Validate each CSV entry with a readable error instead of letting a
+        // raw ZodError string reach the model (#295).
         const parsedStrategies = strategies
-          ? strategies
-              .split(",")
-              .map((s) => SearchStrategySchema.parse(s.trim()))
+          ? strategies.split(",").map((s) => {
+              const trimmed = s.trim();
+              const parsed = SearchStrategySchema.safeParse(trimmed);
+              if (!parsed.success) {
+                throw new Error(
+                  `Invalid strategy "${trimmed}". Valid strategies: ${SearchStrategySchema.options.join(", ")}`,
+                );
+              }
+              return parsed.data;
+            })
           : undefined;
 
         const result = await withTimeout(
@@ -155,8 +173,11 @@ export function registerTools(server: McpServer, scout: OssScout): void {
     {
       maxResults: z
         .number()
+        .int()
+        .min(1)
+        .max(50)
         .optional()
-        .describe("Maximum number of results to return (default 10)"),
+        .describe("Maximum number of results to return (1-50, default 10)"),
       anchorThreshold: z
         .number()
         .int()
@@ -315,6 +336,9 @@ export function registerTools(server: McpServer, scout: OssScout): void {
         }
 
         if (action === "remove") {
+          // Deliberately no URL validation, matching the CLI's runSkipRemove:
+          // entries stored before skip-add validation existed may be junk,
+          // and exact-match removal is the only way to clean them up.
           const wasPresent = scout
             .getSkippedIssues()
             .some((s) => s.url === issueUrl);

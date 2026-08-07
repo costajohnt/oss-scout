@@ -11,14 +11,20 @@ set -uo pipefail
 
 warn_and_exit() {
   local msg="$1"
+  # The message can carry formatter stderr and repo paths — repo-influenced
+  # text — so JSON-escape it (same jq pattern as session-start.sh) instead of
+  # splicing it into the decision JSON raw. jq is guaranteed here: every call
+  # site is after the jq availability check below.
+  local escaped
+  escaped=$(printf '%s' "Auto-format hook: ${msg}" | jq -Rrs '@json | .[1:-1]')
   cat <<WARN_EOF
 {
   "hookSpecificOutput": {
     "hookEventName": "PreToolUse",
     "permissionDecision": "allow",
-    "permissionDecisionReason": "Auto-format hook: ${msg}"
+    "permissionDecisionReason": "${escaped}"
   },
-  "systemMessage": "Auto-format hook: ${msg}"
+  "systemMessage": "${escaped}"
 }
 WARN_EOF
   exit 0

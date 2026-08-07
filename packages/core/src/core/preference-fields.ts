@@ -17,6 +17,7 @@ import {
 } from "./schemas.js";
 import type { ScoutPreferences } from "./schemas.js";
 import { ValidationError } from "./errors.js";
+import { assertValidTriageHost } from "./slm-triage.js";
 
 export type FieldConfig =
   | { type: "array" | "number" | "float" | "boolean" | "string" }
@@ -171,6 +172,10 @@ export function applyPreferenceField(
 
   switch (field.type) {
     case "string":
+      // Issue text is POSTed to slmTriageHost during vetting, so it must
+      // stay a local/private address (#300). Validated here (not in the
+      // schema) so states persisted before this rule still parse.
+      if (key === "slmTriageHost") assertValidTriageHost(value);
       prefs[key] = value;
       break;
 

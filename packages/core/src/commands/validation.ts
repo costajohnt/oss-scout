@@ -20,6 +20,19 @@ export function validateGitHubUrl(
   );
 }
 
+/**
+ * Parse a strictly-decimal integer CLI argument. Bare parseInt accepts
+ * trailing garbage ("50O" → 50), silently running with a different value
+ * than the user typed (#291).
+ */
+export function parseStrictInt(value: string, label: string): number {
+  const trimmed = value.trim();
+  if (!/^\d+$/.test(trimmed)) {
+    throw new ValidationError(`${label} must be an integer (got "${value}")`);
+  }
+  return parseInt(trimmed, 10);
+}
+
 export function validateUrl(url: string): string {
   if (url.length > MAX_URL_LENGTH) {
     throw new ValidationError(

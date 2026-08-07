@@ -11,6 +11,11 @@ import type { SyncResult } from "../core/types.js";
 export async function runSync(options?: {
   state?: ScoutState;
 }): Promise<SyncResult> {
-  // syncOpenPRs checkpoints itself, so withScout doesn't need to persist.
-  return withScout(options?.state, (scout) => scout.syncOpenPRs());
+  // syncOpenPRs checkpoints itself, but in the CLI's non-gist mode the scout
+  // is built with `persistence: "provided"`, where checkpoint() is a no-op —
+  // only withScout's persist epilogue writes ~/.oss-scout/state.json. Without
+  // it, sync reported success while discarding every update (#275).
+  return withScout(options?.state, (scout) => scout.syncOpenPRs(), {
+    persist: true,
+  });
 }

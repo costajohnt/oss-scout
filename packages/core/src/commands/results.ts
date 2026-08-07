@@ -2,9 +2,10 @@
  * Results command — display and manage saved search results.
  */
 
-import { loadLocalState, saveLocalState } from "../core/local-state.js";
+import { loadLocalState } from "../core/local-state.js";
 import type { SavedCandidate } from "../core/schemas.js";
 import { ValidationError } from "../core/errors.js";
+import { withScout } from "./with-scout.js";
 
 export interface ResultsOptions {
   json?: boolean;
@@ -49,8 +50,18 @@ export async function runResults(
   });
 }
 
+/**
+ * Clear all saved results via the scout so deletion tombstones are recorded
+ * (#117). Writing an empty list straight to the local file skipped the
+ * tombstones, and the next gist merge (union by URL) resurrected every
+ * "cleared" result from the remote copy (#276). Mirrors runSkipClear.
+ */
 export async function runResultsClear(): Promise<void> {
-  const state = loadLocalState();
-  state.savedResults = [];
-  saveLocalState(state);
+  await withScout(
+    undefined,
+    (scout) => {
+      scout.clearResults();
+    },
+    { requireToken: false, persist: true },
+  );
 }

@@ -503,6 +503,66 @@ describe("GistStateStore", () => {
       expect(update).not.toHaveBeenCalled();
     });
 
+    it("does not overwrite a remote whose content fails validation (#286)", async () => {
+      // The remote may hold a newer state version or recoverable corruption;
+      // push must fail (keeping the local cache) rather than clobber it.
+      const goodState = makeState();
+      const update = vi.fn().mockResolvedValue({ data: { id: "gist-1" } });
+      const get = vi
+        .fn()
+        // Bootstrap sees valid content so the store binds to gist-1...
+        .mockResolvedValueOnce(gistResponse(goodState, "gist-1"))
+        // ...but by push time the remote no longer parses.
+        .mockResolvedValue({
+          data: {
+            id: "gist-1",
+            files: { "state.json": { content: "{ not valid json" } },
+          },
+        });
+      const octokit = makeOctokit({
+        list: vi.fn().mockResolvedValue({
+          data: [{ id: "gist-1", description: "oss-scout-state" }],
+        }),
+        get,
+        update,
+      });
+
+      const store = new GistStateStore(octokit);
+      await store.bootstrap();
+
+      const localState = makeState({
+        preferences: { githubUsername: "local-only" },
+      });
+      const ok = await store.push(localState);
+
+      expect(ok).toBe(false);
+      expect(update).not.toHaveBeenCalled();
+      // Local cache still captured the change.
+      const cached = JSON.parse(
+        fs.readFileSync(path.join(tempDir, "state-cache.json"), "utf-8"),
+      );
+      expect(cached.preferences.githubUsername).toBe("local-only");
+    });
+
+    it("still pushes when the remote gist has no state file yet (missing ≠ invalid, #286)", async () => {
+      const update = vi.fn().mockResolvedValue({ data: { id: "gist-1" } });
+      const octokit = makeOctokit({
+        list: vi.fn().mockResolvedValue({ data: [] }),
+        create: vi.fn().mockResolvedValue({ data: { id: "gist-1" } }),
+        get: vi.fn().mockResolvedValue({
+          data: { id: "gist-1", files: {} },
+        }),
+        update,
+      });
+
+      const store = new GistStateStore(octokit);
+      await store.bootstrap();
+
+      const ok = await store.push(makeState());
+      expect(ok).toBe(true);
+      expect(update).toHaveBeenCalled();
+    });
+
     it("merges the concurrent remote state before writing, not last-writer-wins (#117)", async () => {
       // A second machine pushed a merged PR the local copy never saw
       const remoteState = makeState({
@@ -722,6 +782,35 @@ describe("mergeStates", () => {
 
     const merged = mergeStates(local, remote);
     expect(merged.skippedIssues.find((s) => s.url === url)).toBeDefined();
+  });
+
+  it("drops tombstones with an unparseable removedAt instead of keeping them forever (#292)", () => {
+    // A corrupt removedAt never ages past the 90-day TTL and, compared
+    // lexically in applyTombstones, would suppress its URL on every merge.
+    const url = "https://github.com/a/b/issues/9";
+    const local = makeState({
+      tombstones: [{ url, removedAt: "zzz-not-a-date" }],
+    });
+    const remote = makeState({
+      savedResults: [
+        {
+          issueUrl: url,
+          repo: "a/b",
+          number: 9,
+          title: "t",
+          labels: [],
+          recommendation: "approve" as const,
+          viabilityScore: 80,
+          searchPriority: "normal",
+          firstSeenAt: "2026-06-01T00:00:00Z",
+          lastSeenAt: "2026-06-01T00:00:00Z",
+          lastScore: 80,
+        },
+      ],
+    });
+
+    const merged = mergeStates(local, remote);
+    expect(merged.tombstones.find((t) => t.url === url)).toBeUndefined();
   });
 
   it("does not resurrect a skipped URL into saved results from remote (#117)", () => {

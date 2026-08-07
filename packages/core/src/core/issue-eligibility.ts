@@ -330,6 +330,22 @@ export async function checkNotClaimed(
       recentComments.push(...response.data);
     }
 
+    // commentCount comes from a prefetch that may be minutes old. If the
+    // computed last page came back full, comments may have crossed a page
+    // boundary since — exactly the busy issues where fresh claims land — so
+    // fetch one more page for the true tail (#293).
+    const lastFetched = recentComments.length % PER_PAGE;
+    if (recentComments.length > 0 && lastFetched === 0) {
+      const response = await octokit.issues.listComments({
+        owner,
+        repo,
+        issue_number: issueNumber,
+        per_page: PER_PAGE,
+        page: lastPage + 1,
+      });
+      recentComments.push(...response.data);
+    }
+
     for (const comment of recentComments) {
       if (commentClaimsIssue(comment.body || "")) {
         return { passed: false };

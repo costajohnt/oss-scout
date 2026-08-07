@@ -1,5 +1,5 @@
 ---
-name: OSS Issue Search Best Practices
+name: oss-search
 description: This skill should be used when searching for open source issues, vetting contributions, interpreting viability scores, or planning a search strategy. Covers multi-strategy search, vetting workflow, and score interpretation.
 version: 1.1.0
 ---

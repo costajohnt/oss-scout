@@ -18,6 +18,17 @@ vi.mock("../core/local-state.js", () => {
   };
 });
 
+// runResultsClear goes through withScout (tombstones, #276); keep token
+// discovery out of the tests so they never shell out to `gh auth token`.
+vi.mock("../core/utils.js", async (importOriginal) => {
+  const actual = await importOriginal<object>();
+  return {
+    ...actual,
+    requireGitHubToken: () => "fake-token",
+    getGitHubToken: () => "fake-token",
+  };
+});
+
 // Import after mock setup
 const { runResults, runResultsClear } = await import("./results.js");
 
@@ -168,6 +179,22 @@ describe("results command", () => {
 
       const updated = await getMockState();
       expect(updated.savedResults).toEqual([]);
+    });
+
+    it("records deletion tombstones so a gist merge cannot resurrect cleared results (#276)", async () => {
+      const state = ScoutStateSchema.parse({ version: 1 });
+      state.savedResults = [
+        makeSavedCandidate({ issueUrl: "https://github.com/a/b/issues/1" }),
+        makeSavedCandidate({ issueUrl: "https://github.com/c/d/issues/2" }),
+      ];
+      await setMockState(state);
+
+      await runResultsClear();
+
+      const updated = await getMockState();
+      const tombstoned = (updated.tombstones ?? []).map((t: any) => t.url);
+      expect(tombstoned).toContain("https://github.com/a/b/issues/1");
+      expect(tombstoned).toContain("https://github.com/c/d/issues/2");
     });
 
     it("is a no-op when already empty", async () => {

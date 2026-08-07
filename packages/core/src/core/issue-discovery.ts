@@ -136,7 +136,12 @@ function buildIssueFilter(
       if (config.aiBlocklisted.has(repoLower)) return false;
       if (config.lowScoringRepos.has(repoLower)) return false;
       if (config.skippedUrls.has(item.html_url)) return false;
+      // An unparseable updated_at (the adapters map a missing timestamp to
+      // "") makes daysBetween return NaN, and NaN > maxAgeDays is false — so
+      // undated issues sailed through the staleness filter (#289). Treat an
+      // unknown age as failing it.
       const updatedAt = new Date(item.updated_at);
+      if (Number.isNaN(updatedAt.getTime())) return false;
       const ageDays = daysBetween(updatedAt, config.now);
       if (ageDays > config.maxAgeDays) return false;
       if (!config.includeDocIssues && isDocOnlyIssue(item)) return false;
@@ -646,7 +651,10 @@ export class IssueDiscovery {
     // only this search's GraphQL query spend.
     resetGraphQLSearchQueryCount();
     const tracker = this.budgetTracker;
-    let searchBudget = LOW_BUDGET_THRESHOLD - 1;
+    // Fallback below the critical threshold so a failed preflight actually
+    // skips the starred phase — the old fallback of 19 passed the gate and
+    // made the "conservative budget" warning a lie (#288).
+    let searchBudget = CRITICAL_BUDGET_THRESHOLD - 1;
     try {
       const rateLimit = await checkRateLimit(this.githubToken);
       searchBudget = rateLimit.remaining;
@@ -678,15 +686,20 @@ export class IssueDiscovery {
       );
       warn(
         MODULE,
-        "Could not check rate limit — using conservative budget, skipping heavy phases:",
+        "Could not check rate limit — using conservative budget, skipping the starred phase:",
         errorMessage(error),
       );
     }
 
     if (searchBudget <= 0) {
+      // An exhausted REST Search bucket is no reason to abort the run:
+      // Phase 0/1 read the much larger Core API bucket and broad/maintained
+      // run on GraphQL (#284). The starred-phase gate below already skips the
+      // one budget-gated phase, and the tracker paces the remaining
+      // merge-stat search calls until the quota resets.
       this.rateLimitWarning =
-        "GitHub search API quota exhausted. Try again after the rate limit resets.";
-      return { candidates: [], strategiesUsed: [] };
+        "GitHub search API quota exhausted — skipping the starred phase; other phases don't use it.";
+      warn(MODULE, this.rateLimitWarning);
     }
 
     // Derive search context

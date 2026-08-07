@@ -25,7 +25,7 @@ import {
 import {
   ValidationError,
   errorMessage,
-  getHttpStatusCode,
+  isAuthError,
   isRateLimitError,
 } from "./errors.js";
 import { debug, warn } from "./logger.js";
@@ -854,7 +854,10 @@ export class IssueVetter {
           }
         })
         .catch((error) => {
-          if (getHttpStatusCode(error) === 401) {
+          // Abort on anything resolveErrorCode calls AUTH_REQUIRED — 401 or a
+          // non-rate-limit 403 (SAML, token scope). Retrying the rest of the
+          // batch with the same token can only burn budget (#290).
+          if (isAuthError(error)) {
             firstAuthError ??= error;
             return;
           }
