@@ -784,6 +784,35 @@ describe("mergeStates", () => {
     expect(merged.skippedIssues.find((s) => s.url === url)).toBeDefined();
   });
 
+  it("drops tombstones with an unparseable removedAt instead of keeping them forever (#292)", () => {
+    // A corrupt removedAt never ages past the 90-day TTL and, compared
+    // lexically in applyTombstones, would suppress its URL on every merge.
+    const url = "https://github.com/a/b/issues/9";
+    const local = makeState({
+      tombstones: [{ url, removedAt: "zzz-not-a-date" }],
+    });
+    const remote = makeState({
+      savedResults: [
+        {
+          issueUrl: url,
+          repo: "a/b",
+          number: 9,
+          title: "t",
+          labels: [],
+          recommendation: "approve" as const,
+          viabilityScore: 80,
+          searchPriority: "normal",
+          firstSeenAt: "2026-06-01T00:00:00Z",
+          lastSeenAt: "2026-06-01T00:00:00Z",
+          lastScore: 80,
+        },
+      ],
+    });
+
+    const merged = mergeStates(local, remote);
+    expect(merged.tombstones.find((t) => t.url === url)).toBeUndefined();
+  });
+
   it("does not resurrect a skipped URL into saved results from remote (#117)", () => {
     // Local skipped an issue (which removes it from savedResults). Remote
     // still has it saved. The merge must not let the remote saved copy

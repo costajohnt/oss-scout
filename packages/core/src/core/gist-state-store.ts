@@ -451,8 +451,11 @@ function mergeTombstones(local: Tombstone[], remote: Tombstone[]): Tombstone[] {
     if (!existing || t.removedAt > existing.removedAt) byUrl.set(t.url, t);
   }
   return [...byUrl.values()].filter((t) => {
+    // An unparseable removedAt is dropped: keeping it (the old behavior)
+    // made it immortal — it never aged past the TTL and, compared lexically
+    // in applyTombstones, suppressed its URL on every merge forever (#292).
     const ts = new Date(t.removedAt).getTime();
-    return !Number.isFinite(ts) || ts >= cutoff;
+    return Number.isFinite(ts) && ts >= cutoff;
   });
 }
 
