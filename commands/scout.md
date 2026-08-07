@@ -1,10 +1,13 @@
 ---
 name: scout
 description: "Search for open source issues — multi-strategy search with vetting and viability scoring"
-# Scoped to what this command actually runs (defense-in-depth: it renders
-# attacker-authored issue text): the bundled CLI via node, gh auth/api, and
-# the npm build fallback. Anything else prompts the user.
-allowed-tools: Bash(node:*), Bash(gh:*), Bash(npm:*), Bash(cd:*), Read
+# Bash is deliberately unscoped: the command bodies use env-prefixed
+# invocations (GITHUB_TOKEN=$(gh auth token) node ...) and if/$() compounds
+# that prefix rules like Bash(node:*) never match, so scoping only produced
+# a permission prompt on every step (#306). The reduced surface from #299
+# stands: no Write/Edit/Task/Grep/Glob, and the untrusted-content section
+# below is the primary defense.
+allowed-tools: Bash, Read
 ---
 
 # OSS Scout — Issue Discovery

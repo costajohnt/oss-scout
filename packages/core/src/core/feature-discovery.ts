@@ -18,7 +18,7 @@ import type { IssueCandidate } from "./types.js";
 import type { IssueVetter } from "./issue-vetting.js";
 import { errorMessage, rethrowIfFatal } from "./errors.js";
 import { warn } from "./logger.js";
-import { sleep } from "./utils.js";
+import { sleep, extractRepoFromUrl } from "./utils.js";
 import { fetchRoadmapIssueRefs } from "./roadmap.js";
 import { cachedSearchIssues } from "./search-phases.js";
 
@@ -101,7 +101,11 @@ export function splitByHorizon(
     .filter((c) => c.horizon === "bigger-bet")
     .sort((a, b) => b.viabilityScore - a.viabilityScore);
 
-  const targetQuick = Math.round(count * ratio);
+  // Clamp: the public library API validates nothing, and an out-of-range
+  // ratio made targetBigger negative and the result exceed count (#312).
+  // Same pattern as applyDiversityRatio.
+  const clampedRatio = Math.max(0, Math.min(1, ratio));
+  const targetQuick = Math.round(count * clampedRatio);
   const targetBigger = count - targetQuick;
 
   const quickTaken = Math.min(allQuick.length, targetQuick);
@@ -211,6 +215,39 @@ export interface DiscoverFeaturesOptions {
   anchorThreshold?: number;
   /** Override default split ratio (0.6 = 60% quick wins, 40% bigger bets). */
   splitRatio?: number;
+  /** Repos the user excluded — anchors must honor them like search does (#307). */
+  excludeRepos?: string[];
+  /** Orgs the user excluded (#307). */
+  excludeOrgs?: string[];
+  /** Repos with anti-AI contribution policies (#307). */
+  aiPolicyBlocklist?: string[];
+}
+
+/**
+ * Case-insensitive repo/org exclusion shared by both feature paths (#307).
+ * The search pipeline has always honored excludeRepos/excludeOrgs/
+ * aiPolicyBlocklist; feature discovery previously bypassed all three on the
+ * anchor path and the blocklist on the broad path.
+ */
+function buildRepoExclusionFilter(opts: {
+  excludeRepos?: string[];
+  excludeOrgs?: string[];
+  aiPolicyBlocklist?: string[];
+}): (repoFullName: string) => boolean {
+  const excluded = new Set(
+    [...(opts.excludeRepos ?? []), ...(opts.aiPolicyBlocklist ?? [])].map((r) =>
+      r.toLowerCase(),
+    ),
+  );
+  const excludedOrgs = new Set(
+    (opts.excludeOrgs ?? []).map((o) => o.toLowerCase()),
+  );
+  return (repoFullName: string): boolean => {
+    const lower = repoFullName.toLowerCase();
+    if (excluded.has(lower)) return false;
+    const org = lower.split("/")[0];
+    return !(org && excludedOrgs.has(org));
+  };
 }
 
 interface RawIssueItem {
@@ -308,7 +345,11 @@ async function vetAndClassify(
 export async function discoverFeatures(
   opts: DiscoverFeaturesOptions,
 ): Promise<FeatureSearchResult> {
-  const anchorRepos = resolveAnchorRepos(opts.repoScores, opts.anchorThreshold);
+  const includeRepo = buildRepoExclusionFilter(opts);
+  const anchorRepos = resolveAnchorRepos(
+    opts.repoScores,
+    opts.anchorThreshold,
+  ).filter(includeRepo);
   if (anchorRepos.length === 0) {
     return {
       quickWins: [],
@@ -388,6 +429,8 @@ export interface DiscoverFeaturesBroadOptions {
   languages?: string[];
   excludeRepos?: string[];
   excludeOrgs?: string[];
+  /** Repos with anti-AI contribution policies, filtered post-search (#307). */
+  aiPolicyBlocklist?: string[];
   /** Override default split ratio. */
   splitRatio?: number;
   /** Maximum search results to vet (default 30). */
@@ -505,8 +548,16 @@ export async function discoverFeaturesBroad(
         merged.push(raw);
       }
     }
+    // The queries already carry -repo:/-org: exclusions; the blocklist is
+    // filtered here instead so it can't blow GitHub's query-length/operator
+    // limits, and the post-filter also backstops the query path (#307).
+    const includeRepo = buildRepoExclusionFilter(opts);
     items = merged
       .filter((it) => !it.pull_request && !it.assignee && isFeatureIssue(it))
+      .filter((it) => {
+        const repo = extractRepoFromUrl(it.html_url);
+        return repo === null || includeRepo(repo);
+      })
       .slice(0, maxToVet);
   } catch (err: unknown) {
     rethrowIfFatal(err);

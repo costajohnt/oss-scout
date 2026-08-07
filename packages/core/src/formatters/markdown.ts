@@ -5,9 +5,17 @@
 
 import type { SavedCandidate } from "../core/schemas.js";
 
-/** Escape pipe and newline so a title can't break the markdown table. */
+/**
+ * Escape markdown so an attacker-authored issue title renders as inert text
+ * (#308). The digest is posted as a GitHub issue body by action.yml, so an
+ * unescaped title could plant live links, images, or HTML in the user's
+ * trusted digest. Newlines and pipes also keep the table intact.
+ */
 function cell(value: string): string {
-  return value.replace(/\r?\n/g, " ").replace(/\|/g, "\\|").trim();
+  return value
+    .replace(/\r?\n/g, " ")
+    .replace(/[\\`*_[\]()!<>~|]/g, "\\$&")
+    .trim();
 }
 
 /**
@@ -27,7 +35,11 @@ export function formatResultsMarkdown(results: SavedCandidate[]): string {
   const divider = "| ----- | ---- | ----- | -------------- | ----- |";
   const rows = sorted.map((r) => {
     const issueLink = `[#${r.number}](${r.issueUrl})`;
-    return `| ${r.viabilityScore} | ${cell(r.repo)} | ${issueLink} | ${cell(r.recommendation)} | ${cell(r.title)} |`;
+    // Title rendered as a link to the real issue: GFM does not process
+    // autolinks inside link text, so a bare URL pasted into a title can't
+    // become a clickable phishing link either (#308).
+    const titleLink = `[${cell(r.title)}](${r.issueUrl})`;
+    return `| ${r.viabilityScore} | ${cell(r.repo)} | ${issueLink} | ${cell(r.recommendation)} | ${titleLink} |`;
   });
 
   return [

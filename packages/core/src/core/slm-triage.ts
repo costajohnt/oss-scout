@@ -138,6 +138,10 @@ export function isAllowedTriageHost(raw: string): boolean {
     );
   }
   // Single-label LAN hostnames ("ollama-box") and mDNS .local names.
+  // Known residual (#310): a single-label name can resolve off-host through
+  // a DNS search domain, and .local via a hostile mDNS responder — both
+  // require an attacker who can already write this config (local access),
+  // so they are accepted by design.
   return !host.includes(".") || host.endsWith(".local");
 }
 
@@ -189,6 +193,10 @@ export async function triageWithSLM(
         options: { temperature: 0.1 },
       }),
       signal: AbortSignal.timeout(timeoutMs),
+      // No redirect following: an allowed private host could otherwise
+      // 307/308-redirect the issue-text POST body to a public origin (#310).
+      // Ollama never redirects, so this costs nothing.
+      redirect: "error",
     });
   } catch {
     // Connection refused, timeout, DNS error, etc.

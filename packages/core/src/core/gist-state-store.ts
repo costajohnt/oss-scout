@@ -517,6 +517,23 @@ export function mergeStates(local: ScoutState, remote: ScoutState): ScoutState {
     remotePrefsTs,
   );
 
+  // A resolved PR must never reappear as open. openPRs removals carry no
+  // tombstone, so the plain union resurrected PRs that sync had just
+  // recorded as merged/closed — in local mode this meant openPRs could
+  // never shrink and every sync re-checked every resolved PR forever
+  // (#303). Presence in the merged mergedPRs/closedPRs is authoritative
+  // removal; this also self-heals states corrupted before the fix.
+  const mergedPRsFinal = unionByUrl(local.mergedPRs, remote.mergedPRs);
+  const closedPRsFinal = unionByUrl(local.closedPRs, remote.closedPRs);
+  const resolvedUrls = new Set([
+    ...mergedPRsFinal.map((p) => p.url),
+    ...closedPRsFinal.map((p) => p.url),
+  ]);
+  const openPRsFinal = unionByUrl(
+    local.openPRs ?? [],
+    remote.openPRs ?? [],
+  ).filter((p) => !resolvedUrls.has(p.url));
+
   return {
     ...local,
     ...remote,
@@ -530,9 +547,9 @@ export function mergeStates(local: ScoutState, remote: ScoutState): ScoutState {
       local.starredReposLastFetched,
       remote.starredReposLastFetched,
     ),
-    mergedPRs: unionByUrl(local.mergedPRs, remote.mergedPRs),
-    closedPRs: unionByUrl(local.closedPRs, remote.closedPRs),
-    openPRs: unionByUrl(local.openPRs ?? [], remote.openPRs ?? []),
+    mergedPRs: mergedPRsFinal,
+    closedPRs: closedPRsFinal,
+    openPRs: openPRsFinal,
     savedResults: savedResultsFinal,
     skippedIssues,
     lastSearchAt: pickFresherTimestamp(local.lastSearchAt, remote.lastSearchAt),

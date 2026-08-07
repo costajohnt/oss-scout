@@ -90,6 +90,17 @@ function parseMultiSelect<T extends string>(
 ): T[] {
   if (!input) return [];
   const selected = parseCSV(input);
+  // Say which tokens were dropped instead of silently ignoring a typo —
+  // "smal" quietly meaning "all scopes" was indistinguishable from
+  // success (#314).
+  const unrecognized = selected.filter(
+    (s) => !(options as readonly string[]).includes(s),
+  );
+  if (unrecognized.length > 0) {
+    console.error(
+      `  (ignoring unrecognized value(s): ${unrecognized.join(", ")} — valid: ${options.join(", ")})`,
+    );
+  }
   return selected.filter((s): s is T =>
     (options as readonly string[]).includes(s),
   );
@@ -130,6 +141,13 @@ export async function runSetup(
       : "GitHub username: ";
     const usernameInput = await ask(rl, usernamePrompt);
     const githubUsername = usernameInput || usernameDefault;
+    if (!githubUsername) {
+      // Saving an empty username used to dead-end the very next bootstrap
+      // with "Run `oss-scout setup` first" — a confusing loop (#314).
+      console.error(
+        "  ⚠ No GitHub username set — `oss-scout bootstrap` and personalized search won't work until you run `oss-scout config set githubUsername <login>`.",
+      );
+    }
 
     // Languages
     const defaultLangs = "any (all languages)";
@@ -159,9 +177,12 @@ export async function runSetup(
       ? parseMultiSelect(scopeInput, ALL_SCOPES)
       : [...ALL_SCOPES];
 
-    // Minimum stars
+    // Minimum stars — floor at 0 so a typo like "-5" can't persist (#314).
     const minStarsInput = await ask(rl, "Minimum repo stars [50]: ");
-    const minStars = minStarsInput ? parseInt(minStarsInput, 10) : 50;
+    const minStarsParsed = minStarsInput ? parseInt(minStarsInput, 10) : 50;
+    const minStars = Number.isNaN(minStarsParsed)
+      ? 50
+      : Math.max(0, minStarsParsed);
 
     // Project categories
     const categoryOptions = ALL_CATEGORIES.join(", ");
@@ -191,7 +212,7 @@ export async function runSetup(
       scope: scope.length > 0 ? scope : undefined,
       excludeRepos,
       projectCategories,
-      minStars: isNaN(minStars) ? 50 : minStars,
+      minStars,
       slmTriageModel,
     });
 

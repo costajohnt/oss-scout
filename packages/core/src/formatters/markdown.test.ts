@@ -48,4 +48,33 @@ describe("formatResultsMarkdown (#170)", () => {
     // Exactly the 5 column separators (no extra unescaped pipe from the title).
     expect(row.match(/(?<!\\)\|/g)).toHaveLength(6);
   });
+
+  it("neutralizes markdown injection in attacker-authored titles (#308)", () => {
+    const md = formatResultsMarkdown([
+      candidate({
+        title:
+          "Fix [update your token](https://phish.example) ![](https://evil/p.png) <details>",
+      }),
+    ]);
+    const row = md.split("\n").find((l) => l.includes("[#1]"))!;
+    // Brackets/parens/bang/angle-brackets are escaped, so no injected link,
+    // image, or HTML can render.
+    expect(row).toContain("\\[update your token\\]\\(https://phish.example\\)");
+    expect(row).toContain("\\!\\[\\]");
+    expect(row).toContain("\\<details\\>");
+    expect(row).not.toMatch(/(?<!\\)\[update your token\](?!\\)/);
+  });
+
+  it("renders the title as a link to the real issue (suppresses autolinks)", () => {
+    const md = formatResultsMarkdown([
+      candidate({ title: "See https://evil.example now" }),
+    ]);
+    const row = md.split("\n").find((l) => l.includes("[#1]"))!;
+    // Title text sits inside a link to the real issue URL; GFM does not
+    // autolink inside link text, so the pasted URL stays inert.
+    expect(row).toContain("](https://github.com/owner/repo/issues/1) |");
+    expect(row).toMatch(
+      /\[See https:\/\/evil\.example now\]\(https:\/\/github\.com\/owner\/repo\/issues\/1\)/,
+    );
+  });
 });

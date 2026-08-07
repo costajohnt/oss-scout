@@ -25,6 +25,7 @@ import {
 import {
   ValidationError,
   errorMessage,
+  getHttpStatusCode,
   isAuthError,
   isRateLimitError,
 } from "./errors.js";
@@ -802,6 +803,14 @@ export class IssueVetter {
     // the token is invalid and no other issue will succeed either —
     // continuing to log per-issue warnings buries the actual problem.
     let firstAuthError: unknown = null;
+    // Bare (non-rate-limit) 403s are frequently repo-scoped — SAML-enforced
+    // orgs, fine-grained PATs without a grant for one repo — so they must
+    // not abort the batch and discard good results (#305). Skip further
+    // issues from the forbidden repo; only if every attempted vet was
+    // forbidden do we surface it as an auth failure (dead token).
+    let firstForbiddenError: unknown = null;
+    let forbiddenCount = 0;
+    const forbiddenRepos = new Set<string>();
 
     // Dedup defensively: the pending map is keyed by URL, so a duplicate
     // input would overwrite the in-flight entry and its finally-cleanup
@@ -840,6 +849,12 @@ export class IssueVetter {
     for (const url of uniqueUrls) {
       if (candidates.length >= maxResults) break;
       if (firstAuthError) break; // stop scheduling once auth has failed
+      const parsedUrl = parseGitHubUrl(url);
+      const repoKey = parsedUrl ? `${parsedUrl.owner}/${parsedUrl.repo}` : null;
+      if (repoKey && forbiddenRepos.has(repoKey)) {
+        debug(MODULE, `Skipping ${url}: repo already returned 403`);
+        continue;
+      }
       attemptedCount++;
 
       const core = prefetchFor(url);
@@ -854,11 +869,24 @@ export class IssueVetter {
           }
         })
         .catch((error) => {
-          // Abort on anything resolveErrorCode calls AUTH_REQUIRED — 401 or a
-          // non-rate-limit 403 (SAML, token scope). Retrying the rest of the
-          // batch with the same token can only burn budget (#290).
-          if (isAuthError(error)) {
+          // A 401 is token-global: no other issue can succeed, so stop the
+          // batch (#290).
+          if (getHttpStatusCode(error) === 401) {
             firstAuthError ??= error;
+            return;
+          }
+          // A bare 403 is treated as repo-scoped (#305): skip this repo's
+          // remaining issues but keep vetting the rest of the batch.
+          if (isAuthError(error)) {
+            firstForbiddenError ??= error;
+            forbiddenCount++;
+            failedVettingCount++;
+            if (repoKey) forbiddenRepos.add(repoKey);
+            warn(
+              MODULE,
+              `Access forbidden for ${url} (SAML/token scope?) — skipping this repo:`,
+              errorMessage(error),
+            );
             return;
           }
           failedVettingCount++;
@@ -888,6 +916,17 @@ export class IssueVetter {
         );
       }
       throw firstAuthError;
+    }
+
+    // Every attempted vet was forbidden — that's not repo-scoped, the token
+    // is effectively dead for this search. Surface it as the auth error it
+    // is instead of an empty result (#305).
+    if (
+      firstForbiddenError &&
+      attemptedCount > 0 &&
+      forbiddenCount === attemptedCount
+    ) {
+      throw firstForbiddenError;
     }
 
     const allFailed =

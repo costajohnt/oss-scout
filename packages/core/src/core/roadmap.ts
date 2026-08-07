@@ -79,9 +79,20 @@ export function parseRoadmapIssueRefs(
   // strip out `owner/repo#N` matches first so `#N` in a cross-repo ref to
   // a different repo doesn't leak in as a bare match.
   const fullRefStripPattern = /\b[\w.-]+\/[\w.-]+#\d+\b/gi;
+  // Skip fenced code blocks and inline code spans: `color: #333` in a code
+  // sample is a hex color, not issue 333 (#315). A prose-level 3-digit
+  // color outside code remains indistinguishable — accepted residual.
+  let inFence = false;
   for (const line of content.split("\n")) {
+    if (/^\s*(```|~~~)/.test(line)) {
+      inFence = !inFence;
+      continue;
+    }
+    if (inFence) continue;
     if (/^\s*#+\s/.test(line)) continue;
-    const stripped = line.replace(fullRefStripPattern, "");
+    const stripped = line
+      .replace(fullRefStripPattern, "")
+      .replace(/`[^`]*`/g, "");
     for (const m of stripped.matchAll(/(?:^|[^&\w])#(\d+)\b/g)) {
       const n = Number.parseInt(m[1], 10);
       if (n > 0) refs.add(n);

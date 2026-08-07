@@ -8,6 +8,7 @@
  */
 import type { ScoutState } from "../core/schemas.js";
 import { createScout, type OssScout } from "../scout.js";
+import { warn } from "../core/logger.js";
 
 /**
  * Build a scout for a CLI command from already-loaded local state and a token.
@@ -18,13 +19,26 @@ import { createScout, type OssScout } from "../scout.js";
  *   file fresh as an offline cache.
  * - otherwise → provided-state scout backed by the local file. The command's
  *   `saveLocalState` + `checkpoint()` persist locally.
+ *
+ * Gist mode requires a token: unauthenticated gist bootstrap 401s and that
+ * error propagates by design, which crashed local-only commands (results
+ * clear, skip ops) for gist-preference users running without a token (#304).
+ * With no token, degrade to provided mode — changes land in the local file
+ * and the bootstrap-time merge syncs them to the gist on the next
+ * authenticated command (tombstones included, so deletions propagate too).
  */
 export async function buildCommandScout(
   state: ScoutState,
   token: string,
 ): Promise<OssScout> {
   if (state.preferences.persistence === "gist") {
-    return createScout({ githubToken: token, persistence: "gist" });
+    if (token) {
+      return createScout({ githubToken: token, persistence: "gist" });
+    }
+    warn(
+      "command-scout",
+      "No GitHub token available — changes will be saved locally and synced to the gist on the next authenticated command.",
+    );
   }
   return createScout({
     githubToken: token,

@@ -1,7 +1,9 @@
 ---
 name: scout-setup
 description: Configure OSS Scout preferences for personalized issue discovery
-allowed-tools: Bash(node:*), Bash(gh:*), Bash(npm:*), Bash(cd:*), Read
+# Bash unscoped for the same reason as scout.md (#306): env-prefixed and
+# compound invocations never match Bash(prefix:*) rules.
+allowed-tools: Bash, Read
 ---
 
 # OSS Scout Setup

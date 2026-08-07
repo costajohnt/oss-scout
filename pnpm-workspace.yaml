@@ -16,7 +16,11 @@ overrides:
   # CORS wildcard-with-credentials reflection (4.12.25) plus five later
   # advisories, all patched by 4.12.34.
   hono: '>=4.12.34'
-  # Transitive via @modelcontextprotocol/sdk. Pinned alongside hono.
+  # Transitive via @modelcontextprotocol/sdk. Knowingly pinned BELOW the
+  # current path-traversal advisory (patched only in 2.0.5): forcing 2.x
+  # under an SDK that expects 1.x risks breaking its HTTP transports, and
+  # the vulnerable code is unreachable here — the MCP server is stdio-only
+  # and never loads the hono HTTP adapter (#311). Revisit on SDK bumps.
   '@hono/node-server': '>=1.19.13'
   # Transitive via @modelcontextprotocol/sdk -> ajv. Path traversal, two
   # host-confusion advisories (GHSA-v2hh-gcrm-f6hx, GHSA-4c8g-83qw-93j6,

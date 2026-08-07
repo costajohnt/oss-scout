@@ -269,6 +269,21 @@ describe("splitByHorizon 60/40 split", () => {
     mkCand("b5", 80, "bigger-bet"),
   ];
 
+  it("clamps out-of-range ratios so the result never exceeds count (#312)", () => {
+    const over = splitByHorizon([...quickWinPool, ...biggerBetPool], 10, 1.5);
+    expect(over.quickWins.length + over.biggerBets.length).toBeLessThanOrEqual(
+      10,
+    );
+    // ratio 1.5 clamps to 1: all-quick allocation.
+    expect(over.quickWins).toHaveLength(8);
+    expect(over.biggerBets).toHaveLength(2);
+
+    const under = splitByHorizon([...quickWinPool, ...biggerBetPool], 10, -1);
+    expect(
+      under.quickWins.length + under.biggerBets.length,
+    ).toBeLessThanOrEqual(10);
+  });
+
   it("returns 6 quick + 4 bigger when count=10 and both abundant", () => {
     const out = splitByHorizon([...quickWinPool, ...biggerBetPool], 10);
     expect(out.quickWins).toHaveLength(6);
@@ -338,6 +353,36 @@ describe("discoverFeatures orchestrator", () => {
     expect(result.biggerBets).toEqual([]);
     expect(result.message).toContain("No anchor repos yet");
     expect(octokit.issues.listForRepo).not.toHaveBeenCalled();
+  });
+
+  it("filters anchors against excludeRepos/excludeOrgs/aiPolicyBlocklist (#307)", async () => {
+    const octokit = {
+      issues: {
+        listForRepo: vi.fn().mockResolvedValue({ data: [] }),
+      },
+    } as never;
+    const vetter = { vetIssue: vi.fn() } as never;
+    const result = await discoverFeatures({
+      octokit,
+      vetter,
+      repoScores: mkScores(
+        ["Excluded/Repo", 5],
+        ["blocked/llm", 5],
+        ["badorg/thing", 5],
+        ["good/repo", 5],
+      ),
+      count: 10,
+      excludeRepos: ["excluded/repo"],
+      excludeOrgs: ["badorg"],
+      aiPolicyBlocklist: ["blocked/llm"],
+    });
+    expect(result.anchorRepos).toEqual(["good/repo"]);
+    // Only the surviving anchor was queried.
+    const calls = (
+      octokit.issues.listForRepo as ReturnType<typeof vi.fn>
+    ).mock.calls.map((c: [{ owner: string; repo: string }]) => c[0]);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({ owner: "good", repo: "repo" });
   });
 
   it("returns no-results message when anchors exist but no feature issues found", async () => {
@@ -944,6 +989,39 @@ describe("discoverFeaturesBroad", () => {
     expect(result.biggerBets).toHaveLength(1);
     expect(result.anchorRepos).toEqual([]);
     expect(result.message).toBeNull();
+  });
+
+  it("filters aiPolicyBlocklist repos out of broad results (#307)", async () => {
+    const item = (repo: string, n: number) => ({
+      html_url: `https://github.com/${repo}/issues/${n}`,
+      title: `feature ${n}`,
+      labels: [{ name: "enhancement" }],
+      comments: 1,
+      reactions: { total_count: 1 },
+      milestone: null,
+      pull_request: undefined,
+      assignee: null,
+      created_at: "2026-04-01",
+      number: n,
+    });
+    const search = vi.fn().mockResolvedValue({
+      data: { items: [item("Blocked/LLM", 1), item("good/repo", 2)] },
+    });
+    const octokit = { search: { issuesAndPullRequests: search } } as never;
+    const vetter = makeVetter();
+
+    await discoverFeaturesBroad({
+      octokit,
+      vetter,
+      count: 10,
+      aiPolicyBlocklist: ["blocked/llm"],
+    });
+
+    const vettedUrls = (
+      vetter as { vetIssue: ReturnType<typeof vi.fn> }
+    ).vetIssue.mock.calls.map((c: [string]) => c[0]);
+    expect(vettedUrls).toHaveLength(1);
+    expect(vettedUrls[0]).toContain("good/repo");
   });
 
   it("fans out per language and dedups across queries (#121)", async () => {

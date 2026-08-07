@@ -59,9 +59,12 @@ export function registerTools(server: McpServer, scout: OssScout): void {
         .number()
         .int()
         .min(1)
-        .max(50)
+        // 100, not 50: the CLI's search count is unbounded, so a tight MCP
+        // cap made the two surfaces disagree for 1.5.0 clients while still
+        // needing SOME ceiling against absurd values (#317).
+        .max(100)
         .optional()
-        .describe("Maximum number of results to return (1-50, default 10)"),
+        .describe("Maximum number of results to return (1-100, default 10)"),
       strategies: z
         .string()
         .optional()

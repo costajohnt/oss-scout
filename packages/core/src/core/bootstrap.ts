@@ -69,6 +69,12 @@ export async function bootstrapScout(
 
   // 1. Fetch starred repos (up to 500)
   const starredRepos: string[] = [];
+  // Only counts what was actually saved: a mid-pagination failure used to
+  // report the partial in-memory length even though nothing persisted (#313).
+  let starredRepoSavedCount = 0;
+  // Repos whose score this run touched — the returned reposScoredCount used
+  // to be the whole pre-existing map, masking fully-failed runs (#313).
+  const reposScoredThisRun = new Set<string>();
   try {
     let starredPage = 0;
     for await (const response of octokit.paginate.iterator(
@@ -87,6 +93,7 @@ export async function bootstrapScout(
     }
     debug(MODULE, `Fetched ${starredRepos.length} starred repos`);
     scout.setStarredRepos(starredRepos);
+    starredRepoSavedCount = starredRepos.length;
   } catch (err) {
     rethrowIfFatal(err);
     warn(MODULE, `Failed to fetch starred repos: ${errorMessage(err)}`);
@@ -122,6 +129,7 @@ export async function bootstrapScout(
           mergedAt: item.closed_at ?? new Date().toISOString(),
           repo,
         });
+        reposScoredThisRun.add(repo);
         mergedPRCount++;
       }
 
@@ -163,6 +171,7 @@ export async function bootstrapScout(
           closedAt: item.closed_at ?? new Date().toISOString(),
           repo,
         });
+        reposScoredThisRun.add(repo);
         closedPRCount++;
       }
 
@@ -216,15 +225,12 @@ export async function bootstrapScout(
     errors.push("open PR fetch failed");
   }
 
-  const state = scout.getState();
-  const reposScoredCount = Object.keys(state.repoScores).length;
-
   return {
-    starredRepoCount: starredRepos.length,
+    starredRepoCount: starredRepoSavedCount,
     mergedPRCount,
     closedPRCount,
     openPRCount,
-    reposScoredCount,
+    reposScoredCount: reposScoredThisRun.size,
     skippedDueToRateLimit: false,
     errors,
   };
