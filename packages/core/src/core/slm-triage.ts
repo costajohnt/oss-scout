@@ -22,6 +22,10 @@
  *   Slower models simply produce `null` and don't block vetting.
  */
 import type { TrackedIssue, LinkedPR } from "./schemas.js";
+import { ValidationError } from "./errors.js";
+import { warn } from "./logger.js";
+
+const MODULE = "slm-triage";
 
 /** Default Ollama HTTP endpoint when not overridden. */
 const DEFAULT_OLLAMA_HOST = "http://127.0.0.1:11434";
@@ -103,6 +107,52 @@ function buildPrompt(input: SLMTriageInput): string {
 }
 
 /**
+ * Guard for user-configured Ollama hosts (#300): http(s) scheme and a
+ * local/private address only. Issue titles/bodies are POSTed to this host
+ * during vetting, so an arbitrary public URL would let a config change
+ * beacon fetched content off-machine.
+ */
+export function isAllowedTriageHost(raw: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return false;
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") return false;
+  const host = url.hostname.replace(/^\[|\]$/g, "").toLowerCase();
+  if (host === "localhost" || host === "::1") return true;
+  const v4 = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (v4) {
+    const a = Number(v4[1]);
+    const b = Number(v4[2]);
+    if (a === 127 || a === 10) return true;
+    if (a === 192 && b === 168) return true;
+    if (a === 172 && b >= 16 && b <= 31) return true;
+    return false;
+  }
+  if (host.includes(":")) {
+    // IPv6 literals: unique-local (fc00::/7) and link-local (fe80::/10).
+    return (
+      host.startsWith("fc") || host.startsWith("fd") || host.startsWith("fe80")
+    );
+  }
+  // Single-label LAN hostnames ("ollama-box") and mDNS .local names.
+  return !host.includes(".") || host.endsWith(".local");
+}
+
+/**
+ * Throw a ValidationError unless the value is empty (use the default) or an
+ * allowed local/private Ollama host. Called by config-set (CLI + MCP).
+ */
+export function assertValidTriageHost(value: string): void {
+  if (value === "" || isAllowedTriageHost(value)) return;
+  throw new ValidationError(
+    `slmTriageHost must be an http(s) URL pointing at localhost or a private/LAN address (got "${value}"). Example: http://192.168.1.20:11434`,
+  );
+}
+
+/**
  * Run an SLM triage classification. Returns `null` on any failure path
  * — caller treats `null` as "no SLM signal available".
  */
@@ -113,6 +163,16 @@ export async function triageWithSLM(
   if (!options.model) return null;
 
   const host = options.host ?? DEFAULT_OLLAMA_HOST;
+  // Enforced at use time too, covering hosts written straight into
+  // state.json without going through config-set (#300). Fail open like
+  // every other triage failure path.
+  if (!isAllowedTriageHost(host)) {
+    warn(
+      MODULE,
+      `slmTriageHost "${host}" is not a local/private address; skipping SLM triage`,
+    );
+    return null;
+  }
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const fetchFn = options.fetchImpl ?? fetch;
 

@@ -178,11 +178,11 @@ describe("triageWithSLM", () => {
 
     await triageWithSLM(
       { issue: ISSUE, linkedPRExists: false },
-      { model: "gemma4:e4b", host: "http://example.test:99999", fetchImpl },
+      { model: "gemma4:e4b", host: "http://192.168.1.20:11434", fetchImpl },
     );
 
     expect((fetchImpl as ReturnType<typeof vi.fn>).mock.calls[0][0]).toBe(
-      "http://example.test:99999/api/chat",
+      "http://192.168.1.20:11434/api/chat",
     );
   });
 
@@ -245,5 +245,59 @@ describe("buildTriageInput", () => {
       linkedPR: null,
     });
     expect(result.linkedPRExists).toBe(false);
+  });
+});
+
+describe("isAllowedTriageHost (#300)", () => {
+  it("allows localhost, loopback, and private-range hosts", async () => {
+    const { isAllowedTriageHost } = await import("./slm-triage.js");
+    for (const host of [
+      "http://localhost:11434",
+      "http://127.0.0.1:11434",
+      "https://10.0.0.5:11434",
+      "http://192.168.1.20:11434",
+      "http://172.16.0.1:11434",
+      "http://[::1]:11434",
+      "http://ollama-box:11434",
+      "http://my-server.local:11434",
+    ]) {
+      expect(isAllowedTriageHost(host), host).toBe(true);
+    }
+  });
+
+  it("rejects public hosts, bad schemes, and junk", async () => {
+    const { isAllowedTriageHost } = await import("./slm-triage.js");
+    for (const host of [
+      "http://evil.example.com:11434",
+      "https://attacker.io/api",
+      "http://8.8.8.8:11434",
+      "http://172.32.0.1:11434",
+      "ftp://127.0.0.1:11434",
+      "file:///etc/passwd",
+      "not a url",
+      "",
+    ]) {
+      expect(isAllowedTriageHost(host), host).toBe(false);
+    }
+  });
+
+  it("triageWithSLM fails open (null) on a disallowed host without fetching", async () => {
+    const { triageWithSLM } = await import("./slm-triage.js");
+    const fetchImpl = vi.fn();
+    const result = await triageWithSLM(
+      {
+        title: "t",
+        body: "b",
+        labels: [],
+        linkedPRExists: false,
+      },
+      {
+        model: "gemma",
+        host: "http://evil.example.com",
+        fetchImpl: fetchImpl as unknown as typeof fetch,
+      },
+    );
+    expect(result).toBeNull();
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 });
