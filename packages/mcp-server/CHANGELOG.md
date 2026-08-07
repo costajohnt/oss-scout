@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.10.2](https://github.com/costajohnt/oss-scout/compare/mcp-server-v0.10.1...mcp-server-v0.10.2) (2026-08-07)
+
+
+### Bug Fixes
+
+* address all 15 findings from the round-2 audit ([3ecfcf0](https://github.com/costajohnt/oss-scout/commit/3ecfcf0b74b073568c83d0f685a42809be8e6527))
+* address all 15 findings from the round-2 audit ([#318](https://github.com/costajohnt/oss-scout/issues/318)) ([3ecfcf0](https://github.com/costajohnt/oss-scout/commit/3ecfcf0b74b073568c83d0f685a42809be8e6527))
+* **mcp:** raise search maxResults cap to 100 ([6b0863c](https://github.com/costajohnt/oss-scout/commit/6b0863c251d6534d420f4e482cbd6dc7388a458e)), closes [#317](https://github.com/costajohnt/oss-scout/issues/317)
+
 ## [0.10.1](https://github.com/costajohnt/oss-scout/compare/mcp-server-v0.10.0...mcp-server-v0.10.1) (2026-08-07)
 
 
