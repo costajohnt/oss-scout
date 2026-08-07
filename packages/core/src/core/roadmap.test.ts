@@ -33,6 +33,23 @@ describe("parseRoadmapIssueRefs", () => {
     expect(parseRoadmapIssueRefs(md, "a", "b")).toEqual(new Set([99]));
   });
 
+  it("ignores #N inside fenced code blocks and inline code (#315)", () => {
+    const md = [
+      "Theme:",
+      "```css",
+      ".header { color: #333; }",
+      "```",
+      "Also `border: #666` inline.",
+      "- but do fix #77",
+    ].join("\n");
+    expect(parseRoadmapIssueRefs(md, "a", "b")).toEqual(new Set([77]));
+  });
+
+  it("resumes scanning after a code fence closes", () => {
+    const md = "```\n#111\n```\n- track #22\n";
+    expect(parseRoadmapIssueRefs(md, "a", "b")).toEqual(new Set([22]));
+  });
+
   it("extracts in-repo GitHub issue URLs", () => {
     const md =
       "See https://github.com/foo/bar/issues/1 and https://github.com/Foo/BAR/issues/2 for context.";
