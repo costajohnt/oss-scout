@@ -1,0 +1,22 @@
+version: 2
+
+updates:
+  # Actions are pinned to commit SHAs (a mutable tag like @v6 can be
+  # repointed at malicious code, and the publish workflow holds NPM_TOKEN).
+  # A pin without an updater silently rots, so Dependabot owns keeping them
+  # current — it rewrites the SHA and the trailing `# vN` comment together.
+  # `directory: /` covers .github/workflows plus the composite action.yml
+  # at the repo root.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      # One PR for all action bumps rather than four; these move together
+      # and each needs the same CI run to validate.
+      actions:
+        patterns:
+          - '*'
+    commit-message:
+      prefix: chore
+      include: scope
