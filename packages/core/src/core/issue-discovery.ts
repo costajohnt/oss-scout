@@ -184,6 +184,88 @@ async function runPhase0(
   };
 }
 
+/**
+ * Cap on org: qualifiers in the orgs-phase query. Each qualifier consumes one
+ * of GitHub Search's boolean operators, so an unbounded preferredOrgs list
+ * would starve (or disable) label filtering. Orgs beyond the cap are dropped
+ * with a warning.
+ */
+const MAX_QUERY_ORGS = 8;
+
+/** Orgs phase: broad-style search scoped to the user's preferred orgs. */
+async function runPhaseOrgs(
+  octokit: Octokit,
+  vetter: IssueVetter,
+  orgs: string[],
+  languages: string[],
+  isAnyLanguage: boolean,
+  labels: string[],
+  maxResults: number,
+  minStars: number,
+  phase0RepoSet: Set<string>,
+  starredRepoSet: Set<string>,
+  filterIssues: (items: GitHubSearchItem[]) => GitHubSearchItem[],
+  tracker: SearchBudgetTracker,
+): Promise<PhaseResult> {
+  info(MODULE, `Orgs phase: searching ${orgs.length} preferred org(s)...`);
+
+  const queryOrgs = orgs.slice(0, MAX_QUERY_ORGS);
+  if (orgs.length > MAX_QUERY_ORGS) {
+    warn(
+      MODULE,
+      `Orgs phase: capping query at ${MAX_QUERY_ORGS} org(s); dropping ${orgs
+        .slice(MAX_QUERY_ORGS)
+        .join(", ")}`,
+    );
+  }
+
+  // Multiple org: qualifiers OR together in the GitHub search syntax.
+  const orgQuery = queryOrgs.map((o) => `org:${o}`).join(" ");
+  try {
+    const allItems = await searchAcrossLanguagesAndLabels(
+      octokit,
+      languages,
+      isAnyLanguage,
+      labels,
+      (langQ) =>
+        `is:issue is:open ${langQ} no:assignee ${orgQuery}`
+          .replace(/  +/g, " ")
+          .trim(),
+      maxResults * 3,
+      tracker,
+      0,
+      queryOrgs.length,
+    );
+
+    const { candidates, allVetFailed, rateLimitHit } = await filterVetAndScore(
+      vetter,
+      allItems,
+      filterIssues,
+      [phase0RepoSet, starredRepoSet],
+      maxResults,
+      minStars,
+      "Orgs phase",
+    );
+
+    info(MODULE, `Found ${candidates.length} candidates from preferred orgs`);
+
+    return {
+      candidates,
+      error: allVetFailed ? "all vetting failed" : null,
+      rateLimitHit,
+    };
+  } catch (error) {
+    if (getHttpStatusCode(error) === 401) throw error;
+    const errMsg = errorMessage(error);
+    warn(MODULE, `Error in preferred-orgs search: ${errMsg}`);
+    return {
+      candidates: [],
+      error: errMsg,
+      rateLimitHit: isRateLimitError(error),
+    };
+  }
+}
+
 /** Phase 1: Search starred repos. */
 async function runPhase1(
   octokit: Octokit,
@@ -771,7 +853,12 @@ export class IssueDiscovery {
     // Only cap Phase 0 when a later phase can actually consume the reserved
     // budget — otherwise (no starred repos, broad/maintained disabled) the
     // reservation would just shrink the result set with nothing to fill it.
+    const preferredOrgs = config.preferredOrgs ?? [];
+    const orgsPhaseEnabled =
+      preferredOrgs.length > 0 && enabledStrategies.has("orgs");
+
     const otherStrategiesCanRun =
+      orgsPhaseEnabled ||
       (starredRepos.length > 0 && enabledStrategies.has("starred")) ||
       enabledStrategies.has("broad") ||
       enabledStrategies.has("maintained");
@@ -794,6 +881,30 @@ export class IssueDiscovery {
         recordPhaseResult("0", result);
       }
       strategiesUsed.push("merged");
+    }
+
+    // Orgs phase: preferred organizations (broad-style search with org:
+    // qualifiers). Runs before starred so org results get first claim on the
+    // remaining budget — the user asked for these orgs explicitly.
+    if (allCandidates.length < maxResults && orgsPhaseEnabled) {
+      await applyInterPhaseDelay();
+      const remaining = maxResults - allCandidates.length;
+      const result = await runPhaseOrgs(
+        this.octokit,
+        this.vetter,
+        preferredOrgs,
+        languages,
+        isAnyLanguage,
+        labels,
+        remaining,
+        minStars,
+        phase0RepoSet,
+        starredRepoSet,
+        filterIssues,
+        tracker,
+      );
+      recordPhaseResult("orgs", result);
+      strategiesUsed.push("orgs");
     }
 
     // Phase 1: Starred repos
@@ -851,12 +962,18 @@ export class IssueDiscovery {
       // — the one phase that surfaces repos the user hasn't touched. Counting
       // only viable new-repo candidates keeps "sufficient results" meaning
       // "enough NEW work" — not "we re-found issues in the same repos" and not
-      // "we found issues the vetter already ruled out" (#265).
+      // "we found issues the vetter already ruled out" (#265). Preferred-org
+      // candidates are affinity results too — the user named those orgs — so
+      // they must not gate off the broad phase either.
+      const preferredOrgSet = new Set(
+        preferredOrgs.map((o) => o.toLowerCase()),
+      );
       const newRepoCandidateCount = allCandidates.filter(
         (c) =>
           c.recommendation !== "skip" &&
           !phase0RepoSet.has(c.issue.repo) &&
-          !starredRepoSet.has(c.issue.repo),
+          !starredRepoSet.has(c.issue.repo) &&
+          !preferredOrgSet.has(c.issue.repo.split("/")[0]?.toLowerCase() ?? ""),
       ).length;
       if (skipThreshold > 0 && newRepoCandidateCount >= skipThreshold) {
         info(
@@ -955,6 +1072,9 @@ export class IssueDiscovery {
       const errorDetails = [
         phaseErrors["0"]
           ? `Phase 0 (merged-PR repos): ${phaseErrors["0"]}`
+          : null,
+        phaseErrors["orgs"]
+          ? `Orgs phase (preferred orgs): ${phaseErrors["orgs"]}`
           : null,
         phaseErrors["1"]
           ? `Phase 1 (starred repos): ${phaseErrors["1"]}`

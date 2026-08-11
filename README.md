@@ -98,6 +98,7 @@ oss-scout runs four search strategies in priority order:
 | Strategy | Flag | What it searches | Why it matters |
 |----------|------|-----------------|----------------|
 | `merged` | Phase 0 | Repos where you have merged PRs | Highest merge probability |
+| `orgs` | Orgs phase | Repos in your `preferredOrgs` | Explicit interest |
 | `starred` | Phase 1 | Your GitHub starred repos | Implicit interest |
 | `broad` | Phase 2 | General label/language filtered | Discovery |
 | `maintained` | Phase 3 | Actively maintained repos by topic | Exploration |
@@ -243,9 +244,10 @@ oss-scout config reset                               # reset to defaults
 | `minRepoScoreThreshold` | number | 4 | Skip repos scoring below this (1-10) |
 | `excludeRepos` | string[] | [] | Repos to never search |
 | `excludeOrgs` | string[] | [] | Orgs to never search |
+| `preferredOrgs` | string[] | [] | Orgs the `orgs` strategy searches (max 8 per query) |
 | `aiPolicyBlocklist` | string[] | matplotlib/matplotlib | Repos with anti-AI policies |
 | `projectCategories` | enum[] | [] | Topic filter: devtools, web-frameworks, etc. |
-| `defaultStrategy` | enum[] | all | Default search strategies: merged, starred, broad, maintained |
+| `defaultStrategy` | enum[] | all | Default search strategies: merged, orgs, starred, broad, maintained |
 | `interPhaseDelayMs` | number | 30000 | Delay between search phases (rate-limit pacing) |
 | `broadPhaseDelayMs` | number | 90000 | Extra delay before the broad phase |
 | `skipBroadWhenSufficientResults` | number | 8 | Skip the broad phase once this many candidates from **new** repos are found (0 disables). Candidates from your affinity (Phase 0) and starred (Phase 1) repos do not count, so the broad phase still runs to surface repos you haven't contributed to. |
@@ -398,7 +400,7 @@ Setup:
 
 Search:
   search [count]                Search for issues (default: 10)
-    --strategy <s>              Strategies: merged,starred,broad,maintained,all
+    --strategy <s>              Strategies: merged,orgs,starred,broad,maintained,all
     --prefer-languages <list>   Soft-boost ranking for matching repo languages
     --prefer-repos <list>       Soft-boost ranking for these owner/repo slugs
     --avoid-repos <list>        Soft-penalize ranking for these owner/repo slugs

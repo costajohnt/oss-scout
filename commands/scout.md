@@ -69,7 +69,7 @@ The CLI automatically:
 GITHUB_TOKEN=$(gh auth token) node "${CLAUDE_PLUGIN_ROOT}/packages/core/dist/cli.bundle.cjs" search 10 --strategy starred --json
 ```
 
-Available strategies: `merged`, `starred`, `broad`, `maintained`, `all` (default).
+Available strategies: `merged`, `orgs` (searches your `preferredOrgs`), `starred`, `broad`, `maintained`, `all` (default).
 
 ## Step 3: Present Results
 
