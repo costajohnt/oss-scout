@@ -32,6 +32,7 @@ export const IssueScopeSchema = z.enum([
 
 export const SearchStrategySchema = z.enum([
   "merged",
+  "orgs",
   "starred",
   "broad",
   "maintained",
@@ -41,6 +42,7 @@ export const SearchStrategySchema = z.enum([
 /** All concrete strategies (excludes 'all' meta-strategy). */
 export const CONCRETE_STRATEGIES = [
   "merged",
+  "orgs",
   "starred",
   "broad",
   "maintained",
@@ -200,6 +202,9 @@ export const ScoutPreferencesSchema = z.looseObject({
   scope: z.array(IssueScopeSchema).optional(),
   excludeRepos: z.array(z.string()).default([]),
   excludeOrgs: z.array(z.string()).default([]),
+  // Orgs whose repos the "orgs" search phase targets with org: qualifiers.
+  // Empty (the default) disables the phase even when the strategy is enabled.
+  preferredOrgs: z.array(z.string()).default([]),
   aiPolicyBlocklist: z.array(z.string()).default(["matplotlib/matplotlib"]),
   projectCategories: z.array(ProjectCategorySchema).default([]),
   minStars: z.number().default(50),

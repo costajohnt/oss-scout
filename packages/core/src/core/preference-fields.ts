@@ -30,6 +30,7 @@ export const FIELD_CONFIGS: Record<string, FieldConfig> = {
   scope: { type: "enum-array", validValues: IssueScopeSchema.options },
   excludeRepos: { type: "array" },
   excludeOrgs: { type: "array" },
+  preferredOrgs: { type: "array" },
   aiPolicyBlocklist: { type: "array" },
   projectCategories: {
     type: "enum-array",

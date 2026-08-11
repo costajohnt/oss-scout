@@ -105,6 +105,14 @@ describe("ScoutPreferencesSchema", () => {
     expect(prefs.labels).toEqual(["good first issue", "help wanted"]);
     expect(prefs.excludeRepos).toEqual([]);
     expect(prefs.projectCategories).toEqual([]);
+    expect(prefs.preferredOrgs).toEqual([]);
+  });
+
+  it("accepts preferredOrgs", () => {
+    const prefs = ScoutPreferencesSchema.parse({
+      preferredOrgs: ["vercel", "microsoft"],
+    });
+    expect(prefs.preferredOrgs).toEqual(["vercel", "microsoft"]);
   });
 
   it("validates scope enum values", () => {

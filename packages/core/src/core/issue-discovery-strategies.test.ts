@@ -137,7 +137,11 @@ function makeFakeCandidate(repo: string, priority: string) {
 // ── Import after mocks ─────────────────────────────────────────────
 
 const { IssueDiscovery } = await import("./issue-discovery.js");
-const { fetchIssuesFromKnownRepos } = await import("./search-phases.js");
+const {
+  fetchIssuesFromKnownRepos,
+  searchAcrossLanguagesAndLabels,
+  filterVetAndScore,
+} = await import("./search-phases.js");
 
 const basePreferences = {
   githubUsername: "test",
@@ -328,6 +332,105 @@ describe("Strategy Selection", () => {
   });
 });
 
+describe("orgs strategy", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockVetIssuesParallel.mockResolvedValue({
+      candidates: [],
+      allFailed: false,
+      rateLimitHit: false,
+    });
+  });
+
+  const orgPrefs = {
+    ...basePreferences,
+    preferredOrgs: ["one", "two"],
+  };
+
+  it("runs the orgs phase with org: qualifiers in the query", async () => {
+    (filterVetAndScore as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      candidates: [makeFakeCandidate("one/repo", "normal")],
+      allVetFailed: false,
+      rateLimitHit: false,
+    });
+    const discovery = new IssueDiscovery("token", orgPrefs, baseStateReader);
+    const result = await discovery.searchIssues({ strategies: ["orgs"] });
+    expect(result.strategiesUsed).toEqual(["orgs"]);
+    expect(searchAcrossLanguagesAndLabels).toHaveBeenCalledTimes(1);
+    const buildQuery = (
+      searchAcrossLanguagesAndLabels as ReturnType<typeof vi.fn>
+    ).mock.calls[0][4] as (langQ: string) => string;
+    const query = buildQuery("language:typescript");
+    expect(query).toContain("org:one org:two");
+    expect(query).toContain("is:issue is:open");
+  });
+
+  it("skips the orgs phase when preferredOrgs is empty", async () => {
+    const discovery = new IssueDiscovery(
+      "token",
+      { ...basePreferences, preferredOrgs: [] },
+      baseStateReader,
+    );
+    await expect(
+      discovery.searchIssues({ strategies: ["orgs"] }),
+    ).rejects.toThrow(/No issue candidates found/);
+    expect(searchAcrossLanguagesAndLabels).not.toHaveBeenCalled();
+  });
+
+  it("skips the orgs phase when the strategy is not enabled", async () => {
+    const stateReader = {
+      ...baseStateReader,
+      getReposWithMergedPRs: () => ["owner/repo"],
+    };
+    (fetchIssuesFromKnownRepos as ReturnType<typeof vi.fn>).mockResolvedValue({
+      candidates: [makeFakeCandidate("owner/repo", "merged_pr")],
+      allReposFailed: false,
+      rateLimitHit: false,
+    });
+    const discovery = new IssueDiscovery("token", orgPrefs, stateReader);
+    const result = await discovery.searchIssues({ strategies: ["merged"] });
+    expect(result.strategiesUsed).toEqual(["merged"]);
+    expect(searchAcrossLanguagesAndLabels).not.toHaveBeenCalled();
+  });
+
+  it("org-phase candidates do not suppress the broad phase", async () => {
+    // 8 viable org-phase candidates (>= default skipBroadWhenSufficientResults
+    // of 8) must not trip the broad-skip gate, because they come from the
+    // user's own preferred orgs, not new repos.
+    (filterVetAndScore as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      candidates: Array.from({ length: 8 }, (_, i) =>
+        makeFakeCandidate(`one/repo${i}`, "normal"),
+      ),
+      allVetFailed: false,
+      rateLimitHit: false,
+    });
+    const discovery = new IssueDiscovery("token", orgPrefs, baseStateReader);
+    const result = await discovery.searchIssues({
+      strategies: ["orgs", "broad"],
+      maxResults: 10,
+    });
+    expect(result.strategiesUsed).toContain("orgs");
+    expect(result.strategiesUsed).toContain("broad");
+  });
+
+  it("non-org new-repo candidates still suppress the broad phase", async () => {
+    (filterVetAndScore as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      candidates: Array.from({ length: 8 }, (_, i) =>
+        makeFakeCandidate(`elsewhere${i}/repo`, "normal"),
+      ),
+      allVetFailed: false,
+      rateLimitHit: false,
+    });
+    const discovery = new IssueDiscovery("token", orgPrefs, baseStateReader);
+    const result = await discovery.searchIssues({
+      strategies: ["orgs", "broad"],
+      maxResults: 10,
+    });
+    expect(result.strategiesUsed).toContain("orgs");
+    expect(result.strategiesUsed).not.toContain("broad");
+  });
+});
+
 describe("SearchStrategySchema", () => {
   it("validates all concrete strategies", () => {
     for (const strategy of CONCRETE_STRATEGIES) {
@@ -339,6 +442,11 @@ describe("SearchStrategySchema", () => {
     expect(SearchStrategySchema.safeParse("all").success).toBe(true);
   });
 
+  it('validates the "orgs" strategy', () => {
+    expect(SearchStrategySchema.safeParse("orgs").success).toBe(true);
+    expect(CONCRETE_STRATEGIES).toContain("orgs");
+  });
+
   it("rejects invalid strategy names", () => {
     expect(SearchStrategySchema.safeParse("invalid").success).toBe(false);
     expect(SearchStrategySchema.safeParse("").success).toBe(false);
@@ -347,6 +455,6 @@ describe("SearchStrategySchema", () => {
 
   it('CONCRETE_STRATEGIES excludes "all"', () => {
     expect(CONCRETE_STRATEGIES).not.toContain("all");
-    expect(CONCRETE_STRATEGIES).toHaveLength(4);
+    expect(CONCRETE_STRATEGIES).toHaveLength(5);
   });
 });

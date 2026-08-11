@@ -39,6 +39,7 @@ export function runConfigShow(): void {
   );
   console.log(`  excludeRepos:         ${formatArray(prefs.excludeRepos)}`);
   console.log(`  excludeOrgs:          ${formatArray(prefs.excludeOrgs)}`);
+  console.log(`  preferredOrgs:        ${formatArray(prefs.preferredOrgs)}`);
   console.log(
     `  aiPolicyBlocklist:    ${formatArray(prefs.aiPolicyBlocklist)}`,
   );
