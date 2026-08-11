@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.0](https://github.com/costajohnt/oss-scout/compare/mcp-server-v0.10.2...mcp-server-v0.11.0) (2026-08-11)
+
+
+### Features
+
+* add orgs search phase targeting preferredOrgs ([#322](https://github.com/costajohnt/oss-scout/issues/322)) ([ea594c1](https://github.com/costajohnt/oss-scout/commit/ea594c12bb4d81b701bac9ff424bee5dc87057c4))
+
 ## [0.10.2](https://github.com/costajohnt/oss-scout/compare/mcp-server-v0.10.1...mcp-server-v0.10.2) (2026-08-07)
 
 

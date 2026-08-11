@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.0](https://github.com/costajohnt/oss-scout/compare/core-v1.5.2...core-v1.6.0) (2026-08-11)
+
+
+### Features
+
+* add orgs search phase targeting preferredOrgs ([#322](https://github.com/costajohnt/oss-scout/issues/322)) ([ea594c1](https://github.com/costajohnt/oss-scout/commit/ea594c12bb4d81b701bac9ff424bee5dc87057c4))
+
 ## [1.5.2](https://github.com/costajohnt/oss-scout/compare/core-v1.5.1...core-v1.5.2) (2026-08-07)
 
 
