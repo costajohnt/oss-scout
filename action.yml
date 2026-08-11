@@ -27,7 +27,7 @@ inputs:
     required: false
     default: "10"
   strategy:
-    description: "Search strategies (comma-separated): merged, starred, broad, maintained, all."
+    description: "Search strategies (comma-separated): merged, orgs, starred, broad, maintained, all."
     required: false
     default: "all"
   issue-title:

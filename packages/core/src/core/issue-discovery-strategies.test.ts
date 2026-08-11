@@ -142,6 +142,7 @@ const {
   searchAcrossLanguagesAndLabels,
   filterVetAndScore,
 } = await import("./search-phases.js");
+const { warn } = await import("./logger.js");
 
 const basePreferences = {
   githubUsername: "test",
@@ -411,6 +412,107 @@ describe("orgs strategy", () => {
     });
     expect(result.strategiesUsed).toContain("orgs");
     expect(result.strategiesUsed).toContain("broad");
+  });
+
+  it("excludes starred repos so orgs-phase results can't duplicate the starred phase", async () => {
+    // A starred repo inside a preferred org must surface once (via the starred
+    // phase), not twice. The orgs phase passes starredRepoSet as an excluded
+    // set; this mock honors excludedRepoSets like the real filterVetAndScore.
+    (filterVetAndScore as ReturnType<typeof vi.fn>).mockImplementation(
+      (
+        _vetter: unknown,
+        items: { repository_url: string }[],
+        _filterIssues: unknown,
+        excludedRepoSets: Set<string>[],
+      ) => {
+        const candidates = items
+          .map((it) => {
+            const m = it.repository_url.match(
+              /api\.github\.com\/repos\/([^/]+\/[^/]+)/,
+            );
+            return m ? m[1] : null;
+          })
+          .filter((repo): repo is string => repo !== null)
+          .filter((repo) => excludedRepoSets.every((s) => !s.has(repo)))
+          .map((repo) => makeFakeCandidate(repo, "normal"));
+        return Promise.resolve({
+          candidates,
+          allVetFailed: false,
+          rateLimitHit: false,
+        });
+      },
+    );
+    (
+      searchAcrossLanguagesAndLabels as ReturnType<typeof vi.fn>
+    ).mockResolvedValue([
+      {
+        html_url: "https://github.com/one/starred-repo/issues/1",
+        repository_url: "https://api.github.com/repos/one/starred-repo",
+      },
+    ]);
+    (fetchIssuesFromKnownRepos as ReturnType<typeof vi.fn>).mockResolvedValue({
+      candidates: [makeFakeCandidate("one/starred-repo", "starred")],
+      allReposFailed: false,
+      rateLimitHit: false,
+    });
+    const stateReader = {
+      ...baseStateReader,
+      getStarredRepos: () => ["one/starred-repo"],
+    };
+    const discovery = new IssueDiscovery("token", orgPrefs, stateReader);
+    const result = await discovery.searchIssues({
+      strategies: ["orgs", "starred"],
+      maxResults: 10,
+    });
+    const occurrences = result.candidates.filter(
+      (c) => c.issue.repo === "one/starred-repo",
+    );
+    expect(occurrences).toHaveLength(1);
+  });
+
+  it("caps org: qualifiers at MAX_QUERY_ORGS and warns about dropped orgs", async () => {
+    const manyOrgs = Array.from({ length: 10 }, (_, i) => `org${i + 1}`);
+    (filterVetAndScore as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      candidates: [makeFakeCandidate("org1/repo", "normal")],
+      allVetFailed: false,
+      rateLimitHit: false,
+    });
+    const discovery = new IssueDiscovery(
+      "token",
+      { ...basePreferences, preferredOrgs: manyOrgs },
+      baseStateReader,
+    );
+    await discovery.searchIssues({ strategies: ["orgs"] });
+    const buildQuery = (
+      searchAcrossLanguagesAndLabels as ReturnType<typeof vi.fn>
+    ).mock.calls[0][4] as (langQ: string) => string;
+    const query = buildQuery("");
+    expect(query.match(/org:/g)).toHaveLength(8);
+    expect(query).toContain("org:org8");
+    expect(query).not.toContain("org:org9");
+    expect(warn).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.stringMatching(/org9.*org10/),
+    );
+  });
+
+  it("forwards the org count as reservedOps to the label-chunked search", async () => {
+    const manyOrgs = Array.from({ length: 10 }, (_, i) => `org${i + 1}`);
+    (filterVetAndScore as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      candidates: [makeFakeCandidate("org1/repo", "normal")],
+      allVetFailed: false,
+      rateLimitHit: false,
+    });
+    const discovery = new IssueDiscovery(
+      "token",
+      { ...basePreferences, preferredOrgs: manyOrgs },
+      baseStateReader,
+    );
+    await discovery.searchIssues({ strategies: ["orgs"] });
+    // reservedOps (9th arg) must equal the sliced org count, not the raw count.
+    const call = (searchAcrossLanguagesAndLabels as ReturnType<typeof vi.fn>)
+      .mock.calls[0];
+    expect(call[8]).toBe(8);
   });
 
   it("non-org new-repo candidates still suppress the broad phase", async () => {

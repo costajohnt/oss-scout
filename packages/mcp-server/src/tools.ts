@@ -69,7 +69,7 @@ export function registerTools(server: McpServer, scout: OssScout): void {
         .string()
         .optional()
         .describe(
-          "Comma-separated search strategies: merged, starred, broad, maintained, all",
+          "Comma-separated search strategies: merged, orgs, starred, broad, maintained, all",
         ),
       preferLanguages: z
         .array(z.string())

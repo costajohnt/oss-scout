@@ -542,6 +542,8 @@ export function buildLanguageVariants(
  *                        modulo here, so a persisted offset that outgrew the
  *                        current variant count (or a shrunk language list)
  *                        never needs clamping by the caller.
+ * @param reservedOps     OR operators already consumed by repo/org filters in
+ *                        the base query, forwarded to label chunking
  */
 export async function searchAcrossLanguagesAndLabels(
   octokit: Octokit,
@@ -552,6 +554,7 @@ export async function searchAcrossLanguagesAndLabels(
   perPage: number,
   tracker: SearchBudgetTracker = getSearchBudgetTracker(),
   startOffset = 0,
+  reservedOps = 0,
 ): Promise<GitHubSearchItem[]> {
   const variants = buildLanguageVariants(
     languages,
@@ -568,7 +571,7 @@ export async function searchAcrossLanguagesAndLabels(
     const items = await searchWithChunkedLabels(
       octokit,
       labels,
-      0,
+      reservedOps,
       (labelQ) =>
         `${buildBaseQuery(langVariants[i])} ${labelQ}`
           .replace(/  +/g, " ")

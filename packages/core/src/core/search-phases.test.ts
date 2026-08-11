@@ -1187,6 +1187,32 @@ describe("searchAcrossLanguagesAndLabels", () => {
     expect(call.q).not.toContain("language:");
   });
 
+  it("forwards reservedOps to label chunking", async () => {
+    const items = [makeItem("https://github.com/a/b/issues/1", "a/b")];
+    const octokit = makeMockOctokit(items);
+
+    // 4 labels with reservedOps=4 → maxPerChunk = 5 - 4 + 1 = 2 → 2 chunks.
+    await searchAcrossLanguagesAndLabels(
+      octokit,
+      ["typescript"],
+      false,
+      ["l1", "l2", "l3", "l4"],
+      (langQ) => `is:issue is:open ${langQ} no:assignee`,
+      10,
+      undefined,
+      0,
+      4,
+    );
+
+    expect(octokit.search.issuesAndPullRequests).toHaveBeenCalledTimes(2);
+    const queries = (
+      octokit.search.issuesAndPullRequests as ReturnType<typeof vi.fn>
+    ).mock.calls.map((c) => c[0].q as string);
+    for (const q of queries) {
+      expect(q.match(/label:/g)).toHaveLength(2);
+    }
+  });
+
   describe("startOffset rotation (#249 follow-up)", () => {
     it("rotates the variant order so the offset-th language leads", async () => {
       const items = [makeItem("https://github.com/a/b/issues/1", "a/b")];

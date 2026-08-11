@@ -184,6 +184,14 @@ async function runPhase0(
   };
 }
 
+/**
+ * Cap on org: qualifiers in the orgs-phase query. Each qualifier consumes one
+ * of GitHub Search's boolean operators, so an unbounded preferredOrgs list
+ * would starve (or disable) label filtering. Orgs beyond the cap are dropped
+ * with a warning.
+ */
+const MAX_QUERY_ORGS = 8;
+
 /** Orgs phase: broad-style search scoped to the user's preferred orgs. */
 async function runPhaseOrgs(
   octokit: Octokit,
@@ -195,13 +203,24 @@ async function runPhaseOrgs(
   maxResults: number,
   minStars: number,
   phase0RepoSet: Set<string>,
+  starredRepoSet: Set<string>,
   filterIssues: (items: GitHubSearchItem[]) => GitHubSearchItem[],
   tracker: SearchBudgetTracker,
 ): Promise<PhaseResult> {
   info(MODULE, `Orgs phase: searching ${orgs.length} preferred org(s)...`);
 
+  const queryOrgs = orgs.slice(0, MAX_QUERY_ORGS);
+  if (orgs.length > MAX_QUERY_ORGS) {
+    warn(
+      MODULE,
+      `Orgs phase: capping query at ${MAX_QUERY_ORGS} org(s); dropping ${orgs
+        .slice(MAX_QUERY_ORGS)
+        .join(", ")}`,
+    );
+  }
+
   // Multiple org: qualifiers OR together in the GitHub search syntax.
-  const orgQuery = orgs.map((o) => `org:${o}`).join(" ");
+  const orgQuery = queryOrgs.map((o) => `org:${o}`).join(" ");
   try {
     const allItems = await searchAcrossLanguagesAndLabels(
       octokit,
@@ -214,13 +233,15 @@ async function runPhaseOrgs(
           .trim(),
       maxResults * 3,
       tracker,
+      0,
+      queryOrgs.length,
     );
 
     const { candidates, allVetFailed, rateLimitHit } = await filterVetAndScore(
       vetter,
       allItems,
       filterIssues,
-      [phase0RepoSet],
+      [phase0RepoSet, starredRepoSet],
       maxResults,
       minStars,
       "Orgs phase",
@@ -878,6 +899,7 @@ export class IssueDiscovery {
         remaining,
         minStars,
         phase0RepoSet,
+        starredRepoSet,
         filterIssues,
         tracker,
       );
