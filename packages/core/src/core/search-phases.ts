@@ -29,16 +29,13 @@ import { graphqlSearchIssues } from "./issue-graphql.js";
 
 const MODULE = "search-phases";
 
-/** GitHub Search API enforces a max of 5 AND/OR/NOT operators per query. */
-const GITHUB_MAX_BOOLEAN_OPS = 5;
-
 /** Delay between search API calls to avoid GitHub's secondary rate limit (~30 req/min).
  * Set to 2000ms as a safety floor (max 30/min at the limit). The SearchBudgetTracker
  * adds additional adaptive delays when needed. */
 const INTER_QUERY_DELAY_MS = 2000;
 
 /**
- * Delay between broad GraphQL search queries (Phase 2 chunked-label and
+ * Delay between broad GraphQL search queries (orgs-phase and Phase 2
  * language fan-out loops). GraphQL `search` bills the points bucket (5000/hr)
  * rather than the REST Search bucket (30/min), so it does not need the 2000ms
  * secondary-rate-limit floor the REST paths use — a lighter 500ms pace keeps
@@ -64,45 +61,20 @@ export function resetGraphQLSearchQueryCount(): void {
   graphqlSearchQueryCount = 0;
 }
 
-/**
- * Chunk labels into groups that fit within the operator budget.
- * N labels require N-1 OR operators, so maxPerChunk = budget + 1.
- *
- * @param labels      Full label list
- * @param reservedOps OR operators already consumed by repo/org filters
- */
-function chunkLabels(labels: string[], reservedOps: number = 0): string[][] {
-  const maxPerChunk = GITHUB_MAX_BOOLEAN_OPS - reservedOps + 1;
-  if (maxPerChunk < 1) {
-    if (labels.length > 0) {
-      warn(
-        MODULE,
-        `Label filtering disabled: ${reservedOps} repo/org ORs exceed GitHub's ${GITHUB_MAX_BOOLEAN_OPS} operator limit. ` +
-          `All ${labels.length} label(s) dropped from query.`,
-      );
-    }
-    return [[]];
-  }
-  if (labels.length <= maxPerChunk) return [labels];
-
-  const chunks: string[][] = [];
-  for (let i = 0; i < labels.length; i += maxPerChunk) {
-    chunks.push(labels.slice(i, i + maxPerChunk));
-  }
-  debug(
-    MODULE,
-    `Split ${labels.length} labels into ${chunks.length} chunks (${reservedOps} ops reserved, max ${maxPerChunk} per chunk)`,
-  );
-  return chunks;
-}
-
 // ── Pure utilities ──
 
-/** Build a GitHub Search API label filter from a list of labels. */
+/**
+ * Build a GitHub Search API label filter from a list of labels.
+ *
+ * Emits the comma form `label:"a","b"`, which GitHub evaluates as a real OR
+ * (live: 48,032 + 43,912 - 10,657 = 81,287 for the two default labels). The
+ * parenthesized `(label:"a" OR label:"b")` group is mis-parsed by issue
+ * search and returned about 3 percent of the true matches. The comma form is
+ * one qualifier, so it consumes none of GitHub's boolean operators.
+ */
 function buildLabelQuery(labels: string[]): string {
   if (labels.length === 0) return "";
-  if (labels.length === 1) return `label:"${labels[0]}"`;
-  return `(${labels.map((l) => `label:"${l}"`).join(" OR ")})`;
+  return `label:${labels.map((l) => JSON.stringify(l)).join(",")}`;
 }
 
 /** Resolve scope tiers into a flat label list, merged with custom labels. */
@@ -454,54 +426,38 @@ export async function fetchIssuesFromKnownRepos(
 }
 
 /**
- * Search across chunked labels with deduplication.
+ * Search with the full label list folded into one `label:"a","b"` qualifier.
  *
- * Splits labels into chunks that fit within GitHub's boolean operator budget,
- * issues one search query per chunk, deduplicates results by URL, and returns
- * the merged item list.
+ * Labels used to be chunked across several OR-group queries to stay within
+ * GitHub's boolean operator budget; the comma form is a single qualifier, so
+ * every label list now fits in one query. The name and signature are kept so
+ * callers are unchanged.
  *
  * @param octokit      Authenticated Octokit instance
- * @param labels       Full label list to chunk
- * @param reservedOps  OR operators already consumed by repo/org filters in the query
+ * @param labels       Full label list
+ * @param _reservedOps Unused; retained for signature compatibility
  * @param buildQuery   Callback that receives a label query string and returns the full search query
  * @param perPage      Number of results per API call
  */
 export async function searchWithChunkedLabels(
   octokit: Octokit,
   labels: string[],
-  reservedOps: number,
+  _reservedOps: number,
   buildQuery: (labelQuery: string) => string,
   perPage: number,
   tracker: SearchBudgetTracker = getSearchBudgetTracker(),
 ): Promise<GitHubSearchItem[]> {
-  const labelChunks = chunkLabels(labels, reservedOps);
-  const seenUrls = new Set<string>();
-  const allItems: GitHubSearchItem[] = [];
-
-  for (let i = 0; i < labelChunks.length; i++) {
-    if (i > 0) await sleep(GRAPHQL_INTER_QUERY_DELAY_MS);
-
-    const query = buildQuery(buildLabelQuery(labelChunks[i]));
-    const data = await searchIssuesGraphQLFirst(
-      octokit,
-      {
-        q: query,
-        sort: "created",
-        order: "desc",
-        per_page: perPage,
-      },
-      tracker,
-    );
-
-    for (const item of data.items) {
-      if (!seenUrls.has(item.html_url)) {
-        seenUrls.add(item.html_url);
-        allItems.push(item);
-      }
-    }
-  }
-
-  return allItems;
+  const data = await searchIssuesGraphQLFirst(
+    octokit,
+    {
+      q: buildQuery(buildLabelQuery(labels)),
+      sort: "created",
+      order: "desc",
+      per_page: perPage,
+    },
+    tracker,
+  );
+  return data.items;
 }
 
 /**
@@ -522,12 +478,12 @@ export function buildLanguageVariants(
 }
 
 /**
- * Search across languages with label chunking, deduplicating results.
+ * Search across languages, deduplicating results.
  *
  * Fans out one query per language when 2+ languages are paired with labels
  * (works around a GitHub Search backend edge case where the multi-language
  * AND combined with a label OR-group returns 0). For each language variant,
- * delegates to searchWithChunkedLabels to keep within GitHub's 5-operator limit.
+ * delegates to searchWithChunkedLabels.
  *
  * @param octokit         Authenticated Octokit instance
  * @param languages       Configured languages (used as `language:X` qualifiers)
@@ -542,8 +498,7 @@ export function buildLanguageVariants(
  *                        modulo here, so a persisted offset that outgrew the
  *                        current variant count (or a shrunk language list)
  *                        never needs clamping by the caller.
- * @param reservedOps     OR operators already consumed by repo/org filters in
- *                        the base query, forwarded to label chunking
+ * @param reservedOps     Unused; retained for signature compatibility
  */
 export async function searchAcrossLanguagesAndLabels(
   octokit: Octokit,

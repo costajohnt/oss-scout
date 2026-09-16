@@ -956,13 +956,13 @@ describe("searchWithChunkedLabels", () => {
     expect(octokit.search.issuesAndPullRequests).not.toHaveBeenCalled();
   });
 
-  it("issues a single query when labels fit within operator limit", async () => {
+  it("emits one comma-joined label qualifier for 2 labels (real OR, not an OR-group)", async () => {
     const items = [makeItem("https://github.com/a/b/issues/1", "a/b")];
     const octokit = makeMockOctokit(items);
 
     const result = await searchWithChunkedLabels(
       octokit,
-      ["good first issue", "help wanted"], // 2 labels, 1 OR op — well within limit
+      ["good first issue", "help wanted"],
       0,
       (labelQ) => `is:issue is:open ${labelQ}`,
       10,
@@ -970,59 +970,64 @@ describe("searchWithChunkedLabels", () => {
 
     expect(result).toHaveLength(1);
     expect(octokit.search.issuesAndPullRequests).toHaveBeenCalledTimes(1);
+    const call = (
+      octokit.search.issuesAndPullRequests as ReturnType<typeof vi.fn>
+    ).mock.calls[0][0];
+    expect(call.q).toBe(
+      'is:issue is:open label:"good first issue","help wanted"',
+    );
   });
 
-  it("chunks labels into multiple queries when exceeding operator limit", async () => {
+  it("issues a single query with all 6 labels comma-joined", async () => {
     const items = [makeItem("https://github.com/a/b/issues/1", "a/b")];
     const octokit = makeMockOctokit(items);
 
-    // With reservedOps=0, maxPerChunk = 5 - 0 + 1 = 6. So 8 labels → 2 chunks.
-    const labels = ["l1", "l2", "l3", "l4", "l5", "l6", "l7", "l8"];
-
     await searchWithChunkedLabels(
       octokit,
-      labels,
+      [
+        "good first issue",
+        "help wanted",
+        "easy",
+        "up-for-grabs",
+        "first-timers-only",
+        "beginner",
+      ],
       0,
       (labelQ) => `is:issue ${labelQ}`,
       10,
     );
 
-    expect(
-      (octokit.search.issuesAndPullRequests as ReturnType<typeof vi.fn>).mock
-        .calls.length,
-    ).toBe(2);
+    expect(octokit.search.issuesAndPullRequests).toHaveBeenCalledTimes(1);
+    const call = (
+      octokit.search.issuesAndPullRequests as ReturnType<typeof vi.fn>
+    ).mock.calls[0][0];
+    expect(call.q).toBe(
+      'is:issue label:"good first issue","help wanted","easy","up-for-grabs","first-timers-only","beginner"',
+    );
   });
 
-  it("deduplicates results across chunks", async () => {
-    const sharedItem = makeItem("https://github.com/a/b/issues/1", "a/b");
-    const uniqueItem = makeItem("https://github.com/c/d/issues/2", "c/d");
+  it('emits label:"x" for a single label and nothing for none', async () => {
+    const octokit = makeMockOctokit([]);
 
-    let callCount = 0;
-    const octokit = {
-      search: {
-        issuesAndPullRequests: vi.fn().mockImplementation(() => {
-          callCount++;
-          if (callCount === 1)
-            return { data: { total_count: 1, items: [sharedItem] } };
-          return {
-            data: { total_count: 2, items: [sharedItem, uniqueItem] },
-          };
-        }),
-      },
-    } as unknown as Octokit;
-
-    // Force 2 chunks: reservedOps=4, so maxPerChunk = 5-4+1 = 2. 3 labels → 2 chunks.
-    const result = await searchWithChunkedLabels(
+    await searchWithChunkedLabels(
       octokit,
-      ["l1", "l2", "l3"],
-      4,
-      (labelQ) => `is:issue ${labelQ}`,
+      ["good first issue"],
+      0,
+      (labelQ) => `is:issue ${labelQ}`.trim(),
+      10,
+    );
+    await searchWithChunkedLabels(
+      octokit,
+      [],
+      0,
+      (labelQ) => `is:issue ${labelQ}`.trim(),
       10,
     );
 
-    expect(result).toHaveLength(2); // deduplicated: sharedItem appears once
-    expect(result[0].html_url).toBe("https://github.com/a/b/issues/1");
-    expect(result[1].html_url).toBe("https://github.com/c/d/issues/2");
+    const queries = (
+      octokit.search.issuesAndPullRequests as ReturnType<typeof vi.fn>
+    ).mock.calls.map((c) => c[0].q as string);
+    expect(queries).toEqual(['is:issue label:"good first issue"', "is:issue"]);
   });
 });
 
@@ -1187,11 +1192,12 @@ describe("searchAcrossLanguagesAndLabels", () => {
     expect(call.q).not.toContain("language:");
   });
 
-  it("forwards reservedOps to label chunking", async () => {
+  it("does not split labels when reservedOps is high (comma form is one qualifier)", async () => {
     const items = [makeItem("https://github.com/a/b/issues/1", "a/b")];
     const octokit = makeMockOctokit(items);
 
-    // 4 labels with reservedOps=4 → maxPerChunk = 5 - 4 + 1 = 2 → 2 chunks.
+    // 8 org: qualifiers reserved plus 4 labels used to force 2+ chunks;
+    // the comma form spends no boolean operators, so it is one query.
     await searchAcrossLanguagesAndLabels(
       octokit,
       ["typescript"],
@@ -1201,16 +1207,14 @@ describe("searchAcrossLanguagesAndLabels", () => {
       10,
       undefined,
       0,
-      4,
+      8,
     );
 
-    expect(octokit.search.issuesAndPullRequests).toHaveBeenCalledTimes(2);
-    const queries = (
-      octokit.search.issuesAndPullRequests as ReturnType<typeof vi.fn>
-    ).mock.calls.map((c) => c[0].q as string);
-    for (const q of queries) {
-      expect(q.match(/label:/g)).toHaveLength(2);
-    }
+    expect(octokit.search.issuesAndPullRequests).toHaveBeenCalledTimes(1);
+    const q = (octokit.search.issuesAndPullRequests as ReturnType<typeof vi.fn>)
+      .mock.calls[0][0].q as string;
+    expect(q).toContain('label:"l1","l2","l3","l4"');
+    expect(q).not.toContain(" OR ");
   });
 
   describe("startOffset rotation (#249 follow-up)", () => {
