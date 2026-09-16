@@ -853,10 +853,12 @@ describe("buildBroadFeatureSearchQuery", () => {
     expect(q).toContain("is:issue");
     expect(q).toContain("is:open");
     expect(q).toContain("no:assignee");
-    expect(q).toContain('label:"enhancement"');
-    expect(q).toContain('label:"feature"');
-    expect(q).toContain('label:"proposal"');
-    expect(q).toContain("OR");
+    // Comma-joined single qualifier: the parenthesized OR-group form
+    // returned 0 results live, the comma form is the real any-of.
+    expect(q).toContain(
+      'label:"enhancement","feature","feature-request","proposal","roadmap","accepted-rfc"',
+    );
+    expect(q).not.toContain(" OR ");
     expect(q).toContain('-label:"good first issue"');
     expect(q).toContain('-label:"bug"');
     expect(q).toContain('-label:"documentation"');
@@ -870,10 +872,9 @@ describe("buildBroadFeatureSearchQuery", () => {
     expect(queries[0]).toContain("language:typescript");
     expect(queries[0]).not.toContain("language:python");
     expect(queries[1]).toContain("language:python");
-    // The label clause already spends all five OR operators; no query may
-    // add more
+    // No query uses an OR-group at all (labels are one comma-joined qualifier)
     for (const q of queries) {
-      expect((q.match(/ OR /g) ?? []).length).toBeLessThanOrEqual(5);
+      expect(q).not.toContain(" OR ");
     }
   });
 

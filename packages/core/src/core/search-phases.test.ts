@@ -89,6 +89,7 @@ import {
   buildLanguageVariants,
   filterVetAndScore,
   fetchIssuesFromKnownRepos,
+  KNOWN_REPO_PER_REPO_CAP,
 } from "./search-phases.js";
 import { isRateLimitError } from "./errors.js";
 import type { Octokit } from "@octokit/rest";
@@ -758,6 +759,96 @@ describe("fetchIssuesFromKnownRepos", () => {
         }
       ).issues.listForRepo,
     ).toHaveBeenCalledTimes(1);
+  });
+
+  // Vetter that honors its maxResults arg, like the real one, so per-repo
+  // capping is observable in the returned candidates.
+  function makeCappingVetter() {
+    return {
+      vetIssuesParallel: vi.fn(async (urls: string[], max: number) => ({
+        candidates: urls.slice(0, max).map((u) => makeCandidate(u, 100)),
+        allFailed: false,
+        rateLimitHit: false,
+      })),
+    } as unknown as IssueVetter;
+  }
+
+  function makeTenIssueOctokit() {
+    return {
+      issues: {
+        listForRepo: vi.fn(
+          async ({ owner, repo }: { owner: string; repo: string }) => ({
+            data: Array.from({ length: 10 }, (_, i) =>
+              makeRestIssue(`${owner}/${repo}`, i + 1),
+            ),
+          }),
+        ),
+      },
+      search: { issuesAndPullRequests: vi.fn() },
+    } as unknown as Octokit;
+  }
+
+  it("queries every repo and vets at most KNOWN_REPO_PER_REPO_CAP per repo", async () => {
+    const octokit = makeTenIssueOctokit();
+    const vetter = makeCappingVetter();
+
+    const result = await fetchIssuesFromKnownRepos(
+      octokit,
+      vetter,
+      ["a/b", "c/d", "e/f"],
+      [],
+      6,
+      "merged_pr",
+      (items) => items,
+    );
+
+    const listForRepo = (
+      octokit as unknown as {
+        issues: { listForRepo: ReturnType<typeof vi.fn> };
+      }
+    ).issues.listForRepo;
+    // Before the per-repo cap, repo 1 alone filled maxResults and repos 2-3
+    // were never queried.
+    expect(listForRepo).toHaveBeenCalledTimes(3);
+    expect(vetter.vetIssuesParallel).toHaveBeenCalledTimes(3);
+    for (const call of vi.mocked(vetter.vetIssuesParallel).mock.calls) {
+      expect(call[0]).toHaveLength(KNOWN_REPO_PER_REPO_CAP * 2);
+      expect(call[1]).toBe(KNOWN_REPO_PER_REPO_CAP);
+    }
+    expect(result.candidates).toHaveLength(6);
+    for (const repo of ["a/b", "c/d", "e/f"]) {
+      expect(
+        result.candidates.filter((c) =>
+          c.issue.url.startsWith(`https://github.com/${repo}/`),
+        ),
+      ).toHaveLength(KNOWN_REPO_PER_REPO_CAP);
+    }
+  });
+
+  it("stops once the spread-out cap reaches maxResults and never exceeds it", async () => {
+    const octokit = makeTenIssueOctokit();
+    const vetter = makeCappingVetter();
+
+    const result = await fetchIssuesFromKnownRepos(
+      octokit,
+      vetter,
+      ["a/b", "c/d", "e/f"],
+      [],
+      3,
+      "merged_pr",
+      (items) => items,
+    );
+
+    // repo 1 -> 2, repo 2 -> 1 (remaining), repo 3 skipped
+    expect(result.candidates).toHaveLength(3);
+    expect(
+      (
+        octokit as unknown as {
+          issues: { listForRepo: ReturnType<typeof vi.fn> };
+        }
+      ).issues.listForRepo,
+    ).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(vetter.vetIssuesParallel).mock.calls[1][1]).toBe(1);
   });
 
   it("applies filter function", async () => {

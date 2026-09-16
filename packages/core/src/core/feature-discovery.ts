@@ -453,10 +453,14 @@ export function buildBroadFeatureSearchQuery(opts: {
 }): string {
   const parts: string[] = ["is:issue", "is:open", "no:assignee"];
 
-  // Feature labels — any-of via parenthesized OR. The six labels spend
-  // exactly five OR operators, GitHub's entire per-query allowance.
-  const labelClause = FEATURE_LABELS.map((l) => `label:"${l}"`).join(" OR ");
-  parts.push(`(${labelClause})`);
+  // Feature labels, any-of. GitHub issue search does not evaluate a
+  // parenthesized `(label:"a" OR label:"b")` group as a label OR: measured
+  // live, the six-label OR-group returned 0 results while the comma form
+  // `label:"a","b"` returned 450,842 (and the comma form matches the
+  // inclusion-exclusion sum of the single-label counts exactly). The comma
+  // form is one qualifier and spends no boolean operators.
+  const labelClause = `label:${FEATURE_LABELS.map((l) => JSON.stringify(l)).join(",")}`;
+  parts.push(labelClause);
 
   // Exclude labels that overlap with `scout` territory.
   for (const excl of FEATURE_EXCLUSION_LABELS) {
@@ -480,9 +484,11 @@ export function buildBroadFeatureSearchQuery(opts: {
 
 /**
  * One query per language. A combined `(language:a OR language:b)` clause
- * pushed the query past GitHub's 5-operator limit (the label ORs already
- * spend all five), so every 2+ language config drew a 422 that the caller
- * swallowed into "no results" (#121). "any" disables the filter.
+ * used to push the query past GitHub's 5-operator limit (#121); the label
+ * clause no longer spends operators, but the per-language fan-out stays
+ * because multi-language qualifiers combined with a label filter also
+ * misbehave on the search backend (see buildLanguageVariants in
+ * search-phases.ts). "any" disables the filter.
  */
 export function buildBroadFeatureSearchQueries(opts: {
   languages?: string[];
