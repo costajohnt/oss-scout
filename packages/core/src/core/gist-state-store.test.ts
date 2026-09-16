@@ -684,6 +684,18 @@ describe("GistStateStore", () => {
 });
 
 describe("mergeStates", () => {
+  // Tombstone fixtures below use fixed 2026-06 dates, and mergeTombstones
+  // drops anything older than 90 days from Date.now(). Pin the clock so the
+  // fixtures never age past the TTL.
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-03T00:00:00Z"));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("uses remote preferences when neither side has a timestamp", () => {
     const local = makeState({ preferences: { githubUsername: "local" } });
     const remote = makeState({ preferences: { githubUsername: "remote" } });
