@@ -38,6 +38,15 @@ const GITHUB_MAX_BOOLEAN_OPS = 5;
 const INTER_QUERY_DELAY_MS = 2000;
 
 /**
+ * Max candidates vetted per repo in the known-repo phases (Phase 0 merged-PR,
+ * Phase 1 starred). Matches the final `applyPerRepoCap(viableFirst, 2)` in
+ * issue-discovery.ts: vetting more than 2 per repo is wasted work because the
+ * surplus is discarded there, and it let a single productive repo fill the
+ * whole phase cap so the remaining repos were never queried.
+ */
+export const KNOWN_REPO_PER_REPO_CAP = 2;
+
+/**
  * Delay between broad GraphQL search queries (Phase 2 chunked-label and
  * language fan-out loops). GraphQL `search` bills the points bucket (5000/hr)
  * rather than the REST Search bucket (30/min), so it does not need the 2000ms
@@ -413,7 +422,13 @@ export async function fetchIssuesFromKnownRepos(
       if (mapped.length > 0) {
         const filtered = filterFn(mapped);
         if (filtered.length > 0) {
-          const remainingNeeded = maxResults - candidates.length;
+          // Per-repo cap so one productive repo cannot fill the phase and
+          // starve the rest of the list (audit finding: Phase 0 queried 1 of
+          // 10 merged-PR repos). Over-fetch 2x for the vetter's rejects.
+          const remainingNeeded = Math.min(
+            KNOWN_REPO_PER_REPO_CAP,
+            maxResults - candidates.length,
+          );
           const { candidates: vetted, rateLimitHit: vetRateLimitHit } =
             await vetter.vetIssuesParallel(
               filtered
@@ -422,7 +437,7 @@ export async function fetchIssuesFromKnownRepos(
               remainingNeeded,
               priority,
             );
-          candidates.push(...vetted);
+          candidates.push(...vetted.slice(0, remainingNeeded));
           if (vetRateLimitHit) rateLimitFailures++;
         }
       }
