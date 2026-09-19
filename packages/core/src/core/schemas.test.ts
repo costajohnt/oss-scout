@@ -392,6 +392,7 @@ describe("searchRotation", () => {
       phase0Offset: 0,
       starredOffset: 0,
       maintainedOffset: 0,
+      strategyOffset: 0,
     });
   });
 
@@ -414,6 +415,7 @@ describe("searchRotation", () => {
       phase0Offset: 0,
       starredOffset: 0,
       maintainedOffset: 0,
+      strategyOffset: 0,
       lastRotatedAt: "2026-07-01T00:00:00Z",
     });
   });

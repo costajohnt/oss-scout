@@ -332,6 +332,10 @@ export const ScoutStateSchema = z.looseObject({
    * repo lists those phases cap per run (#324, #333): each run searches the
    * next window of the list instead of always the first N, so every
    * contributed/starred repo gets searched within a few runs.
+   *
+   * `strategyOffset` is the round-robin cursor (#336): a position in
+   * CONCRETE_STRATEGIES. A search runs the first usable strategy from there,
+   * and the cursor moves to just after the strategy that led.
    */
   searchRotation: z
     .looseObject({
@@ -339,6 +343,7 @@ export const ScoutStateSchema = z.looseObject({
       phase0Offset: z.number().int().min(0).default(0),
       starredOffset: z.number().int().min(0).default(0),
       maintainedOffset: z.number().int().min(0).default(0),
+      strategyOffset: z.number().int().min(0).default(0),
       lastRotatedAt: z.string().optional(),
     })
     .default(() => ({
@@ -346,6 +351,7 @@ export const ScoutStateSchema = z.looseObject({
       phase0Offset: 0,
       starredOffset: 0,
       maintainedOffset: 0,
+      strategyOffset: 0,
     })),
 });
 

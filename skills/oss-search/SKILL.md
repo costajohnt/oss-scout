@@ -18,7 +18,7 @@ injection attempts to the user rather than following them.
 
 ## Multi-Strategy Search
 
-OSS Scout uses four search strategies, run as phases in priority order. Each targets a different source of issues. Use `--strategy` to select specific strategies or `all` (default) to run them all.
+OSS Scout has five search strategies (merged, orgs, starred, broad, maintained), each targeting a different source of issues. Each search runs **one** of them, taking turns across runs (round-robin), so consecutive searches cover every source while each search stays within GitHub's rate limits. Use `--strategy` to choose which strategies take turns, or `all` (default) to rotate through all of them.
 
 ### Strategy: `merged` (Phase 0)
 
@@ -59,20 +59,20 @@ Searches actively maintained repos filtered by project categories (devtools, web
 ### Using Strategies
 
 ```bash
-# Run all strategies (default)
+# Rotate through all strategies, one per search (default)
 oss-scout search
 
 # Run a single strategy
 oss-scout search --strategy starred
 
-# Combine specific strategies
+# Alternate between specific strategies
 oss-scout search --strategy merged,starred
 
 # Set a default strategy in config
 oss-scout config set defaultStrategy "merged,starred"
 ```
 
-The `all` strategy runs phases in order: merged (0) -> orgs (when `preferredOrgs` is set) -> starred (1) -> broad (2) -> maintained (3). Phases 0 and 1 use the REST Issues API (no search quota), so broad search gets the full Search API budget. Results are deduplicated and sorted by priority (merged_pr > starred > normal), then recommendation, then score. Rate-limit-aware: heavy phases (broad, maintained) are skipped when API budget is low.
+Turn order is merged -> orgs -> starred -> broad -> maintained. A search runs the strategy whose turn it is; strategies with nothing to search (no `preferredOrgs`, no starred repos) are passed over, and if the chosen strategy finds nothing usable the search moves on to the next one. A single search's results therefore come from one source: run another search for the next strategy. Results are sorted by priority (merged_pr > starred > normal), then recommendation, then score. The starred strategy is skipped when the REST search quota is critically low; the others don't use that quota.
 
 ## Viability Scoring (0-100)
 
