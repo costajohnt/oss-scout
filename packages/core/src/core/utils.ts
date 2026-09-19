@@ -123,8 +123,10 @@ export function daysBetween(from: Date, to: Date = new Date()): number {
 
 export function getCLIVersion(): string {
   try {
+    // realpath: an npm install runs the CLI through the node_modules/.bin
+    // symlink, whose dirname has no package.json next to it (#338).
     const pkgPath = path.join(
-      path.dirname(process.argv[1]),
+      path.dirname(fs.realpathSync(process.argv[1])),
       "..",
       "package.json",
     );
