@@ -182,6 +182,32 @@ describe("daysBetween", () => {
 // ── getCLIVersion ──
 
 describe("getCLIVersion", () => {
+  it("resolves package.json through the node_modules/.bin symlink", async () => {
+    const os = await import("os");
+    const fs = await import("fs");
+    const path = await import("path");
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "scout-version-"));
+    const originalArgv1 = process.argv[1];
+    try {
+      fs.mkdirSync(path.join(root, "pkg", "dist"), { recursive: true });
+      fs.mkdirSync(path.join(root, ".bin"), { recursive: true });
+      fs.writeFileSync(
+        path.join(root, "pkg", "package.json"),
+        JSON.stringify({ version: "9.9.9" }),
+      );
+      fs.writeFileSync(path.join(root, "pkg", "dist", "cli.bundle.cjs"), "");
+      const link = path.join(root, ".bin", "oss-scout");
+      fs.symlinkSync(path.join("..", "pkg", "dist", "cli.bundle.cjs"), link);
+      process.argv[1] = link;
+      vi.resetModules();
+      const { getCLIVersion: freshGetCLIVersion } = await import("./utils.js");
+      expect(freshGetCLIVersion()).toBe("9.9.9");
+    } finally {
+      process.argv[1] = originalArgv1;
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("returns 'unknown' when package.json cannot be read", async () => {
     vi.resetModules();
     vi.doMock("fs", async (importOriginal) => {
