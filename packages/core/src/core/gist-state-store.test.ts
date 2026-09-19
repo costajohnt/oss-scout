@@ -1311,15 +1311,13 @@ describe("mergeStates", () => {
       });
 
       // Local is fresher despite a smaller offset — timestamp wins.
-      expect(mergeStates(local, remote).searchRotation).toEqual({
-        languageOffset: 1,
-        lastRotatedAt: "2026-06-02T00:00:00Z",
-      });
+      expect(mergeStates(local, remote).searchRotation).toEqual(
+        local.searchRotation,
+      );
       // ...and remote wins when remote is fresher.
-      expect(mergeStates(remote, local).searchRotation).toEqual({
-        languageOffset: 1,
-        lastRotatedAt: "2026-06-02T00:00:00Z",
-      });
+      expect(mergeStates(remote, local).searchRotation).toEqual(
+        local.searchRotation,
+      );
     });
 
     it("falls back to the larger languageOffset when neither side has a timestamp", () => {
@@ -1330,12 +1328,12 @@ describe("mergeStates", () => {
         searchRotation: { languageOffset: 7 },
       });
 
-      expect(mergeStates(local, remote).searchRotation).toEqual({
-        languageOffset: 7,
-      });
-      expect(mergeStates(remote, local).searchRotation).toEqual({
-        languageOffset: 7,
-      });
+      expect(mergeStates(local, remote).searchRotation).toEqual(
+        remote.searchRotation,
+      );
+      expect(mergeStates(remote, local).searchRotation).toEqual(
+        remote.searchRotation,
+      );
     });
 
     it("prefers the side with a timestamp over the side without one", () => {
@@ -1349,10 +1347,9 @@ describe("mergeStates", () => {
         searchRotation: { languageOffset: 9 },
       });
 
-      expect(mergeStates(local, remote).searchRotation).toEqual({
-        languageOffset: 0,
-        lastRotatedAt: "2026-06-01T00:00:00Z",
-      });
+      expect(mergeStates(local, remote).searchRotation).toEqual(
+        local.searchRotation,
+      );
     });
   });
 });

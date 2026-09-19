@@ -270,8 +270,9 @@ export class OssScout implements ScoutStateReader, ScoutStateWriter {
       (prefBoostTypes.length > 0 ? prefBoostTypes : undefined);
     const diversityRatio = options?.diversityRatio ?? prefs.diversityRatio ?? 0;
 
-    // Rotation cursor (#249 follow-up): start Phase 2's broad-search language
-    // fan-out at a different variant each run instead of always index 0.
+    // Rotation cursors: start Phase 2's broad-search language fan-out at a
+    // different variant each run (#249 follow-up), and walk the capped repo
+    // lists of the merged/starred/maintained phases window by window (#324, #333).
     const rotation = this.state.searchRotation ?? { languageOffset: 0 };
 
     let candidates: IssueCandidate[];
@@ -289,6 +290,11 @@ export class OssScout implements ScoutStateReader, ScoutStateWriter {
         interPhaseDelayMs: options?.interPhaseDelayMs,
         broadPhaseDelayMs: options?.broadPhaseDelayMs,
         languageRotationOffset: rotation.languageOffset,
+        repoRotationOffsets: {
+          merged: rotation.phase0Offset ?? 0,
+          starred: rotation.starredOffset ?? 0,
+          maintained: rotation.maintainedOffset ?? 0,
+        },
       }));
     } catch (err) {
       // A zero-candidate search throws ValidationError (see issue-discovery.ts)
@@ -297,15 +303,15 @@ export class OssScout implements ScoutStateReader, ScoutStateWriter {
       // barren language slice leading the next run. Advance the cursor off the
       // strategiesUsed the error carries, then rethrow unchanged (#249 follow-up).
       if (err instanceof ValidationError) {
-        this.advanceRotationIfBroadRan(rotation, err.strategiesUsed ?? []);
+        this.advanceRotation(rotation, err.strategiesUsed ?? []);
       }
       throw err;
     }
 
-    // Advance the rotation cursor only when the broad phase actually ran —
+    // Advance each rotation cursor only when its phase actually ran —
     // otherwise a search that skipped it (e.g. sufficient results from
-    // cheaper phases) would still shift the next run's starting variant.
-    this.advanceRotationIfBroadRan(rotation, strategiesUsed);
+    // cheaper phases) would still shift that phase's next starting point.
+    this.advanceRotation(rotation, strategiesUsed);
 
     // Feed the freshly observed maintainer-responsiveness signals back into the
     // repo scores so the next search ranks responsive/active repos higher (#167).
@@ -326,20 +332,26 @@ export class OssScout implements ScoutStateReader, ScoutStateWriter {
   }
 
   /**
-   * Advance the language-rotation cursor when the broad phase actually ran.
-   * Called on both the success path and the zero-candidate ValidationError
-   * path — a broad phase that ran and found nothing must still rotate, or the
-   * same barren language slice would lead every subsequent run (#249
-   * follow-up). Skipped/gated broad phases don't burn a rotation slot.
+   * Advance the rotation cursor of each phase that actually ran: the language
+   * cursor for broad (#249 follow-up), the repo-window cursors for
+   * merged/starred/maintained (#324, #333). Called on both the success path
+   * and the zero-candidate ValidationError path — a phase that ran and found
+   * nothing must still rotate, or the same barren slice would lead every
+   * subsequent run. Skipped/gated phases don't burn a rotation slot.
    */
-  private advanceRotationIfBroadRan(
+  private advanceRotation(
     rotation: SearchRotation,
     strategiesUsed: readonly string[],
   ): void {
-    if (!strategiesUsed.includes("broad")) return;
+    const ran = (strategy: string): number =>
+      strategiesUsed.includes(strategy) ? 1 : 0;
+    if (!["broad", "merged", "starred", "maintained"].some(ran)) return;
     this.state.searchRotation = {
       ...rotation,
-      languageOffset: rotation.languageOffset + 1,
+      languageOffset: rotation.languageOffset + ran("broad"),
+      phase0Offset: (rotation.phase0Offset ?? 0) + ran("merged"),
+      starredOffset: (rotation.starredOffset ?? 0) + ran("starred"),
+      maintainedOffset: (rotation.maintainedOffset ?? 0) + ran("maintained"),
       lastRotatedAt: new Date().toISOString(),
     };
     this.dirty = true;

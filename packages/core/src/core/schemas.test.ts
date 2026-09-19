@@ -387,7 +387,12 @@ describe("parseScoutState", () => {
 describe("searchRotation", () => {
   it("defaults on legacy state with no searchRotation key", () => {
     const state = parseScoutState({ version: 1 });
-    expect(state.searchRotation).toEqual({ languageOffset: 0 });
+    expect(state.searchRotation).toEqual({
+      languageOffset: 0,
+      phase0Offset: 0,
+      starredOffset: 0,
+      maintainedOffset: 0,
+    });
   });
 
   it("defaults languageOffset when searchRotation is present but empty", () => {
@@ -406,6 +411,9 @@ describe("searchRotation", () => {
     });
     expect(state.searchRotation).toEqual({
       languageOffset: 3,
+      phase0Offset: 0,
+      starredOffset: 0,
+      maintainedOffset: 0,
       lastRotatedAt: "2026-07-01T00:00:00Z",
     });
   });

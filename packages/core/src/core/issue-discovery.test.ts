@@ -144,7 +144,7 @@ vi.mock("./search-phases.js", () => ({
   },
 }));
 
-import { IssueDiscovery } from "./issue-discovery.js";
+import { IssueDiscovery, rotatingWindow } from "./issue-discovery.js";
 import { checkRateLimit } from "./github.js";
 import { info } from "./logger.js";
 import { applyPerRepoCap } from "./issue-filtering.js";
@@ -446,6 +446,36 @@ describe("IssueDiscovery", () => {
       expect(phase0Call![2].slice(0, 8)).toEqual(merged);
     });
 
+    it("Phase 0: the next run searches the next window, so two runs cover all 16 repos (#333)", async () => {
+      mockFetchIssuesFromKnownRepos.mockResolvedValue({
+        candidates: [makeCandidate("org/merged-0", "merged_pr")],
+        allReposFailed: false,
+        rateLimitHit: false,
+      });
+      const merged = Array.from({ length: 8 }, (_, i) => `org/merged-${i}`);
+      const open = Array.from({ length: 8 }, (_, i) => `org/open-${i}`);
+      const searched = new Set<string>();
+
+      for (const offset of [0, 1]) {
+        mockFetchIssuesFromKnownRepos.mockClear();
+        const discovery = makeDiscovery({
+          getReposWithMergedPRs: vi.fn(() => merged),
+          getReposWithOpenPRs: vi.fn(() => open),
+        });
+        await discovery.searchIssues({
+          maxResults: 5,
+          repoRotationOffsets: { merged: offset },
+        });
+        const phase0Call = mockFetchIssuesFromKnownRepos.mock.calls.find(
+          (call) => call[5] === "merged_pr",
+        );
+        expect(phase0Call![2]).toHaveLength(10);
+        (phase0Call![2] as string[]).forEach((r) => searched.add(r));
+      }
+
+      expect(searched.size).toBe(16);
+    });
+
     it("caps Phase 0's share of maxResults so starred (Phase 1) still runs", async () => {
       // Regression: Phase 0 previously took the whole budget, so the
       // `allCandidates < maxResults` gate skipped Phase 1 even when starred
@@ -541,6 +571,97 @@ describe("IssueDiscovery", () => {
       // "org/shared" was already searched in Phase 0 (as open-PR repo), so
       // Phase 1 only gets the non-overlapping starred repo.
       expect(phase1Call![2]).toEqual(["org/other"]);
+    });
+
+    it("Phase 1: the starred cursor picks the window of the starred list (#324)", async () => {
+      mockFetchIssuesFromKnownRepos.mockResolvedValue({
+        candidates: [],
+        allReposFailed: false,
+        rateLimitHit: false,
+      });
+      const starred = Array.from({ length: 16 }, (_, i) => `org/starred-${i}`);
+      const discovery = makeDiscovery({
+        getStarredRepos: vi.fn(() => starred),
+      });
+
+      // Every phase is mocked empty, so the search ends in "no candidates";
+      // only the repos handed to the phase matter here.
+      await expect(
+        discovery.searchIssues({
+          maxResults: 5,
+          repoRotationOffsets: { starred: 1 },
+        }),
+      ).rejects.toThrow("No issue candidates found");
+
+      const phase1Call = mockFetchIssuesFromKnownRepos.mock.calls.find(
+        (call) => call[5] === "starred",
+      );
+      expect(phase1Call![2]).toEqual([
+        ...starred.slice(10),
+        ...starred.slice(0, 4),
+      ]);
+    });
+
+    // Windowing the list *after* dropping Phase 0's repos let its length shift
+    // with each run's Phase 0 window, which can leave a starred repo unsearched
+    // for many runs. The window is taken over the stable list, then filtered.
+    it("Phase 1: windows the stable starred list before dropping Phase 0 repos (#324)", async () => {
+      mockFetchIssuesFromKnownRepos.mockResolvedValue({
+        candidates: [],
+        allReposFailed: false,
+        rateLimitHit: false,
+      });
+      const starredOnly = Array.from({ length: 11 }, (_, i) => `org/s-${i}`);
+      const discovery = makeDiscovery({
+        getReposWithOpenPRs: vi.fn(() => ["org/contributed"]),
+        getStarredRepos: vi.fn(() => [
+          ...starredOnly.slice(0, 2),
+          "org/contributed",
+          ...starredOnly.slice(2),
+        ]),
+      });
+
+      await expect(
+        discovery.searchIssues({
+          maxResults: 5,
+          repoRotationOffsets: { starred: 1 },
+        }),
+      ).rejects.toThrow("No issue candidates found");
+
+      const phase1Call = mockFetchIssuesFromKnownRepos.mock.calls.find(
+        (call) => call[5] === "starred",
+      );
+      // 12-long list, window 10 at offset 1 = positions 10, 11, 0..7; the
+      // contributed repo at position 2 is dropped after windowing.
+      expect(phase1Call![2]).toEqual([
+        "org/s-9",
+        "org/s-10",
+        "org/s-0",
+        "org/s-1",
+        ...starredOnly.slice(2, 7),
+      ]);
+    });
+
+    it("Phase 3: the maintained cursor picks the window of the starred list (#324)", async () => {
+      mockFetchIssuesFromMaintainedRepos.mockResolvedValue([]);
+      const starred = Array.from({ length: 20 }, (_, i) => `org/starred-${i}`);
+      const discovery = makeDiscovery({
+        getStarredRepos: vi.fn(() => starred),
+      });
+
+      // Every phase is mocked empty, so the search ends in "no candidates";
+      // only the repos handed to the phase matter here.
+      await expect(
+        discovery.searchIssues({
+          maxResults: 5,
+          repoRotationOffsets: { maintained: 1 },
+        }),
+      ).rejects.toThrow("No issue candidates found");
+
+      expect(mockFetchIssuesFromMaintainedRepos.mock.calls[0]![1]).toEqual([
+        ...starred.slice(15),
+        ...starred.slice(0, 10),
+      ]);
     });
 
     it("Phase 1: calls fetchIssuesFromKnownRepos with starred repos, priority starred", async () => {
@@ -1586,5 +1707,26 @@ describe("IssueDiscovery", () => {
       const phaseCall = mockSearchAcrossLanguagesAndLabels.mock.calls.at(-1)!;
       expect(phaseCall.at(-1)).toBe(0);
     });
+  });
+});
+
+describe("rotatingWindow (#324, #333)", () => {
+  const items = Array.from({ length: 17 }, (_, i) => i);
+
+  it("returns the whole list when it fits", () => {
+    expect(rotatingWindow([1, 2, 3], 10, 5)).toEqual([1, 2, 3]);
+  });
+
+  it("starts each run one window further and wraps at the end", () => {
+    expect(rotatingWindow(items, 10, 0)).toEqual([
+      0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
+    ]);
+    expect(rotatingWindow(items, 10, 1)).toEqual([
+      10, 11, 12, 13, 14, 15, 16, 0, 1, 2,
+    ]);
+  });
+
+  it("accepts any offset, however large", () => {
+    expect(rotatingWindow(items, 10, 17)).toEqual(rotatingWindow(items, 10, 0));
   });
 });
