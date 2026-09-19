@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.0](https://github.com/costajohnt/oss-scout/compare/mcp-server-v0.11.0...mcp-server-v0.12.0) (2026-09-19)
+
+
+### Features
+
+* make the skip list permanent and route vetter-rejected issues into it ([#345](https://github.com/costajohnt/oss-scout/issues/345)) ([9af51ab](https://github.com/costajohnt/oss-scout/commit/9af51ab9cea06a99d522cdc9441a69840b6f9d36)), closes [#343](https://github.com/costajohnt/oss-scout/issues/343)
+
 ## [0.11.0](https://github.com/costajohnt/oss-scout/compare/mcp-server-v0.10.2...mcp-server-v0.11.0) (2026-08-11)
 
 

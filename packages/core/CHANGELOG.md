@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.8.0](https://github.com/costajohnt/oss-scout/compare/core-v1.7.1...core-v1.8.0) (2026-09-19)
+
+
+### Features
+
+* make the skip list permanent and route vetter-rejected issues into it ([#345](https://github.com/costajohnt/oss-scout/issues/345)) ([9af51ab](https://github.com/costajohnt/oss-scout/commit/9af51ab9cea06a99d522cdc9441a69840b6f9d36)), closes [#343](https://github.com/costajohnt/oss-scout/issues/343)
+
+
+### Bug Fixes
+
+* drop the default 30s inter-phase and 90s broad-phase sleeps ([#344](https://github.com/costajohnt/oss-scout/issues/344)) ([a21b4c0](https://github.com/costajohnt/oss-scout/commit/a21b4c07ae6206a77aeca3a2c5a795b07539cf7a)), closes [#334](https://github.com/costajohnt/oss-scout/issues/334)
+
 ## [1.7.1](https://github.com/costajohnt/oss-scout/compare/core-v1.7.0...core-v1.7.1) (2026-09-19)
 
 
