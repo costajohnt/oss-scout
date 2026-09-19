@@ -188,7 +188,7 @@ oss-scout vet-list --prune    # re-vet and remove stale issues
 
 ### Skip list
 
-Skip issues you don't want to see again. Skipped issues are excluded from future search results and auto-expire after 90 days.
+Skip issues you don't want to see again. Skipped issues are excluded from future search results permanently; issues the vetter rejects land here too, with the reason.
 
 ```bash
 oss-scout skip add https://github.com/owner/repo/issues/123    # skip an issue
