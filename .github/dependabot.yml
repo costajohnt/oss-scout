@@ -2,7 +2,7 @@ version: 2
 
 updates:
   # Actions are pinned to commit SHAs (a mutable tag like @v6 can be
-  # repointed at malicious code, and the publish workflow holds NPM_TOKEN).
+  # repointed at malicious code, and the publish workflow can mint an npm OIDC publish token).
   # A pin without an updater silently rots, so Dependabot owns keeping them
   # current — it rewrites the SHA and the trailing `# vN` comment together.
   # `directory: /` covers .github/workflows plus the composite action.yml

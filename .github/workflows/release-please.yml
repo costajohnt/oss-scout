@@ -51,10 +51,22 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # npm trusted publishing (OIDC): the job's id-token mints the credential,
+      # so no long-lived NPM_TOKEN is needed. The 1.7.0 publish failed with
+      # `404 Not Found - PUT` on an expired granular token; the trusted
+      # publisher for both packages is registered on npmjs.com (owner
+      # costajohnt, repo oss-scout, this workflow file). Needs npm >= 11.5.1,
+      # newer than Node 22's bundled npm.
+      - name: Upgrade npm for trusted publishing
+        run: npm install -g npm@latest && npm --version
+
+      - name: Build and pack @oss-scout/core
+        run: |
+          pnpm --filter @oss-scout/core run prepublishOnly
+          pnpm --filter @oss-scout/core pack --pack-destination "$RUNNER_TEMP/pkg-core"
+
       - name: Publish @oss-scout/core
-        run: pnpm --filter @oss-scout/core publish --access public --no-git-checks --provenance
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish "$RUNNER_TEMP"/pkg-core/*.tgz --access public --provenance
 
   publish-mcp:
     name: Publish @oss-scout/mcp to npm
@@ -89,7 +101,15 @@ jobs:
       - name: Build core (required by mcp-server)
         run: pnpm --filter @oss-scout/core run build
 
+      - name: Upgrade npm for trusted publishing
+        run: npm install -g npm@latest && npm --version
+
+      # `pnpm pack` rewrites the `workspace:^` dependency on core to the
+      # released version; `npm publish <tarball>` then needs no pnpm at all.
+      - name: Build and pack @oss-scout/mcp
+        run: |
+          pnpm --filter @oss-scout/mcp run prepublishOnly
+          pnpm --filter @oss-scout/mcp pack --pack-destination "$RUNNER_TEMP/pkg-mcp"
+
       - name: Publish @oss-scout/mcp
-        run: pnpm --filter @oss-scout/mcp publish --access public --no-git-checks --provenance
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish "$RUNNER_TEMP"/pkg-mcp/*.tgz --access public --provenance
