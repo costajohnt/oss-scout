@@ -41,6 +41,7 @@ import { debug, info, warn } from "./logger.js";
 import {
   type GitHubSearchItem,
   isDocOnlyIssue,
+  isNonActionableIssue,
   applyPerRepoCap,
 } from "./issue-filtering.js";
 import { IssueVetter, type ScoutStateReader } from "./issue-vetting.js";
@@ -173,6 +174,7 @@ function buildIssueFilter(
       const ageDays = daysBetween(updatedAt, config.now);
       if (ageDays > config.maxAgeDays) return false;
       if (!config.includeDocIssues && isDocOnlyIssue(item)) return false;
+      if (isNonActionableIssue(item)) return false;
       return true;
     });
   };

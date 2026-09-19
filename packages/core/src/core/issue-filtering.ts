@@ -42,6 +42,30 @@ export function isDocOnlyIssue(item: GitHubSearchItem): boolean {
   return nonEmptyLabels.every((n) => DOC_ONLY_LABELS.has(n));
 }
 
+/** Labels that mark an issue as a conversation, not a change request. */
+const NON_ACTIONABLE_LABELS = new Set(["question", "discussion", "support"]);
+
+/**
+ * Drop issues that are not a change request (#332): labelled as a
+ * question/discussion/support thread, titled as a question ("Does X work
+ * with Y?"), or given a placeholder title under three words ("logan").
+ */
+export function isNonActionableIssue(item: GitHubSearchItem): boolean {
+  const labelNames = (item.labels ?? []).map((l) =>
+    (typeof l === "string" ? l : l.name || "").toLowerCase(),
+  );
+  if (labelNames.some((n) => NON_ACTIONABLE_LABELS.has(n))) return true;
+  const title = (item.title ?? "").trim();
+  if (title.endsWith("?")) return true;
+  if (
+    /^(how|why|what|when|where|which|who|is|are|does|do|can|could|should|would|will|has|have)\b/i.test(
+      title,
+    )
+  )
+    return true;
+  return title.split(/\s+/).filter(Boolean).length < 3;
+}
+
 /** Known beginner-type label names used to detect label-farming repos. */
 export const BEGINNER_LABELS = new Set([
   "good first issue",

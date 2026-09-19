@@ -19,8 +19,8 @@ function makeFixture(overrides: Partial<VetFixture> = {}): VetFixture {
       title: "A clear bug report",
       body:
         "Steps to reproduce:\n1. Do the thing\n2. Watch it fail\n\nExpected: it should not fail. " +
-        "This is a longer body so the length indicator crosses the 200-char threshold easily, " +
-        "giving analyzeRequirements enough signal to call this clear.",
+        "Actual: it fails. Numbered repro steps plus an expected-vs-actual pair are " +
+        "two of the three indicators analyzeRequirements needs to call this clear.",
       labels: ["bug"],
       state: "open",
       createdAt: "2026-01-01T00:00:00Z",
