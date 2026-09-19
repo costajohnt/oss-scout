@@ -286,7 +286,7 @@ export function registerTools(server: McpServer, scout: OssScout): void {
 
   server.tool(
     "skip",
-    "Skip, unskip, list, or clear skipped issues. Skipped issues are excluded from future searches and auto-expire after 90 days.",
+    "Skip, unskip, list, or clear skipped issues. Skipped issues are excluded from future searches permanently.",
     {
       action: z
         .enum(["add", "remove", "list", "clear"])

@@ -223,13 +223,10 @@ export class OssScout implements ScoutStateReader, ScoutStateWriter {
 
   /**
    * Multi-strategy issue search. Returns scored, sorted candidates.
-   * Automatically culls expired skip entries and filters skipped issues.
+   * Skipped issues are excluded; the skip list is permanent (#343).
    */
   async search(options?: SearchOptions): Promise<SearchResult> {
     this.evictStaleCacheEntries();
-
-    // Auto-cull expired skips before searching
-    this.cullExpiredSkips();
 
     const skippedUrls = new Set(
       (this.state.skippedIssues ?? []).map((s) => s.url),
@@ -872,6 +869,18 @@ export class OssScout implements ScoutStateReader, ScoutStateWriter {
     );
 
     for (const c of candidates) {
+      // A vetter "skip" is a decision, not a result: route it to the permanent
+      // skip list so it never re-surfaces or re-burns vetting calls (#343).
+      if (c.recommendation === "skip") {
+        existing.delete(c.issue.url);
+        this.skipIssue(c.issue.url, {
+          repo: c.issue.repo,
+          number: c.issue.number,
+          title: c.issue.title,
+          reason: c.reasonsToSkip.join("; ") || "vetter: skip",
+        });
+        continue;
+      }
       const prev = existing.get(c.issue.url);
       existing.set(c.issue.url, {
         issueUrl: c.issue.url,
@@ -926,11 +935,16 @@ export class OssScout implements ScoutStateReader, ScoutStateWriter {
   // ── Skip List ───────────────────────────────────────────────────────
 
   /**
-   * Skip an issue — excludes it from future searches. Auto-culled after 90 days.
+   * Skip an issue — excludes it from future searches permanently (#343).
    */
   skipIssue(
     url: string,
-    metadata?: { repo?: string; number?: number; title?: string },
+    metadata?: {
+      repo?: string;
+      number?: number;
+      title?: string;
+      reason?: string;
+    },
   ): void {
     const existing = this.state.skippedIssues ?? [];
     if (existing.some((s) => s.url === url)) return; // already skipped
@@ -942,6 +956,7 @@ export class OssScout implements ScoutStateReader, ScoutStateWriter {
         number: metadata?.number ?? 0,
         title: metadata?.title ?? "",
         skippedAt: new Date().toISOString(),
+        ...(metadata?.reason ? { reason: metadata.reason } : {}),
       },
     ];
     // Also remove from saved results if present. No tombstone needed: the
@@ -985,7 +1000,8 @@ export class OssScout implements ScoutStateReader, ScoutStateWriter {
   }
 
   /**
-   * Remove skipped issues older than maxDays (default 90). Called automatically during search.
+   * Remove skipped issues older than maxDays (default 90). Not called by
+   * search since #343 (skips are permanent); available for an explicit prune.
    * @returns The number of expired entries that were removed.
    */
   cullExpiredSkips(maxDays: number = 90): number {
