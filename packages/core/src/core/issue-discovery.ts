@@ -96,6 +96,34 @@ const CONTRIBUTED_REPO_MAX_AGE_DAYS = 365;
  */
 const PHASE0_MAX_SHARE = 0.5;
 
+/**
+ * Repos searched per run by the phases that walk a repo list. Each run takes
+ * the next window of the list (see `rotatingWindow`), so these bound REST cost
+ * per run without permanently hiding the rest of the list (#324, #333).
+ */
+const PHASE0_REPOS_PER_RUN = 10;
+const STARRED_REPOS_PER_RUN = 10;
+const MAINTAINED_REPOS_PER_RUN = 15;
+
+/**
+ * The `size`-long slice of `items` for rotation cursor `offset` (#324, #333):
+ * run N starts at `N * size` and wraps, so consecutive runs walk the whole
+ * list instead of re-reading the first `size` entries forever. Returns the
+ * whole list when it already fits.
+ */
+export function rotatingWindow<T>(
+  items: readonly T[],
+  size: number,
+  offset: number,
+): T[] {
+  if (items.length <= size) return [...items];
+  const start = (offset * size) % items.length;
+  return Array.from(
+    { length: size },
+    (_, i) => items[(start + i) % items.length] as T,
+  );
+}
+
 // ── Extracted types and standalone functions ──────────────────────────
 
 /** Result from a single search phase. */
@@ -279,7 +307,7 @@ async function runPhase1(
 
   // Cap labels: starred repos already signal user interest, so fewer labels suffice.
   const phase1Labels = labels.slice(0, 3);
-  const reposToSearch = repos.slice(0, 10);
+  const reposToSearch = repos.slice(0, STARRED_REPOS_PER_RUN);
   const { candidates, allReposFailed, rateLimitHit } =
     await fetchIssuesFromKnownRepos(
       octokit,
@@ -431,6 +459,7 @@ async function runPhase3(
   existingCandidates: IssueCandidate[],
   filterIssues: (items: GitHubSearchItem[]) => GitHubSearchItem[],
   tracker: SearchBudgetTracker,
+  rotationOffset = 0,
 ): Promise<PhaseResult> {
   info(MODULE, "Phase 3: Searching actively maintained repos...");
 
@@ -448,7 +477,7 @@ async function runPhase3(
     );
     const restItems = await fetchIssuesFromMaintainedRepos(
       octokit,
-      eligibleStarred.slice(0, 15),
+      rotatingWindow(eligibleStarred, MAINTAINED_REPOS_PER_RUN, rotationOffset),
       minStars,
       maxResults,
     );
@@ -661,6 +690,15 @@ export class IssueDiscovery {
        * variant count at use site, so any value is safe to pass.
        */
       languageRotationOffset?: number;
+      /**
+       * Rotation cursors (#324, #333) for the phases that cap how many repos
+       * they walk per run. Wrapped at use site, so any value is safe to pass.
+       */
+      repoRotationOffsets?: {
+        merged?: number;
+        starred?: number;
+        maintained?: number;
+      };
     } = {},
   ): Promise<{
     candidates: IssueCandidate[];
@@ -839,15 +877,14 @@ export class IssueDiscovery {
 
     // Phase 0: Repos the user has engaged with — merged PRs first (strongest
     // signal), then open PRs (active engagement even without a merge yet).
-    // Deduped and capped so REST cost stays bounded.
-    const seenPhase0 = new Set<string>();
-    const phase0Repos: string[] = [];
-    for (const repo of [...mergedPRRepos, ...openPRRepos]) {
-      if (seenPhase0.has(repo)) continue;
-      seenPhase0.add(repo);
-      phase0Repos.push(repo);
-      if (phase0Repos.length >= 10) break;
-    }
+    // Deduped, then windowed so REST cost stays bounded while each run
+    // reaches a different part of the list (#333).
+    const repoRotation = options.repoRotationOffsets ?? {};
+    const phase0Repos = rotatingWindow(
+      [...new Set([...mergedPRRepos, ...openPRRepos])],
+      PHASE0_REPOS_PER_RUN,
+      repoRotation.merged ?? 0,
+    );
     const phase0RepoSet = new Set(phase0Repos);
 
     // Only cap Phase 0 when a later phase can actually consume the reserved
@@ -915,7 +952,11 @@ export class IssueDiscovery {
       enabledStrategies.has("starred")
     ) {
       await applyInterPhaseDelay();
-      const reposToSearch = starredRepos.filter((r) => !phase0RepoSet.has(r));
+      const reposToSearch = rotatingWindow(
+        starredRepos.filter((r) => !phase0RepoSet.has(r)),
+        STARRED_REPOS_PER_RUN,
+        repoRotation.starred ?? 0,
+      );
       if (reposToSearch.length > 0) {
         const remaining = maxResults - allCandidates.length;
         if (remaining > 0) {
@@ -1052,6 +1093,7 @@ export class IssueDiscovery {
         allCandidates,
         filterIssues,
         tracker,
+        repoRotation.maintained ?? 0,
       );
       recordPhaseResult("3", result);
       strategiesUsed.push("maintained");

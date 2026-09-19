@@ -144,7 +144,7 @@ vi.mock("./search-phases.js", () => ({
   },
 }));
 
-import { IssueDiscovery } from "./issue-discovery.js";
+import { IssueDiscovery, rotatingWindow } from "./issue-discovery.js";
 import { checkRateLimit } from "./github.js";
 import { info } from "./logger.js";
 import { applyPerRepoCap } from "./issue-filtering.js";
@@ -444,6 +444,36 @@ describe("IssueDiscovery", () => {
       expect(phase0Call![2]).toHaveLength(10);
       // Merged repos come first
       expect(phase0Call![2].slice(0, 8)).toEqual(merged);
+    });
+
+    it("Phase 0: the next run searches the next window, so two runs cover all 16 repos (#333)", async () => {
+      mockFetchIssuesFromKnownRepos.mockResolvedValue({
+        candidates: [makeCandidate("org/merged-0", "merged_pr")],
+        allReposFailed: false,
+        rateLimitHit: false,
+      });
+      const merged = Array.from({ length: 8 }, (_, i) => `org/merged-${i}`);
+      const open = Array.from({ length: 8 }, (_, i) => `org/open-${i}`);
+      const searched = new Set<string>();
+
+      for (const offset of [0, 1]) {
+        mockFetchIssuesFromKnownRepos.mockClear();
+        const discovery = makeDiscovery({
+          getReposWithMergedPRs: vi.fn(() => merged),
+          getReposWithOpenPRs: vi.fn(() => open),
+        });
+        await discovery.searchIssues({
+          maxResults: 5,
+          repoRotationOffsets: { merged: offset },
+        });
+        const phase0Call = mockFetchIssuesFromKnownRepos.mock.calls.find(
+          (call) => call[5] === "merged_pr",
+        );
+        expect(phase0Call![2]).toHaveLength(10);
+        (phase0Call![2] as string[]).forEach((r) => searched.add(r));
+      }
+
+      expect(searched.size).toBe(16);
     });
 
     it("caps Phase 0's share of maxResults so starred (Phase 1) still runs", async () => {
@@ -1586,5 +1616,26 @@ describe("IssueDiscovery", () => {
       const phaseCall = mockSearchAcrossLanguagesAndLabels.mock.calls.at(-1)!;
       expect(phaseCall.at(-1)).toBe(0);
     });
+  });
+});
+
+describe("rotatingWindow (#324, #333)", () => {
+  const items = Array.from({ length: 17 }, (_, i) => i);
+
+  it("returns the whole list when it fits", () => {
+    expect(rotatingWindow([1, 2, 3], 10, 5)).toEqual([1, 2, 3]);
+  });
+
+  it("starts each run one window further and wraps at the end", () => {
+    expect(rotatingWindow(items, 10, 0)).toEqual([
+      0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
+    ]);
+    expect(rotatingWindow(items, 10, 1)).toEqual([
+      10, 11, 12, 13, 14, 15, 16, 0, 1, 2,
+    ]);
+  });
+
+  it("accepts any offset, however large", () => {
+    expect(rotatingWindow(items, 10, 17)).toEqual(rotatingWindow(items, 10, 0));
   });
 });

@@ -1128,6 +1128,46 @@ describe("OssScout.search language rotation cursor (#249 follow-up)", () => {
     expect(scout.getState().searchRotation.languageOffset).toBe(2);
   });
 
+  it("passes the repo-window cursors to searchIssues (#324, #333)", async () => {
+    const scout = new OssScout(
+      "test-token",
+      ScoutStateSchema.parse({
+        version: 1,
+        searchRotation: {
+          languageOffset: 0,
+          phase0Offset: 4,
+          starredOffset: 5,
+          maintainedOffset: 6,
+        },
+      }),
+    );
+    let captured: unknown;
+    vi.spyOn(IssueDiscovery.prototype, "searchIssues").mockImplementation(
+      async (opts: { repoRotationOffsets?: unknown }) => {
+        captured = opts.repoRotationOffsets;
+        return { candidates: [], strategiesUsed: [] as never[] };
+      },
+    );
+
+    await scout.search();
+
+    expect(captured).toEqual({ merged: 4, starred: 5, maintained: 6 });
+  });
+
+  it("advances only the repo cursors of the phases that ran (#324, #333)", async () => {
+    const scout = makeRotationScout({ languageOffset: 2 });
+    mockDiscoverySearch(["merged", "maintained"]);
+
+    await scout.search();
+
+    const rotation = scout.getState().searchRotation;
+    expect(rotation.phase0Offset).toBe(1);
+    expect(rotation.starredOffset).toBe(0);
+    expect(rotation.maintainedOffset).toBe(1);
+    expect(rotation.languageOffset).toBe(2);
+    expect(rotation.lastRotatedAt).toBeDefined();
+  });
+
   it("does not advance the offset on a non-ValidationError failure", async () => {
     const scout = makeRotationScout({ languageOffset: 2 });
     vi.spyOn(IssueDiscovery.prototype, "searchIssues").mockRejectedValue(

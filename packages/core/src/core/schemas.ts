@@ -327,13 +327,26 @@ export const ScoutStateSchema = z.looseObject({
    * variant leads each run. `languageOffset` advances (no modulo; the
    * consumer wraps at use time so a shrinking language list never needs
    * clamping here).
+   *
+   * `phase0Offset`, `starredOffset` and `maintainedOffset` do the same for the
+   * repo lists those phases cap per run (#324, #333): each run searches the
+   * next window of the list instead of always the first N, so every
+   * contributed/starred repo gets searched within a few runs.
    */
   searchRotation: z
     .looseObject({
       languageOffset: z.number().int().min(0).default(0),
+      phase0Offset: z.number().int().min(0).default(0),
+      starredOffset: z.number().int().min(0).default(0),
+      maintainedOffset: z.number().int().min(0).default(0),
       lastRotatedAt: z.string().optional(),
     })
-    .default(() => ({ languageOffset: 0 })),
+    .default(() => ({
+      languageOffset: 0,
+      phase0Offset: 0,
+      starredOffset: 0,
+      maintainedOffset: 0,
+    })),
 });
 
 /**
