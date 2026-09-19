@@ -728,8 +728,10 @@ export class IssueDiscovery {
       (scopes ? buildEffectiveLabels(scopes, config.labels) : config.labels);
     const maxResults = options.maxResults || 10;
     const minStars = config.minStars ?? 50;
+    // Provided configs (library mode) skip schema parsing, so the fallbacks
+    // here must match the schema defaults: 0, the budget tracker paces calls (#334).
     const interPhaseDelay =
-      options.interPhaseDelayMs ?? config.interPhaseDelayMs ?? 30000;
+      options.interPhaseDelayMs ?? config.interPhaseDelayMs ?? 0;
 
     // Strategy selection. Empty arrays count as "unset" so a stored
     // defaultStrategy of [] can't silently produce zero-strategy searches.
@@ -926,7 +928,7 @@ export class IssueDiscovery {
     // fold the result in, and record the strategy as used. Both execution
     // modes below call these; they differ only in which phases run and when.
     const broadDelay =
-      options.broadPhaseDelayMs ?? config.broadPhaseDelayMs ?? 90000;
+      options.broadPhaseDelayMs ?? config.broadPhaseDelayMs ?? 0;
     const runStrategy: Record<
       Exclude<SearchStrategy, "all">,
       (wanted: number) => Promise<void>

@@ -250,8 +250,8 @@ oss-scout config reset                               # reset to defaults
 | `aiPolicyBlocklist` | string[] | matplotlib/matplotlib | Repos with anti-AI policies |
 | `projectCategories` | enum[] | [] | Topic filter: devtools, web-frameworks, etc. |
 | `defaultStrategy` | enum[] | all | Default search strategies: merged, orgs, starred, broad, maintained |
-| `interPhaseDelayMs` | number | 30000 | Pause before a search moves on to the next strategy (rate-limit pacing) |
-| `broadPhaseDelayMs` | number | 90000 | Extra delay before the broad phase. Not used by `oss-scout search` since round-robin; applies only to library callers of `IssueDiscovery` that run every phase |
+| `interPhaseDelayMs` | number | 0 | Fixed pause before a search moves on to the next strategy. Off by default: the search budget tracker already paces calls against the 30/min limit |
+| `broadPhaseDelayMs` | number | 0 | Extra delay before the broad phase. Not used by `oss-scout search` since round-robin; applies only to library callers of `IssueDiscovery` that run every phase |
 | `skipBroadWhenSufficientResults` | number | 8 | Not used by `oss-scout search` since round-robin; applies only to library callers of `IssueDiscovery` that run every phase. Skips the broad phase once this many candidates from **new** repos are found (0 disables). Candidates from your affinity (Phase 0) and starred (Phase 1) repos do not count, so the broad phase still runs to surface repos you haven't contributed to. |
 | `persistence` | enum | local | State storage: local or gist |
 | `preferLanguages` | string[] | [] | Soft-boost ranking for these repo languages (the `--prefer-languages` flag overrides) |

@@ -211,7 +211,11 @@ export const ScoutPreferencesSchema = z.looseObject({
   maxIssueAgeDays: z.number().default(90),
   includeDocIssues: z.boolean().default(true),
   minRepoScoreThreshold: z.number().default(4),
-  interPhaseDelayMs: z.number().min(0).max(120000).default(30000),
+  // Fixed pause before a search moves on to the next strategy. Defaults to
+  // 0 (#334): SearchBudgetTracker already paces every search call against
+  // the 30/min window and the pre-flight quota, so the old 30s pin only
+  // added wall clock. Retained as a knob for hosts that want spacing.
+  interPhaseDelayMs: z.number().min(0).max(120000).default(0),
   persistence: PersistenceModeSchema.default("local"),
   defaultStrategy: z.array(SearchStrategySchema).optional(),
   /**
