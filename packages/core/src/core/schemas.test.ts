@@ -31,7 +31,7 @@ describe("ScoutStateSchema", () => {
     expect(state.preferences.maxIssueAgeDays).toBe(90);
     expect(state.preferences.includeDocIssues).toBe(true);
     expect(state.preferences.minRepoScoreThreshold).toBe(4);
-    expect(state.preferences.interPhaseDelayMs).toBe(30000);
+    expect(state.preferences.interPhaseDelayMs).toBe(0);
     expect(state.preferences.aiPolicyBlocklist).toEqual([
       "matplotlib/matplotlib",
     ]);
@@ -133,9 +133,9 @@ describe("ScoutPreferencesSchema", () => {
     expect(prefs.projectCategories).toEqual(["devtools", "education"]);
   });
 
-  it("defaults interPhaseDelayMs to 30000", () => {
+  it("defaults interPhaseDelayMs to 0 (#334)", () => {
     const prefs = ScoutPreferencesSchema.parse({});
-    expect(prefs.interPhaseDelayMs).toBe(30000);
+    expect(prefs.interPhaseDelayMs).toBe(0);
   });
 
   it("accepts custom interPhaseDelayMs", () => {
