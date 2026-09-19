@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.2](https://github.com/costajohnt/oss-scout/compare/core-v1.7.1...core-v1.7.2) (2026-09-19)
+
+
+### Bug Fixes
+
+* drop the default 30s inter-phase and 90s broad-phase sleeps ([#344](https://github.com/costajohnt/oss-scout/issues/344)) ([a21b4c0](https://github.com/costajohnt/oss-scout/commit/a21b4c07ae6206a77aeca3a2c5a795b07539cf7a)), closes [#334](https://github.com/costajohnt/oss-scout/issues/334)
+
 ## [1.7.1](https://github.com/costajohnt/oss-scout/compare/core-v1.7.0...core-v1.7.1) (2026-09-19)
 
 
