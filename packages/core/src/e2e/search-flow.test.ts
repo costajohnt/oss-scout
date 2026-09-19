@@ -293,8 +293,11 @@ describe("search pipeline e2e (#161)", () => {
     const scout = freshScout();
     expect(scout.getState().searchRotation.languageOffset).toBe(0);
 
+    // Pin the broad strategy: round-robin (#336) would otherwise alternate
+    // strategies across runs, and only broad moves the language cursor.
     const first = await scout.search({
       maxResults: 5,
+      strategies: ["broad"],
       interPhaseDelayMs: 0,
       broadPhaseDelayMs: 0,
     });
@@ -308,10 +311,27 @@ describe("search pipeline e2e (#161)", () => {
     // new each time instead of always at languages[0].
     const second = await scout.search({
       maxResults: 5,
+      strategies: ["broad"],
       interPhaseDelayMs: 0,
       broadPhaseDelayMs: 0,
     });
     expect(second.strategiesUsed).toContain("broad");
     expect(scout.getState().searchRotation.languageOffset).toBe(2);
+  });
+
+  // With no contributed/starred repos or preferred orgs, only broad and
+  // maintained can run. The cursor moves past the strategy that led, so
+  // consecutive searches alternate instead of every blocked position falling
+  // forward onto broad (#336).
+  it("takes turns between the strategies that can run (#336)", async () => {
+    const scout = freshScout();
+    const opts = { maxResults: 5, interPhaseDelayMs: 0, broadPhaseDelayMs: 0 };
+
+    const leads = [];
+    for (let i = 0; i < 4; i++) {
+      leads.push((await scout.search(opts)).strategiesUsed[0]);
+    }
+
+    expect(leads).toEqual(["broad", "maintained", "broad", "maintained"]);
   });
 });

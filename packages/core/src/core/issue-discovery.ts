@@ -704,6 +704,15 @@ export class IssueDiscovery {
         starred?: number;
         maintained?: number;
       };
+      /**
+       * Round-robin cursor (#336). When set, the search runs one strategy per
+       * run instead of every enabled phase: the first enabled, runnable
+       * strategy at or after this position in CONCRETE_STRATEGIES (wrapped),
+       * falling through to the next only if it finds nothing viable. The
+       * first entry of `strategiesUsed` is the one that led. Undefined keeps
+       * the run-every-phase behavior.
+       */
+      strategyRotationOffset?: number;
     } = {},
   ): Promise<{
     candidates: IssueCandidate[];
@@ -891,218 +900,281 @@ export class IssueDiscovery {
       repoRotation.merged ?? 0,
     );
     const phase0RepoSet = new Set(phase0Repos);
-
-    // Only cap Phase 0 when a later phase can actually consume the reserved
-    // budget — otherwise (no starred repos, broad/maintained disabled) the
-    // reservation would just shrink the result set with nothing to fill it.
     const preferredOrgs = config.preferredOrgs ?? [];
-    const orgsPhaseEnabled =
-      preferredOrgs.length > 0 && enabledStrategies.has("orgs");
+    // Window the stable starred list, then filter (see runPhase3, #324).
+    const starredToSearch = rotatingWindow(
+      starredRepos,
+      STARRED_REPOS_PER_RUN,
+      repoRotation.starred ?? 0,
+    ).filter((r) => !phase0RepoSet.has(r));
 
-    const otherStrategiesCanRun =
-      orgsPhaseEnabled ||
-      (starredRepos.length > 0 && enabledStrategies.has("starred")) ||
-      enabledStrategies.has("broad") ||
-      enabledStrategies.has("maintained");
+    // Whether each strategy has anything to search this run. Broad and
+    // maintained always can; the starred phase is also REST-budget-gated.
+    const canRun: Record<SearchStrategy, boolean> = {
+      all: false,
+      merged: phase0Repos.length > 0,
+      orgs: preferredOrgs.length > 0,
+      starred:
+        starredToSearch.length > 0 && searchBudget >= CRITICAL_BUDGET_THRESHOLD,
+      broad: true,
+      maintained: true,
+    };
 
-    if (phase0Repos.length > 0 && enabledStrategies.has("merged")) {
-      // Cap Phase 0's share so it can't consume the whole budget and starve
-      // the starred/broad phases (which only run while results are needed).
-      const phase0Cap = otherStrategiesCanRun
-        ? Math.max(1, Math.ceil(maxResults * PHASE0_MAX_SHARE))
-        : maxResults;
-      const remaining = Math.min(maxResults - allCandidates.length, phase0Cap);
-      if (remaining > 0) {
-        const result = await runPhase0(
-          this.octokit,
-          this.vetter,
-          phase0Repos,
-          remaining,
-          filterIssuesPhase0,
-        );
-        recordPhaseResult("0", result);
-      }
-      strategiesUsed.push("merged");
-    }
-
-    // Orgs phase: preferred organizations (broad-style search with org:
-    // qualifiers). Runs before starred so org results get first claim on the
-    // remaining budget — the user asked for these orgs explicitly.
-    if (allCandidates.length < maxResults && orgsPhaseEnabled) {
-      await applyInterPhaseDelay();
-      const remaining = maxResults - allCandidates.length;
-      const result = await runPhaseOrgs(
-        this.octokit,
-        this.vetter,
-        preferredOrgs,
-        languages,
-        isAnyLanguage,
-        labels,
-        remaining,
-        minStars,
-        phase0RepoSet,
-        starredRepoSet,
-        filterIssues,
-        tracker,
-      );
-      recordPhaseResult("orgs", result);
-      strategiesUsed.push("orgs");
-    }
-
-    // Phase 1: Starred repos
-    if (
-      allCandidates.length < maxResults &&
-      starredRepos.length > 0 &&
-      searchBudget >= CRITICAL_BUDGET_THRESHOLD &&
-      enabledStrategies.has("starred")
-    ) {
-      await applyInterPhaseDelay();
-      // Window the stable list, then filter (see runPhase3, #324).
-      const reposToSearch = rotatingWindow(
-        starredRepos,
-        STARRED_REPOS_PER_RUN,
-        repoRotation.starred ?? 0,
-      ).filter((r) => !phase0RepoSet.has(r));
-      if (reposToSearch.length > 0) {
-        const remaining = maxResults - allCandidates.length;
-        if (remaining > 0) {
-          const result = await runPhase1(
-            this.octokit,
-            this.vetter,
-            reposToSearch,
-            labels,
-            remaining,
-            filterIssues,
-          );
-          recordPhaseResult("1", result);
-          // Recorded only when the phase actually queried (#130)
-          strategiesUsed.push("starred");
-        }
-      }
-    }
-
-    // Phase 2: General search (with rate limit mitigation)
+    // One runner per strategy: query the phase for up to `wanted` candidates,
+    // fold the result in, and record the strategy as used. Both execution
+    // modes below call these; they differ only in which phases run and when.
     const broadDelay =
       options.broadPhaseDelayMs ?? config.broadPhaseDelayMs ?? 90000;
-    // Clamp to maxResults - 1: the phase gate below already skips the whole
-    // phase at >= maxResults, so any larger threshold would be unsatisfiable
-    // (the default 15 vs default maxResults 10 made this dead config). 0
-    // stays "never skip".
-    const configuredSkipThreshold = config.skipBroadWhenSufficientResults ?? 8;
-    const skipThreshold =
-      configuredSkipThreshold > 0
-        ? Math.min(configuredSkipThreshold, maxResults - 1)
-        : 0;
+    const runStrategy: Record<
+      Exclude<SearchStrategy, "all">,
+      (wanted: number) => Promise<void>
+    > = {
+      merged: async (wanted) => {
+        recordPhaseResult(
+          "0",
+          await runPhase0(
+            this.octokit,
+            this.vetter,
+            phase0Repos,
+            wanted,
+            filterIssuesPhase0,
+          ),
+        );
+        strategiesUsed.push("merged");
+      },
+      orgs: async (wanted) => {
+        recordPhaseResult(
+          "orgs",
+          await runPhaseOrgs(
+            this.octokit,
+            this.vetter,
+            preferredOrgs,
+            languages,
+            isAnyLanguage,
+            labels,
+            wanted,
+            minStars,
+            phase0RepoSet,
+            starredRepoSet,
+            filterIssues,
+            tracker,
+          ),
+        );
+        strategiesUsed.push("orgs");
+      },
+      starred: async (wanted) => {
+        recordPhaseResult(
+          "1",
+          await runPhase1(
+            this.octokit,
+            this.vetter,
+            starredToSearch,
+            labels,
+            wanted,
+            filterIssues,
+          ),
+        );
+        // Recorded only when the phase actually queried (#130)
+        strategiesUsed.push("starred");
+      },
+      broad: async (wanted) => {
+        recordPhaseResult(
+          "2",
+          await runPhase2(
+            this.octokit,
+            this.vetter,
+            scopes,
+            labels,
+            config.labels,
+            languages,
+            isAnyLanguage,
+            wanted,
+            minStars,
+            phase0RepoSet,
+            starredRepoSet,
+            allCandidates,
+            filterIssues,
+            tracker,
+            options.languageRotationOffset ?? 0,
+          ),
+        );
+        strategiesUsed.push("broad");
+      },
+      maintained: async (wanted) => {
+        recordPhaseResult(
+          "3",
+          await runPhase3(
+            this.octokit,
+            this.vetter,
+            langQuery,
+            minStars,
+            config.projectCategories ?? [],
+            wanted,
+            phase0RepoSet,
+            starredRepoSet,
+            starredRepos,
+            allCandidates,
+            filterIssues,
+            tracker,
+            repoRotation.maintained ?? 0,
+          ),
+        );
+        strategiesUsed.push("maintained");
+      },
+    };
 
-    const viableBeforeBroad = viableCandidateCount();
-    if (viableBeforeBroad >= maxResults && enabledStrategies.has("broad")) {
-      // Log the gate skip (#266): without this line a gated-off phase is
-      // indistinguishable in the log from one that silently failed.
-      info(
-        MODULE,
-        `Skipping broad search: ${viableBeforeBroad} viable candidate(s) already meet maxResults (${maxResults})`,
-      );
-    } else if (enabledStrategies.has("broad")) {
-      // Skip broad search only if we already have enough VIABLE candidates from
-      // NEW repos. Phases 0/1 only ever search the user's affinity + starred
-      // repos, so counting their candidates here would gate off the broad phase
-      // — the one phase that surfaces repos the user hasn't touched. Counting
-      // only viable new-repo candidates keeps "sufficient results" meaning
-      // "enough NEW work" — not "we re-found issues in the same repos" and not
-      // "we found issues the vetter already ruled out" (#265). Preferred-org
-      // candidates are affinity results too — the user named those orgs — so
-      // they must not gate off the broad phase either.
-      const preferredOrgSet = new Set(
-        preferredOrgs.map((o) => o.toLowerCase()),
-      );
-      const newRepoCandidateCount = allCandidates.filter(
-        (c) =>
-          c.recommendation !== "skip" &&
-          !phase0RepoSet.has(c.issue.repo) &&
-          !starredRepoSet.has(c.issue.repo) &&
-          !preferredOrgSet.has(c.issue.repo.split("/")[0]?.toLowerCase() ?? ""),
-      ).length;
-      if (skipThreshold > 0 && newRepoCandidateCount >= skipThreshold) {
+    if (options.strategyRotationOffset !== undefined) {
+      // Round-robin (#336): one strategy per run, rotating across runs, so a
+      // search costs one phase's API calls instead of all of them. The cursor
+      // is a position in the full strategy list; the run takes the first
+      // strategy from there that is enabled and has something to search, and
+      // the caller moves the cursor to just after it. Keying on the fixed full
+      // list keeps positions stable when the runnable set changes, and moving
+      // past the strategy that ran keeps the turns fair when some can't run.
+      // If the chosen strategy finds nothing viable, fall through to the next
+      // so a run is never empty just because its strategy was dry.
+      const cursor = options.strategyRotationOffset;
+      const n = CONCRETE_STRATEGIES.length;
+      const order = CONCRETE_STRATEGIES.map(
+        (_, i) => CONCRETE_STRATEGIES[(cursor + i) % n]!,
+      ).filter((s) => enabledStrategies.has(s) && canRun[s]);
+      for (const [i, strategy] of order.entries()) {
+        if (i > 0) await applyInterPhaseDelay();
+        info(MODULE, `Round-robin: running the ${strategy} strategy`);
+        await runStrategy[strategy](maxResults - viableCandidateCount());
+        if (viableCandidateCount() > 0) break;
+      }
+    } else {
+      // All enabled phases in fixed order, each gated on whether results are
+      // still needed.
+      // Only cap Phase 0 when a later phase can actually consume the reserved
+      // budget — otherwise (no starred repos, broad/maintained disabled) the
+      // reservation would just shrink the result set with nothing to fill it.
+      const orgsPhaseEnabled = canRun.orgs && enabledStrategies.has("orgs");
+      const otherStrategiesCanRun =
+        orgsPhaseEnabled ||
+        (starredRepos.length > 0 && enabledStrategies.has("starred")) ||
+        enabledStrategies.has("broad") ||
+        enabledStrategies.has("maintained");
+
+      if (canRun.merged && enabledStrategies.has("merged")) {
+        // Cap Phase 0's share so it can't consume the whole budget and starve
+        // the starred/broad phases (which only run while results are needed).
+        const phase0Cap = otherStrategiesCanRun
+          ? Math.max(1, Math.ceil(maxResults * PHASE0_MAX_SHARE))
+          : maxResults;
+        await runStrategy.merged(
+          Math.min(maxResults - allCandidates.length, phase0Cap),
+        );
+      }
+
+      // Orgs phase: preferred organizations (broad-style search with org:
+      // qualifiers). Runs before starred so org results get first claim on the
+      // remaining budget — the user asked for these orgs explicitly.
+      if (allCandidates.length < maxResults && orgsPhaseEnabled) {
+        await applyInterPhaseDelay();
+        await runStrategy.orgs(maxResults - allCandidates.length);
+      }
+
+      // Phase 1: Starred repos
+      if (
+        allCandidates.length < maxResults &&
+        starredRepos.length > 0 &&
+        searchBudget >= CRITICAL_BUDGET_THRESHOLD &&
+        enabledStrategies.has("starred")
+      ) {
+        await applyInterPhaseDelay();
+        if (starredToSearch.length > 0) {
+          await runStrategy.starred(maxResults - allCandidates.length);
+        }
+      }
+
+      // Phase 2: General search (with rate limit mitigation)
+      // Clamp to maxResults - 1: the phase gate below already skips the whole
+      // phase at >= maxResults, so any larger threshold would be unsatisfiable
+      // (the default 15 vs default maxResults 10 made this dead config). 0
+      // stays "never skip".
+      const configuredSkipThreshold =
+        config.skipBroadWhenSufficientResults ?? 8;
+      const skipThreshold =
+        configuredSkipThreshold > 0
+          ? Math.min(configuredSkipThreshold, maxResults - 1)
+          : 0;
+
+      const viableBeforeBroad = viableCandidateCount();
+      if (viableBeforeBroad >= maxResults && enabledStrategies.has("broad")) {
+        // Log the gate skip (#266): without this line a gated-off phase is
+        // indistinguishable in the log from one that silently failed.
         info(
           MODULE,
-          `Skipping broad search: already found ${newRepoCandidateCount} viable candidate(s) from new repos (threshold: ${skipThreshold})`,
+          `Skipping broad search: ${viableBeforeBroad} viable candidate(s) already meet maxResults (${maxResults})`,
         );
-      } else {
-        // Always apply baseline inter-phase delay
-        await applyInterPhaseDelay();
+      } else if (enabledStrategies.has("broad")) {
+        // Skip broad search only if we already have enough VIABLE candidates
+        // from NEW repos. Phases 0/1 only ever search the user's affinity +
+        // starred repos, so counting their candidates here would gate off the
+        // broad phase — the one phase that surfaces repos the user hasn't
+        // touched. Counting only viable new-repo candidates keeps "sufficient
+        // results" meaning "enough NEW work" — not "we re-found issues in the
+        // same repos" and not "we found issues the vetter already ruled out"
+        // (#265). Preferred-org candidates are affinity results too — the user
+        // named those orgs — so they must not gate off the broad phase either.
+        const preferredOrgSet = new Set(
+          preferredOrgs.map((o) => o.toLowerCase()),
+        );
+        const newRepoCandidateCount = allCandidates.filter(
+          (c) =>
+            c.recommendation !== "skip" &&
+            !phase0RepoSet.has(c.issue.repo) &&
+            !starredRepoSet.has(c.issue.repo) &&
+            !preferredOrgSet.has(
+              c.issue.repo.split("/")[0]?.toLowerCase() ?? "",
+            ),
+        ).length;
+        if (skipThreshold > 0 && newRepoCandidateCount >= skipThreshold) {
+          info(
+            MODULE,
+            `Skipping broad search: already found ${newRepoCandidateCount} viable candidate(s) from new repos (threshold: ${skipThreshold})`,
+          );
+        } else {
+          // Always apply baseline inter-phase delay
+          await applyInterPhaseDelay();
 
-        // Apply additional broad-phase cooldown, but skip if previous phases found nothing
-        if (allCandidates.length > 0 && broadDelay > 0) {
-          info(
-            MODULE,
-            `Waiting ${(broadDelay / 1000).toFixed(0)}s for rate limit cooldown before broad search...`,
-          );
-          await sleep(broadDelay);
-        } else if (allCandidates.length === 0) {
-          info(
-            MODULE,
-            `Skipping broad phase delay: no results from previous phases, proceeding immediately`,
-          );
+          // Apply additional broad-phase cooldown, but skip if previous phases found nothing
+          if (allCandidates.length > 0 && broadDelay > 0) {
+            info(
+              MODULE,
+              `Waiting ${(broadDelay / 1000).toFixed(0)}s for rate limit cooldown before broad search...`,
+            );
+            await sleep(broadDelay);
+          } else if (allCandidates.length === 0) {
+            info(
+              MODULE,
+              `Skipping broad phase delay: no results from previous phases, proceeding immediately`,
+            );
+          }
+
+          // Viable shortfall, not raw length: skip candidates already in
+          // allCandidates must not shrink what phase 2 is asked to find (#265).
+          await runStrategy.broad(maxResults - viableBeforeBroad);
         }
-
-        // Viable shortfall, not raw length: skip candidates already in
-        // allCandidates must not shrink what phase 2 is asked to find (#265).
-        const remaining = maxResults - viableBeforeBroad;
-        const result = await runPhase2(
-          this.octokit,
-          this.vetter,
-          scopes,
-          labels,
-          config.labels,
-          languages,
-          isAnyLanguage,
-          remaining,
-          minStars,
-          phase0RepoSet,
-          starredRepoSet,
-          allCandidates,
-          filterIssues,
-          tracker,
-          options.languageRotationOffset ?? 0,
-        );
-        recordPhaseResult("2", result);
-        // Recorded only when the phase actually queried, not when the
-        // skip-threshold branch short-circuited it (#130)
-        strategiesUsed.push("broad");
       }
-    }
 
-    // Phase 3: Actively maintained repos
-    const viableBeforeMaintained = viableCandidateCount();
-    if (
-      viableBeforeMaintained >= maxResults &&
-      enabledStrategies.has("maintained")
-    ) {
-      // Gate-skip log (#266), same reason as the broad phase above.
-      info(
-        MODULE,
-        `Skipping maintained search: ${viableBeforeMaintained} viable candidate(s) already meet maxResults (${maxResults})`,
-      );
-    } else if (enabledStrategies.has("maintained")) {
-      await applyInterPhaseDelay();
-      const remaining = maxResults - viableBeforeMaintained;
-      const result = await runPhase3(
-        this.octokit,
-        this.vetter,
-        langQuery,
-        minStars,
-        config.projectCategories ?? [],
-        remaining,
-        phase0RepoSet,
-        starredRepoSet,
-        starredRepos,
-        allCandidates,
-        filterIssues,
-        tracker,
-        repoRotation.maintained ?? 0,
-      );
-      recordPhaseResult("3", result);
-      strategiesUsed.push("maintained");
+      // Phase 3: Actively maintained repos
+      const viableBeforeMaintained = viableCandidateCount();
+      if (
+        viableBeforeMaintained >= maxResults &&
+        enabledStrategies.has("maintained")
+      ) {
+        // Gate-skip log (#266), same reason as the broad phase above.
+        info(
+          MODULE,
+          `Skipping maintained search: ${viableBeforeMaintained} viable candidate(s) already meet maxResults (${maxResults})`,
+        );
+      } else if (enabledStrategies.has("maintained")) {
+        await applyInterPhaseDelay();
+        await runStrategy.maintained(maxResults - viableBeforeMaintained);
+      }
     }
 
     // Build result / error summary. With broad/maintained now on GraphQL (which

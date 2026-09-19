@@ -1168,6 +1168,52 @@ describe("OssScout.search language rotation cursor (#249 follow-up)", () => {
     expect(rotation.lastRotatedAt).toBeDefined();
   });
 
+  it("passes the round-robin strategy cursor to searchIssues (#336)", async () => {
+    const scout = new OssScout(
+      "test-token",
+      ScoutStateSchema.parse({
+        version: 1,
+        searchRotation: { languageOffset: 0, strategyOffset: 7 },
+      }),
+    );
+    let captured: number | undefined;
+    vi.spyOn(IssueDiscovery.prototype, "searchIssues").mockImplementation(
+      async (opts: { strategyRotationOffset?: number }) => {
+        captured = opts.strategyRotationOffset;
+        return { candidates: [], strategiesUsed: ["broad"] as never[] };
+      },
+    );
+
+    await scout.search();
+
+    expect(captured).toBe(7);
+    // Broad (position 3) led, so the next search starts just after it.
+    expect(scout.getState().searchRotation.strategyOffset).toBe(4);
+  });
+
+  // Orgs has no repo/language cursor of its own; a run that used only orgs
+  // must still move the strategy cursor, or every search would pick orgs.
+  it("advances the strategy cursor when only the orgs strategy ran (#336)", async () => {
+    const scout = makeRotationScout({ languageOffset: 2 });
+    mockDiscoverySearch(["orgs"]);
+
+    await scout.search();
+
+    const rotation = scout.getState().searchRotation;
+    // Orgs is position 1, so the next search starts at 2.
+    expect(rotation.strategyOffset).toBe(2);
+    expect(rotation.languageOffset).toBe(2);
+  });
+
+  it("leaves the strategy cursor alone when no strategy ran (#336)", async () => {
+    const scout = makeRotationScout({ languageOffset: 2 });
+    mockDiscoverySearch([]);
+
+    await scout.search();
+
+    expect(scout.getState().searchRotation.strategyOffset).toBe(0);
+  });
+
   it("does not advance the offset on a non-ValidationError failure", async () => {
     const scout = makeRotationScout({ languageOffset: 2 });
     vi.spyOn(IssueDiscovery.prototype, "searchIssues").mockRejectedValue(

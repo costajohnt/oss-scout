@@ -93,7 +93,7 @@ Results are automatically saved. View them later with `oss-scout results`.
 
 ## How Search Works
 
-oss-scout runs four search strategies in priority order:
+oss-scout has five search strategies:
 
 | Strategy | Flag | What it searches | Why it matters |
 |----------|------|-----------------|----------------|
@@ -103,15 +103,17 @@ oss-scout runs four search strategies in priority order:
 | `broad` | Phase 2 | General label/language filtered | Discovery |
 | `maintained` | Phase 3 | Actively maintained repos by topic | Exploration |
 
-Run all strategies (default), or pick specific ones:
+Each search runs **one** strategy, taking turns across runs (round-robin): the next search runs the next strategy in the table. That keeps a search to one strategy's worth of GitHub API calls while consecutive searches still cover every source. If the strategy whose turn it is finds nothing usable, the search moves on to the next one so it doesn't come back empty. Strategies with nothing to search (no `preferredOrgs`, no starred repos) are passed over.
+
+`--strategy` limits which strategies take turns:
 
 ```bash
 oss-scout search --strategy merged           # only repos you've contributed to
-oss-scout search --strategy starred,broad     # starred repos + general discovery
-oss-scout search --strategy all               # all strategies (default)
+oss-scout search --strategy starred,broad     # alternate between starred repos and general discovery
+oss-scout search --strategy all               # rotate through all strategies (default)
 ```
 
-Heavy strategies (broad, maintained) are automatically skipped when your GitHub API quota is low.
+The starred strategy is skipped when your GitHub REST search quota is critically low; broad and maintained run on the GraphQL API and aren't affected by it.
 
 ## Why Not Just Search GitHub?
 

@@ -1708,6 +1708,103 @@ describe("IssueDiscovery", () => {
       expect(phaseCall.at(-1)).toBe(0);
     });
   });
+
+  describe("round-robin strategies (#336)", () => {
+    const broadItem: GitHubSearchItem = {
+      html_url: "https://github.com/broad/repo/issues/1",
+      repository_url: "https://api.github.com/repos/broad/repo",
+      updated_at: "2026-01-01T00:00:00Z",
+    };
+
+    // Merged and starred repos exist, so every strategy but orgs can run.
+    // `found` lists the known-repo phases (by priority) that return a
+    // candidate; broad always finds one.
+    function setup(
+      found: Array<"merged_pr" | "starred"> = ["merged_pr", "starred"],
+    ) {
+      mockFetchIssuesFromKnownRepos.mockImplementation(
+        async (...args: unknown[]) => {
+          const priority = args[5] as "merged_pr" | "starred";
+          return {
+            candidates: found.includes(priority)
+              ? [makeCandidate(`org/${priority}`, priority)]
+              : [],
+            allReposFailed: false,
+            rateLimitHit: false,
+          };
+        },
+      );
+      mockSearchAcrossLanguagesAndLabels.mockResolvedValue([broadItem]);
+      mockFilterVetAndScore.mockResolvedValue({
+        candidates: [makeCandidate("broad/repo", "normal")],
+        allVetFailed: false,
+        rateLimitHit: false,
+      });
+      return makeDiscovery({
+        getReposWithMergedPRs: vi.fn(() => ["org/merged"]),
+        getStarredRepos: vi.fn(() => ["org/starred"]),
+      });
+    }
+    const run = (discovery: IssueDiscovery, offset: number, extra = {}) =>
+      discovery.searchIssues({
+        maxResults: 5,
+        interPhaseDelayMs: 0,
+        strategyRotationOffset: offset,
+        ...extra,
+      });
+
+    it("runs only the strategy at the cursor when it finds candidates", async () => {
+      const { strategiesUsed } = await run(setup(), 0);
+
+      expect(strategiesUsed).toEqual(["merged"]);
+      expect(mockSearchAcrossLanguagesAndLabels).not.toHaveBeenCalled();
+      expect(mockFetchIssuesFromMaintainedRepos).not.toHaveBeenCalled();
+    });
+
+    it("picks the strategy by its position in the strategy list", async () => {
+      const { strategiesUsed } = await run(setup(), 2);
+
+      expect(strategiesUsed).toEqual(["starred"]);
+    });
+
+    it("passes over a strategy that can't run (no preferred orgs)", async () => {
+      const { strategiesUsed } = await run(setup(), 1);
+
+      expect(strategiesUsed).toEqual(["starred"]);
+    });
+
+    it("falls through to the next strategy when the chosen one finds nothing", async () => {
+      const { strategiesUsed, candidates } = await run(setup(["starred"]), 0);
+
+      expect(strategiesUsed).toEqual(["merged", "starred"]);
+      expect(candidates.map((c) => c.issue.repo)).toEqual(["org/starred"]);
+    });
+
+    it("takes turns within an explicit strategy subset", async () => {
+      const subset = { strategies: ["broad", "maintained"] };
+      // Cursor 1 (orgs) passes over orgs and starred, which are not enabled.
+      expect((await run(setup(), 1, subset)).strategiesUsed[0]).toBe("broad");
+      // The caller then moves the cursor to just after broad (4).
+      expect((await run(setup(), 4, subset)).strategiesUsed[0]).toBe(
+        "maintained",
+      );
+    });
+
+    // Keying the cursor on only the runnable strategies would shift every
+    // position whenever one drops out (here: starred, below the REST budget
+    // threshold), and cursor 3 would land on merged instead of broad.
+    it("keys the cursor on the full strategy list, not just what can run", async () => {
+      vi.mocked(checkRateLimit).mockResolvedValue({
+        remaining: 1,
+        limit: 30,
+        resetAt: new Date(Date.now() + 60000).toISOString(),
+      });
+
+      const { strategiesUsed } = await run(setup(), 3);
+
+      expect(strategiesUsed).toEqual(["broad"]);
+    });
+  });
 });
 
 describe("rotatingWindow (#324, #333)", () => {

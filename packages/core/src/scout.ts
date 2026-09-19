@@ -42,6 +42,7 @@ import type {
   VetListResult,
   VetListEntry,
 } from "./core/types.js";
+import { CONCRETE_STRATEGIES } from "./core/schemas.js";
 import { GistStateStore, mergeStates } from "./core/gist-state-store.js";
 import type {
   DegradedReason,
@@ -295,6 +296,7 @@ export class OssScout implements ScoutStateReader, ScoutStateWriter {
           starred: rotation.starredOffset ?? 0,
           maintained: rotation.maintainedOffset ?? 0,
         },
+        strategyRotationOffset: rotation.strategyOffset ?? 0,
       }));
     } catch (err) {
       // A zero-candidate search throws ValidationError (see issue-discovery.ts)
@@ -337,7 +339,9 @@ export class OssScout implements ScoutStateReader, ScoutStateWriter {
    * merged/starred/maintained (#324, #333). Called on both the success path
    * and the zero-candidate ValidationError path — a phase that ran and found
    * nothing must still rotate, or the same barren slice would lead every
-   * subsequent run. Skipped/gated phases don't burn a rotation slot.
+   * subsequent run. Skipped/gated phases don't burn a rotation slot. The
+   * round-robin strategy cursor (#336) moves to just after the strategy that
+   * led (the first one used), so the next search starts with the next one.
    */
   private advanceRotation(
     rotation: SearchRotation,
@@ -345,13 +349,17 @@ export class OssScout implements ScoutStateReader, ScoutStateWriter {
   ): void {
     const ran = (strategy: string): number =>
       strategiesUsed.includes(strategy) ? 1 : 0;
-    if (!["broad", "merged", "starred", "maintained"].some(ran)) return;
+    if (strategiesUsed.length === 0) return;
     this.state.searchRotation = {
       ...rotation,
       languageOffset: rotation.languageOffset + ran("broad"),
       phase0Offset: (rotation.phase0Offset ?? 0) + ran("merged"),
       starredOffset: (rotation.starredOffset ?? 0) + ran("starred"),
       maintainedOffset: (rotation.maintainedOffset ?? 0) + ran("maintained"),
+      strategyOffset:
+        CONCRETE_STRATEGIES.indexOf(
+          strategiesUsed[0] as (typeof CONCRETE_STRATEGIES)[number],
+        ) + 1,
       lastRotatedAt: new Date().toISOString(),
     };
     this.dirty = true;
