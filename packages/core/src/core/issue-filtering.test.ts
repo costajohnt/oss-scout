@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   isDocOnlyIssue,
+  isNonActionableIssue,
   isLabelFarming,
   hasTemplatedTitle,
   detectLabelFarmingRepos,
@@ -79,6 +80,50 @@ describe("isDocOnlyIssue", () => {
         true,
       );
     }
+  });
+});
+
+describe("isNonActionableIssue", () => {
+  const item = (title: string, labels: string[] = []) =>
+    makeItem({ title, labels: labels.map((name) => ({ name })) });
+
+  it("drops question/discussion/support labels even alongside other labels", () => {
+    expect(
+      isNonActionableIssue(item("Add retry to client", ["bug", "question"])),
+    ).toBe(true);
+    expect(
+      isNonActionableIssue(item("Add retry to client", ["Discussion"])),
+    ).toBe(true);
+    expect(isNonActionableIssue(item("Add retry to client", ["support"]))).toBe(
+      true,
+    );
+  });
+
+  it("drops question-shaped titles", () => {
+    expect(
+      isNonActionableIssue(
+        item("Does the self-signed certificate work on your appliance?"),
+      ),
+    ).toBe(true);
+    expect(
+      isNonActionableIssue(item("How do I configure the output format")),
+    ).toBe(true);
+  });
+
+  it("drops placeholder titles under three words", () => {
+    expect(isNonActionableIssue(item("logan"))).toBe(true);
+    expect(isNonActionableIssue(item("Opencode free"))).toBe(true);
+  });
+
+  it("keeps ordinary change requests", () => {
+    expect(isNonActionableIssue(item("Add retry to client", ["bug"]))).toBe(
+      false,
+    );
+    expect(
+      isNonActionableIssue(
+        item("CLI --version prints unknown after npm install"),
+      ),
+    ).toBe(false);
   });
 });
 

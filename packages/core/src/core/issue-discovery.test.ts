@@ -55,6 +55,7 @@ vi.mock("./issue-vetting.js", () => ({
 
 vi.mock("./issue-filtering.js", () => ({
   isDocOnlyIssue: vi.fn(() => false),
+  isNonActionableIssue: vi.fn(() => false),
   applyPerRepoCap: vi.fn((candidates: IssueCandidate[]) => candidates),
 }));
 

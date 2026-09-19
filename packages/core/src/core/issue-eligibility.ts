@@ -366,23 +366,29 @@ export async function checkNotClaimed(
 
 /**
  * Analyze whether an issue body has clear, actionable requirements.
- * Returns true when at least two "clarity indicators" are present:
- * numbered/bulleted steps, code blocks, expected-behavior keywords, length > 200.
+ * Returns true for a code reference (fenced/inline code, a source file path,
+ * or a stack frame), or for reproduction steps paired with an
+ * expected-vs-actual statement. Body length on its own counts for nothing:
+ * the old "> 200 chars plus one of should/must/want" rule passed nearly
+ * every issue (#332). Calibrated on 30 live good-first-issues: 26/30 passed
+ * the old rule, 19/30 pass this one, and every drop was a vague ask with no
+ * code in it.
  */
 export function analyzeRequirements(body: string): boolean {
   if (!body || body.length < 50) return false;
 
-  // Check for clear structure
-  const hasSteps = /\d\.|[-*]\s/.test(body);
-  const hasCodeBlock = /```/.test(body);
-  const hasExpectedBehavior = /expect|should|must|want/i.test(body);
+  const hasSteps =
+    /(^|\n)\s*\d+[.)]\s/.test(body) ||
+    /steps?\s+to\s+reproduce|\brepro(duction)?\b/i.test(body);
+  const hasExpectedVsActual =
+    /\b(expected|should)\b/i.test(body) &&
+    /\b(actual(ly)?|instead|but|currently|observed|got)\b/i.test(body);
+  const hasCodeRef =
+    /```|`[^`\n]+`/.test(body) ||
+    /\b[\w/.-]+\.(ts|tsx|js|jsx|mjs|cjs|py|rb|go|rs|java|kt|swift|c|cc|cpp|h|hpp|cs|php|sh|vue|svelte)\b/.test(
+      body,
+    ) ||
+    /^\s+at\s+\S+\s+\(/m.test(body);
 
-  // Must have at least two indicators of clarity
-  const indicators = [
-    hasSteps,
-    hasCodeBlock,
-    hasExpectedBehavior,
-    body.length > 200,
-  ];
-  return indicators.filter(Boolean).length >= 2;
+  return hasCodeRef || (hasSteps && hasExpectedVsActual);
 }

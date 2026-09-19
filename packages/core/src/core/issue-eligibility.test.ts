@@ -668,18 +668,33 @@ describe("analyzeRequirements", () => {
     expect(analyzeRequirements(body)).toBe(true);
   });
 
-  it("returns true for keywords (should, expect) + sufficient length", () => {
+  it("returns false for keywords + length alone (#332)", () => {
     const body =
       "This feature should allow users to configure the output format. " +
       "We expect the CLI to accept a --format flag with values json, table, csv. " +
       "The default should be table. Users should be able to pipe output to other tools.";
+    expect(analyzeRequirements(body)).toBe(false);
+  });
+
+  it("returns true for expected-vs-actual + a source file reference", () => {
+    const body =
+      "Running the command should print the version, but it prints unknown. " +
+      "The lookup lives in src/core/utils.ts and reads argv[1] without resolving it.";
     expect(analyzeRequirements(body)).toBe(true);
   });
 
-  it("returns true for >200 chars + 2+ indicators", () => {
+  it("returns false for a support question with a long body and 'should' (#332)", () => {
+    const body =
+      "Does the self-signed certificate work on your appliance? We have one and it should " +
+      "be fine according to the docs, we want to know before rolling it out to the whole " +
+      "fleet. Any pointers appreciated, thanks in advance for the help everyone.";
+    expect(analyzeRequirements(body)).toBe(false);
+  });
+
+  it("returns true for numbered steps + expected-vs-actual", () => {
     const body =
       "We need a new feature that should handle edge cases properly. " +
-      "- Step 1: Parse the input\n- Step 2: Validate the data\n" +
+      "1. Parse the input\n2. Validate the data\n" +
       "This must be backward compatible with the existing API. " +
       "Additional context: the system currently processes about 1000 requests per second.";
     expect(analyzeRequirements(body)).toBe(true);
