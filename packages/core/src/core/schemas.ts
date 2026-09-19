@@ -159,6 +159,8 @@ export const SkippedIssueSchema = z.looseObject({
   number: z.number(),
   title: z.string(),
   skippedAt: z.string(),
+  /** Why it was skipped: the vetter's reasons, or absent for a manual skip (#343). */
+  reason: z.string().optional(),
 });
 
 // ── Saved candidate schema ─────────────────────────────────────────

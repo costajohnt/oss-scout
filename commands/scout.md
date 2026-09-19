@@ -113,7 +113,7 @@ After presenting results, offer:
    GITHUB_TOKEN=$(gh auth token) node "${CLAUDE_PLUGIN_ROOT}/packages/core/dist/cli.bundle.cjs" vet https://github.com/owner/repo/issues/123 --json
    ```
 
-2. **"Skip an issue"** — Skip an issue to exclude it from future searches (auto-expires after 90 days):
+2. **"Skip an issue"** — Skip an issue to exclude it from future searches permanently:
    ```bash
    GITHUB_TOKEN=$(gh auth token) node "${CLAUDE_PLUGIN_ROOT}/packages/core/dist/cli.bundle.cjs" skip add https://github.com/owner/repo/issues/123 --json
    ```

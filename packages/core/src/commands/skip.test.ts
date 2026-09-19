@@ -397,6 +397,97 @@ describe("OssScout skip methods", () => {
     );
   });
 
+  it("search does not cull old skips: the skip list is permanent (#343)", async () => {
+    const { OssScout } = await import("../scout.js");
+    const state = ScoutStateSchema.parse({ version: 1 });
+    const scout = new OssScout("fake-token", state);
+    const oldDate = new Date();
+    oldDate.setDate(oldDate.getDate() - 400);
+    state.skippedIssues = [
+      {
+        url: "https://github.com/old/repo/issues/1",
+        repo: "old/repo",
+        number: 1,
+        title: "Old issue",
+        skippedAt: oldDate.toISOString(),
+      },
+    ];
+    const cull = vi.spyOn(scout, "cullExpiredSkips");
+
+    await scout
+      .search({ maxResults: 1, strategies: ["merged"] })
+      .catch(() => {});
+
+    expect(cull).not.toHaveBeenCalled();
+    expect(scout.getSkippedIssues()).toHaveLength(1);
+  });
+
+  it("saveResults routes vetter-skipped candidates to the skip list with the reason (#343)", async () => {
+    const { OssScout } = await import("../scout.js");
+    const state = ScoutStateSchema.parse({ version: 1 });
+    const scout = new OssScout("fake-token", state);
+    const issue = (n: number) => ({
+      id: `id-${n}`,
+      url: `https://github.com/a/b/issues/${n}`,
+      repo: "a/b",
+      number: n,
+      title: `Issue ${n}`,
+      status: "candidate" as const,
+      labels: [],
+      createdAt: "2026-01-01T00:00:00Z",
+      updatedAt: "2026-01-01T00:00:00Z",
+      vetted: true,
+    });
+    const base = {
+      vettingResult: {} as never,
+      projectHealth: {} as never,
+      antiLLMPolicy: {} as never,
+      slmTriage: null,
+      reasonsToApprove: [],
+      viabilityScore: 50,
+      searchPriority: "normal" as const,
+    };
+    // A previously saved copy of #2 must be dropped once it vets to skip.
+    scout.saveResults([
+      {
+        ...base,
+        issue: issue(2),
+        recommendation: "approve",
+        reasonsToSkip: [],
+      },
+    ]);
+
+    scout.saveResults([
+      {
+        ...base,
+        issue: issue(1),
+        recommendation: "approve",
+        reasonsToSkip: [],
+      },
+      {
+        ...base,
+        issue: issue(2),
+        recommendation: "skip",
+        reasonsToSkip: [
+          "Has existing PR",
+          "Already claimed",
+          "Inactive project",
+        ],
+      },
+    ]);
+
+    expect(scout.getSavedResults().map((r) => r.number)).toEqual([1]);
+    expect(scout.getSkippedIssues()).toEqual([
+      expect.objectContaining({
+        url: "https://github.com/a/b/issues/2",
+        repo: "a/b",
+        number: 2,
+        title: "Issue 2",
+        reason: "Has existing PR; Already claimed; Inactive project",
+      }),
+    ]);
+  });
+
   it("cullExpiredSkips returns 0 when nothing to cull", async () => {
     const { OssScout } = await import("../scout.js");
     const state = ScoutStateSchema.parse({ version: 1 });
