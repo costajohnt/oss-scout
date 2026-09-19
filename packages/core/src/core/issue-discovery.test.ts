@@ -1804,6 +1804,31 @@ describe("IssueDiscovery", () => {
 
       expect(strategiesUsed).toEqual(["broad"]);
     });
+
+    // With the REST quota critical, only a run whose turn reached starred lost
+    // anything to it; a broad-led run must not warn about skipped phases.
+    it("warns about the quota only when the rotation reached starred", async () => {
+      vi.mocked(checkRateLimit).mockResolvedValue({
+        remaining: 1,
+        limit: 30,
+        resetAt: new Date(Date.now() + 60000).toISOString(),
+      });
+
+      const broadLed = setup();
+      await run(broadLed, 3);
+      // (The separate "quota low" preflight warning still applies.)
+      expect(broadLed.rateLimitWarning ?? "").not.toContain(
+        "starred-repo phase was skipped",
+      );
+
+      // Cursor 2 lands on starred, which the quota blocks, so broad runs next.
+      const starredTurn = setup();
+      const { strategiesUsed } = await run(starredTurn, 2);
+      expect(strategiesUsed).toEqual(["broad"]);
+      expect(starredTurn.rateLimitWarning).toContain(
+        "starred-repo phase was skipped",
+      );
+    });
   });
 });
 

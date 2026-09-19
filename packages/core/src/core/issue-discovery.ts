@@ -1023,6 +1023,10 @@ export class IssueDiscovery {
       },
     };
 
+    // Whether this run passed over the starred strategy for lack of REST
+    // search quota (drives the rate-limit note below).
+    let starredSkippedForBudget = searchBudget < CRITICAL_BUDGET_THRESHOLD;
+
     if (options.strategyRotationOffset !== undefined) {
       // Round-robin (#336): one strategy per run, rotating across runs, so a
       // search costs one phase's API calls instead of all of them. The cursor
@@ -1037,9 +1041,18 @@ export class IssueDiscovery {
       const n = CONCRETE_STRATEGIES.length;
       const order = CONCRETE_STRATEGIES.map(
         (_, i) => CONCRETE_STRATEGIES[(cursor + i) % n]!,
-      ).filter((s) => enabledStrategies.has(s) && canRun[s]);
-      for (const [i, strategy] of order.entries()) {
-        if (i > 0) await applyInterPhaseDelay();
+      ).filter((s) => enabledStrategies.has(s));
+      // Only a quota block on starred's own turn counts as a skip; a run that
+      // never reached starred didn't lose anything to the quota.
+      starredSkippedForBudget = false;
+      for (const strategy of order) {
+        if (!canRun[strategy]) {
+          if (strategy === "starred" && starredToSearch.length > 0) {
+            starredSkippedForBudget = true;
+          }
+          continue;
+        }
+        if (strategiesUsed.length > 0) await applyInterPhaseDelay();
         info(MODULE, `Round-robin: running the ${strategy} strategy`);
         await runStrategy[strategy](maxResults - viableCandidateCount());
         if (viableCandidateCount() > 0) break;
@@ -1181,11 +1194,11 @@ export class IssueDiscovery {
     // does not draw from the REST Search bucket), only the starred phase is
     // still REST-budget-gated (CRITICAL). So "phases skipped for budget" now
     // means the starred phase was dropped, not the heavy broad/maintained ones.
-    const phasesSkippedForBudget = searchBudget < CRITICAL_BUDGET_THRESHOLD;
+    const phasesSkippedForBudget = starredSkippedForBudget;
     const budgetNote = phasesSkippedForBudget
       ? preflightFailed
-        ? " The starred-repo phase was skipped as a precaution because the rate-limit check failed (quota unknown); broad and maintained phases still ran on GraphQL."
-        : ` The starred-repo phase was skipped due to critically low API quota (${searchBudget} remaining); broad and maintained phases still ran on GraphQL.`
+        ? " The starred-repo phase was skipped as a precaution because the rate-limit check failed (quota unknown); the other strategies don't use that quota."
+        : ` The starred-repo phase was skipped due to critically low API quota (${searchBudget} remaining); the other strategies don't use that quota.`
       : "";
 
     if (allCandidates.length === 0) {
