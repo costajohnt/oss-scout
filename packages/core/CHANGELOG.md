@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.7.1](https://github.com/costajohnt/oss-scout/compare/core-v1.7.0...core-v1.7.1) (2026-09-19)
+
+
+### Bug Fixes
+
+* drop non-actionable issues and stop passing every body as clear ([#341](https://github.com/costajohnt/oss-scout/issues/341)) ([d346dfd](https://github.com/costajohnt/oss-scout/commit/d346dfd494ceaf4fecef1f74e1931a0452c56148))
+* resolve CLI version through the node_modules/.bin symlink ([#340](https://github.com/costajohnt/oss-scout/issues/340)) ([23428d2](https://github.com/costajohnt/oss-scout/commit/23428d210377c754abcebf324d8d131f43f2d429)), closes [#338](https://github.com/costajohnt/oss-scout/issues/338)
+
 ## [1.7.0](https://github.com/costajohnt/oss-scout/compare/core-v1.6.0...core-v1.7.0) (2026-09-19)
 
 
