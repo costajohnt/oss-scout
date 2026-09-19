@@ -465,10 +465,15 @@ async function runPhase3(
 
   const seenRepos = new Set(existingCandidates.map((c) => c.issue.repo));
 
-  // Step 1: Try REST API with starred repos first (no Search API quota used)
-  const eligibleStarred = starredRepos.filter(
-    (r) => !phase0RepoSet.has(r) && !seenRepos.has(r),
-  );
+  // Step 1: Try REST API with starred repos first (no Search API quota used).
+  // Window the stable starred list, then filter: windowing the filtered list
+  // (whose length shifts with each run's Phase 0 window) can skip a repo for
+  // many runs (#324).
+  const eligibleStarred = rotatingWindow(
+    starredRepos,
+    MAINTAINED_REPOS_PER_RUN,
+    rotationOffset,
+  ).filter((r) => !phase0RepoSet.has(r) && !seenRepos.has(r));
 
   if (eligibleStarred.length > 0) {
     info(
@@ -477,7 +482,7 @@ async function runPhase3(
     );
     const restItems = await fetchIssuesFromMaintainedRepos(
       octokit,
-      rotatingWindow(eligibleStarred, MAINTAINED_REPOS_PER_RUN, rotationOffset),
+      eligibleStarred,
       minStars,
       maxResults,
     );
@@ -952,11 +957,12 @@ export class IssueDiscovery {
       enabledStrategies.has("starred")
     ) {
       await applyInterPhaseDelay();
+      // Window the stable list, then filter (see runPhase3, #324).
       const reposToSearch = rotatingWindow(
-        starredRepos.filter((r) => !phase0RepoSet.has(r)),
+        starredRepos,
         STARRED_REPOS_PER_RUN,
         repoRotation.starred ?? 0,
-      );
+      ).filter((r) => !phase0RepoSet.has(r));
       if (reposToSearch.length > 0) {
         const remaining = maxResults - allCandidates.length;
         if (remaining > 0) {

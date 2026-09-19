@@ -573,6 +573,97 @@ describe("IssueDiscovery", () => {
       expect(phase1Call![2]).toEqual(["org/other"]);
     });
 
+    it("Phase 1: the starred cursor picks the window of the starred list (#324)", async () => {
+      mockFetchIssuesFromKnownRepos.mockResolvedValue({
+        candidates: [],
+        allReposFailed: false,
+        rateLimitHit: false,
+      });
+      const starred = Array.from({ length: 16 }, (_, i) => `org/starred-${i}`);
+      const discovery = makeDiscovery({
+        getStarredRepos: vi.fn(() => starred),
+      });
+
+      // Every phase is mocked empty, so the search ends in "no candidates";
+      // only the repos handed to the phase matter here.
+      await expect(
+        discovery.searchIssues({
+          maxResults: 5,
+          repoRotationOffsets: { starred: 1 },
+        }),
+      ).rejects.toThrow("No issue candidates found");
+
+      const phase1Call = mockFetchIssuesFromKnownRepos.mock.calls.find(
+        (call) => call[5] === "starred",
+      );
+      expect(phase1Call![2]).toEqual([
+        ...starred.slice(10),
+        ...starred.slice(0, 4),
+      ]);
+    });
+
+    // Windowing the list *after* dropping Phase 0's repos let its length shift
+    // with each run's Phase 0 window, which can leave a starred repo unsearched
+    // for many runs. The window is taken over the stable list, then filtered.
+    it("Phase 1: windows the stable starred list before dropping Phase 0 repos (#324)", async () => {
+      mockFetchIssuesFromKnownRepos.mockResolvedValue({
+        candidates: [],
+        allReposFailed: false,
+        rateLimitHit: false,
+      });
+      const starredOnly = Array.from({ length: 11 }, (_, i) => `org/s-${i}`);
+      const discovery = makeDiscovery({
+        getReposWithOpenPRs: vi.fn(() => ["org/contributed"]),
+        getStarredRepos: vi.fn(() => [
+          ...starredOnly.slice(0, 2),
+          "org/contributed",
+          ...starredOnly.slice(2),
+        ]),
+      });
+
+      await expect(
+        discovery.searchIssues({
+          maxResults: 5,
+          repoRotationOffsets: { starred: 1 },
+        }),
+      ).rejects.toThrow("No issue candidates found");
+
+      const phase1Call = mockFetchIssuesFromKnownRepos.mock.calls.find(
+        (call) => call[5] === "starred",
+      );
+      // 12-long list, window 10 at offset 1 = positions 10, 11, 0..7; the
+      // contributed repo at position 2 is dropped after windowing.
+      expect(phase1Call![2]).toEqual([
+        "org/s-9",
+        "org/s-10",
+        "org/s-0",
+        "org/s-1",
+        ...starredOnly.slice(2, 7),
+      ]);
+    });
+
+    it("Phase 3: the maintained cursor picks the window of the starred list (#324)", async () => {
+      mockFetchIssuesFromMaintainedRepos.mockResolvedValue([]);
+      const starred = Array.from({ length: 20 }, (_, i) => `org/starred-${i}`);
+      const discovery = makeDiscovery({
+        getStarredRepos: vi.fn(() => starred),
+      });
+
+      // Every phase is mocked empty, so the search ends in "no candidates";
+      // only the repos handed to the phase matter here.
+      await expect(
+        discovery.searchIssues({
+          maxResults: 5,
+          repoRotationOffsets: { maintained: 1 },
+        }),
+      ).rejects.toThrow("No issue candidates found");
+
+      expect(mockFetchIssuesFromMaintainedRepos.mock.calls[0]![1]).toEqual([
+        ...starred.slice(15),
+        ...starred.slice(0, 10),
+      ]);
+    });
+
     it("Phase 1: calls fetchIssuesFromKnownRepos with starred repos, priority starred", async () => {
       const c = makeCandidate("org/starred-repo", "starred");
       mockFetchIssuesFromKnownRepos.mockResolvedValue({
