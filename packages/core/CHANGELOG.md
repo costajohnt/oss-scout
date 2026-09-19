@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.7.0](https://github.com/costajohnt/oss-scout/compare/core-v1.6.0...core-v1.7.0) (2026-09-19)
+
+
+### Features
+
+* **core:** round-robin search strategies, one strategy per run ([#337](https://github.com/costajohnt/oss-scout/issues/337)) ([b2cb80b](https://github.com/costajohnt/oss-scout/commit/b2cb80bbafed81a83205b288f2be78bc624a073a))
+
+
+### Bug Fixes
+
+* **core:** cap vetted candidates per repo in known-repo phases so every merged-PR and starred repo is searched ([#325](https://github.com/costajohnt/oss-scout/issues/325)) ([34371f0](https://github.com/costajohnt/oss-scout/commit/34371f06c757c75229f6b221fd45a2d3fa8b1bc6))
+* **core:** rotate the repo window of capped phases so every contributed and starred repo gets searched ([#335](https://github.com/costajohnt/oss-scout/issues/335)) ([7a010e6](https://github.com/costajohnt/oss-scout/commit/7a010e6b748a1ca402725b6a035d3dd6f9b287e2))
+* **core:** use comma-joined label qualifier in the features broad search ([#329](https://github.com/costajohnt/oss-scout/issues/329)) ([b032a07](https://github.com/costajohnt/oss-scout/commit/b032a077ba14828470e21c4dd18aa219fd933178))
+* **core:** use comma-joined label qualifier so multi-label search is a real OR ([#327](https://github.com/costajohnt/oss-scout/issues/327)) ([73ca31c](https://github.com/costajohnt/oss-scout/commit/73ca31cf06677afa5e4ce20a3037b7f7c5a32e9c))
+
 ## [1.6.0](https://github.com/costajohnt/oss-scout/compare/core-v1.5.2...core-v1.6.0) (2026-08-11)
 
 
