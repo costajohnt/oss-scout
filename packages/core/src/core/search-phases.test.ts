@@ -1097,6 +1097,31 @@ describe("searchWithChunkedLabels", () => {
     );
   });
 
+  it("does not produce OR-group syntax for multi-label queries (#331)", async () => {
+    // Regression guard: the old code emitted `(label:"a" OR label:"b")` which
+    // GitHub's search backend mis-parses and returns ~3% of expected matches.
+    // The comma form `label:"a","b"` is GitHub's documented multi-label OR
+    // and is a single qualifier (no boolean operators consumed).
+    mockGraphqlSearchIssues.mockResolvedValue(null); // force REST path
+    const octokit = makeMockOctokit([]);
+
+    await searchWithChunkedLabels(
+      octokit,
+      ["bounty", "reward"],
+      0,
+      (labelQ) => `is:issue is:open ${labelQ}`,
+      10,
+    );
+
+    const q = (octokit.search.issuesAndPullRequests as ReturnType<typeof vi.fn>)
+      .mock.calls[0][0].q as string;
+    // Must use comma form
+    expect(q).toContain('label:"bounty","reward"');
+    // Must NOT use OR-group form
+    expect(q).not.toContain("(label:");
+    expect(q).not.toContain(" OR ");
+  });
+
   it('emits label:"x" for a single label and nothing for none', async () => {
     const octokit = makeMockOctokit([]);
 

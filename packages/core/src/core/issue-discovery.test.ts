@@ -831,6 +831,52 @@ describe("IssueDiscovery", () => {
       expect(mockFetchIssuesFromMaintainedRepos).not.toHaveBeenCalled();
       expect(mockSearchIssuesGraphQLFirst).toHaveBeenCalled();
     });
+
+    it("Phase 3 Search API fallback query does NOT contain stars: qualifier (#331)", async () => {
+      // Regression guard: combining stars:>= with pushed:>= in the Phase 3
+      // fallback query causes GitHub's search backend to silently return 0
+      // results. The star threshold is redundant because filterVetAndScore
+      // already applies STAR_FILTER after vetting. The query must omit stars:.
+      mockFetchIssuesFromMaintainedRepos.mockResolvedValue([]);
+      const c = makeCandidate("maintained/repo", "normal");
+      mockFilterVetAndScore
+        .mockResolvedValueOnce({
+          candidates: [],
+          allVetFailed: false,
+          rateLimitHit: false,
+        })
+        .mockResolvedValue({
+          candidates: [c],
+          allVetFailed: false,
+          rateLimitHit: false,
+        });
+      mockSearchIssuesGraphQLFirst.mockResolvedValue({
+        total_count: 1,
+        items: [
+          {
+            html_url: "https://github.com/maintained/repo/issues/1",
+            repository_url: "https://api.github.com/repos/maintained/repo",
+            updated_at: "2026-01-01T00:00:00Z",
+          },
+        ],
+      });
+
+      const discovery = makeDiscovery(
+        { getStarredRepos: vi.fn(() => ["starred/repo"]) },
+        { minStars: 50 },
+      );
+      await discovery.searchIssues({ maxResults: 5 });
+
+      expect(mockSearchIssuesGraphQLFirst).toHaveBeenCalled();
+      // searchIssuesGraphQLFirst is called as (octokit, params, tracker);
+      // params is the second argument (index 1).
+      const callParams = mockSearchIssuesGraphQLFirst.mock.calls[0][1] as {
+        q: string;
+      };
+      expect(callParams.q).not.toContain("stars:");
+      expect(callParams.q).toContain("pushed:");
+      expect(callParams.q).toContain("archived:false");
+    });
   });
 
   describe("searchIssues — strategy filtering", () => {
