@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.1](https://github.com/costajohnt/oss-scout/compare/core-v1.8.0...core-v1.8.1) (2026-09-27)
+
+
+### Bug Fixes
+
+* **core:** migrate the inherited 30s inter-phase delay to 0 on load ([#351](https://github.com/costajohnt/oss-scout/issues/351)) ([cf1113c](https://github.com/costajohnt/oss-scout/commit/cf1113c47734a3905022168261cddb7a04edaefe)), closes [#349](https://github.com/costajohnt/oss-scout/issues/349)
+
 ## [1.8.0](https://github.com/costajohnt/oss-scout/compare/core-v1.7.1...core-v1.8.0) (2026-09-19)
 
 
