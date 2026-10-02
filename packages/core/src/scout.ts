@@ -223,10 +223,12 @@ export class OssScout implements ScoutStateReader, ScoutStateWriter {
 
   /**
    * Multi-strategy issue search. Returns scored, sorted candidates.
-   * Skipped issues are excluded; the skip list is permanent (#343).
+   * Skipped issues are excluded; permanent skips never re-surface; transient
+   * vetter skips age out after 90 days (#343, #348).
    */
   async search(options?: SearchOptions): Promise<SearchResult> {
     this.evictStaleCacheEntries();
+    this.cullExpiredSkips();
 
     const skippedUrls = new Set(
       (this.state.skippedIssues ?? []).map((s) => s.url),
@@ -869,15 +871,23 @@ export class OssScout implements ScoutStateReader, ScoutStateWriter {
     );
 
     for (const c of candidates) {
-      // A vetter "skip" is a decision, not a result: route it to the permanent
-      // skip list so it never re-surfaces or re-burns vetting calls (#343).
+      // A vetter "skip" is a decision, not a result: route it to the skip list
+      // (#343). Terminal reasons (issue closed, PR merged) are permanent; transient
+      // reasons (closed competing PR, own in-flight PR, soft-skip accumulation) use
+      // a TTL so a stale claim or dead PR attempt doesn't hide the issue forever (#348).
       if (c.recommendation === "skip") {
         existing.delete(c.issue.url);
+        const TERMINAL_REASONS = new Set([
+          "Issue is closed",
+          "Linked PR already merged",
+        ]);
+        const permanent = c.reasonsToSkip.some((r) => TERMINAL_REASONS.has(r));
         this.skipIssue(c.issue.url, {
           repo: c.issue.repo,
           number: c.issue.number,
           title: c.issue.title,
           reason: c.reasonsToSkip.join("; ") || "vetter: skip",
+          permanent,
         });
         continue;
       }
@@ -935,7 +945,8 @@ export class OssScout implements ScoutStateReader, ScoutStateWriter {
   // ── Skip List ───────────────────────────────────────────────────────
 
   /**
-   * Skip an issue — excludes it from future searches permanently (#343).
+   * Skip an issue. Pass `permanent: false` for vetter-derived transient skips
+   * so they expire via cullExpiredSkips (#348); manual skips default to permanent.
    */
   skipIssue(
     url: string,
@@ -944,10 +955,12 @@ export class OssScout implements ScoutStateReader, ScoutStateWriter {
       number?: number;
       title?: string;
       reason?: string;
+      permanent?: boolean;
     },
   ): void {
     const existing = this.state.skippedIssues ?? [];
     if (existing.some((s) => s.url === url)) return; // already skipped
+    const permanent = metadata?.permanent ?? true;
     this.state.skippedIssues = [
       ...existing,
       {
@@ -956,6 +969,7 @@ export class OssScout implements ScoutStateReader, ScoutStateWriter {
         number: metadata?.number ?? 0,
         title: metadata?.title ?? "",
         skippedAt: new Date().toISOString(),
+        permanent,
         ...(metadata?.reason ? { reason: metadata.reason } : {}),
       },
     ];
@@ -1000,8 +1014,11 @@ export class OssScout implements ScoutStateReader, ScoutStateWriter {
   }
 
   /**
-   * Remove skipped issues older than maxDays (default 90). Not called by
-   * search since #343 (skips are permanent); available for an explicit prune.
+   * Remove non-permanent skipped issues older than maxDays (default 90).
+   * Called at the start of each search (#348) to re-surface issues whose
+   * transient block condition (closed competing PR, own in-flight PR, soft-skip
+   * accumulation) has aged out. Permanent entries (manual skips, terminal vetter
+   * reasons) are never touched.
    * @returns The number of expired entries that were removed.
    */
   cullExpiredSkips(maxDays: number = 90): number {
@@ -1009,6 +1026,8 @@ export class OssScout implements ScoutStateReader, ScoutStateWriter {
     cutoff.setDate(cutoff.getDate() - maxDays);
     const before = (this.state.skippedIssues ?? []).length;
     this.state.skippedIssues = (this.state.skippedIssues ?? []).filter((s) => {
+      // Permanent entries are never culled.
+      if (s.permanent !== false) return true;
       const d = new Date(s.skippedAt);
       if (isNaN(d.getTime())) {
         return true; // keep entries with invalid dates rather than silently dropping
