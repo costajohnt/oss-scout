@@ -462,43 +462,80 @@ describe("OssScout", () => {
 
     it("marks terminal skip (issue closed) as permanent", () => {
       const scout = makeScout();
-      scout.saveResults([makeCandidate("https://github.com/o/r/issues/1", ["Issue is closed"])]);
-      const entry = scout.getSkippedIssues().find((s) => s.url === "https://github.com/o/r/issues/1");
+      scout.saveResults([
+        makeCandidate("https://github.com/o/r/issues/1", ["Issue is closed"]),
+      ]);
+      const entry = scout
+        .getSkippedIssues()
+        .find((s) => s.url === "https://github.com/o/r/issues/1");
       expect(entry?.permanent).toBe(true);
     });
 
     it("marks terminal skip (linked PR merged) as permanent", () => {
       const scout = makeScout();
-      scout.saveResults([makeCandidate("https://github.com/o/r/issues/2", ["Linked PR already merged"])]);
-      const entry = scout.getSkippedIssues().find((s) => s.url === "https://github.com/o/r/issues/2");
+      scout.saveResults([
+        makeCandidate("https://github.com/o/r/issues/2", [
+          "Linked PR already merged",
+        ]),
+      ]);
+      const entry = scout
+        .getSkippedIssues()
+        .find((s) => s.url === "https://github.com/o/r/issues/2");
       expect(entry?.permanent).toBe(true);
     });
 
     it("marks transient skip (closed competing PR) as non-permanent", () => {
       const scout = makeScout();
-      scout.saveResults([makeCandidate("https://github.com/o/r/issues/3", ["Linked PR closed without merge"])]);
-      const entry = scout.getSkippedIssues().find((s) => s.url === "https://github.com/o/r/issues/3");
+      scout.saveResults([
+        makeCandidate("https://github.com/o/r/issues/3", [
+          "Linked PR closed without merge",
+        ]),
+      ]);
+      const entry = scout
+        .getSkippedIssues()
+        .find((s) => s.url === "https://github.com/o/r/issues/3");
       expect(entry?.permanent).toBe(false);
     });
 
     it("marks transient skip (own in-flight PR) as non-permanent", () => {
       const scout = makeScout();
-      scout.saveResults([makeCandidate("https://github.com/o/r/issues/4", ["You already have a PR in flight"])]);
-      const entry = scout.getSkippedIssues().find((s) => s.url === "https://github.com/o/r/issues/4");
+      scout.saveResults([
+        makeCandidate("https://github.com/o/r/issues/4", [
+          "You already have a PR in flight",
+        ]),
+      ]);
+      const entry = scout
+        .getSkippedIssues()
+        .find((s) => s.url === "https://github.com/o/r/issues/4");
       expect(entry?.permanent).toBe(false);
     });
 
     it("marks transient skip (soft-skip accumulation) as non-permanent", () => {
       const scout = makeScout();
-      scout.saveResults([makeCandidate("https://github.com/o/r/issues/5", ["Already claimed", "Inactive project", "Unclear requirements"])]);
-      const entry = scout.getSkippedIssues().find((s) => s.url === "https://github.com/o/r/issues/5");
+      scout.saveResults([
+        makeCandidate("https://github.com/o/r/issues/5", [
+          "Already claimed",
+          "Inactive project",
+          "Unclear requirements",
+        ]),
+      ]);
+      const entry = scout
+        .getSkippedIssues()
+        .find((s) => s.url === "https://github.com/o/r/issues/5");
       expect(entry?.permanent).toBe(false);
     });
 
     it("cullExpiredSkips does not remove permanent entries", () => {
       const scout = makeScout({
         skippedIssues: [
-          { url: "https://github.com/o/r/issues/10", repo: "o/r", number: 10, title: "t", skippedAt: "2025-01-01T00:00:00Z", permanent: true },
+          {
+            url: "https://github.com/o/r/issues/10",
+            repo: "o/r",
+            number: 10,
+            title: "t",
+            skippedAt: "2025-01-01T00:00:00Z",
+            permanent: true,
+          },
         ],
       });
       scout.cullExpiredSkips(1);
@@ -508,7 +545,14 @@ describe("OssScout", () => {
     it("cullExpiredSkips removes expired non-permanent entries", () => {
       const scout = makeScout({
         skippedIssues: [
-          { url: "https://github.com/o/r/issues/11", repo: "o/r", number: 11, title: "t", skippedAt: "2025-01-01T00:00:00Z", permanent: false },
+          {
+            url: "https://github.com/o/r/issues/11",
+            repo: "o/r",
+            number: 11,
+            title: "t",
+            skippedAt: "2025-01-01T00:00:00Z",
+            permanent: false,
+          },
         ],
       });
       scout.cullExpiredSkips(1);
@@ -518,7 +562,14 @@ describe("OssScout", () => {
     it("cullExpiredSkips keeps non-permanent entries within TTL", () => {
       const scout = makeScout({
         skippedIssues: [
-          { url: "https://github.com/o/r/issues/12", repo: "o/r", number: 12, title: "t", skippedAt: new Date().toISOString(), permanent: false },
+          {
+            url: "https://github.com/o/r/issues/12",
+            repo: "o/r",
+            number: 12,
+            title: "t",
+            skippedAt: new Date().toISOString(),
+            permanent: false,
+          },
         ],
       });
       scout.cullExpiredSkips(90);
@@ -532,7 +583,13 @@ describe("OssScout", () => {
       const scout = makeScout();
       // biome-ignore: simulating pre-#348 state that lacks the permanent field
       (scout as any).state.skippedIssues = [
-        { url: "https://github.com/o/r/issues/13", repo: "o/r", number: 13, title: "t", skippedAt: "2025-01-01T00:00:00Z" },
+        {
+          url: "https://github.com/o/r/issues/13",
+          repo: "o/r",
+          number: 13,
+          title: "t",
+          skippedAt: "2025-01-01T00:00:00Z",
+        },
       ];
       scout.cullExpiredSkips(1);
       expect(scout.getSkippedIssues()).toHaveLength(1);
