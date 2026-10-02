@@ -959,7 +959,16 @@ export class OssScout implements ScoutStateReader, ScoutStateWriter {
     },
   ): void {
     const existing = this.state.skippedIssues ?? [];
-    if (existing.some((s) => s.url === url)) return; // already skipped
+    const hit = existing.find((s) => s.url === url);
+    if (hit) {
+      // Upgrade a transient entry to permanent if a terminal reason is seen later
+      // (e.g., issue gets closed after a closed-competing-PR skip was recorded).
+      if (metadata?.permanent === true && hit.permanent !== true) {
+        hit.permanent = true;
+        this.dirty = true;
+      }
+      return;
+    }
     const permanent = metadata?.permanent ?? true;
     this.state.skippedIssues = [
       ...existing,

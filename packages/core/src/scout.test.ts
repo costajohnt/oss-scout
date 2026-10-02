@@ -594,6 +594,48 @@ describe("OssScout", () => {
       scout.cullExpiredSkips(1);
       expect(scout.getSkippedIssues()).toHaveLength(1);
     });
+
+    it("skipIssue upgrades a transient entry to permanent when a terminal reason arrives", () => {
+      const scout = makeScout();
+      // First call: transient skip (e.g. closed competing PR)
+      scout.skipIssue("https://github.com/o/r/issues/20", {
+        permanent: false,
+        reason: "Linked PR closed without merge",
+      });
+      expect(
+        scout
+          .getSkippedIssues()
+          .find((s) => s.url === "https://github.com/o/r/issues/20")?.permanent,
+      ).toBe(false);
+
+      // Second call: terminal reason (issue got closed later)
+      scout.skipIssue("https://github.com/o/r/issues/20", {
+        permanent: true,
+        reason: "Issue is closed",
+      });
+      expect(
+        scout
+          .getSkippedIssues()
+          .find((s) => s.url === "https://github.com/o/r/issues/20")?.permanent,
+      ).toBe(true);
+      // Confirm the entry is not duplicated
+      expect(
+        scout
+          .getSkippedIssues()
+          .filter((s) => s.url === "https://github.com/o/r/issues/20"),
+      ).toHaveLength(1);
+    });
+
+    it("skipIssue does not downgrade a permanent entry to transient", () => {
+      const scout = makeScout();
+      scout.skipIssue("https://github.com/o/r/issues/21", { permanent: true });
+      scout.skipIssue("https://github.com/o/r/issues/21", { permanent: false });
+      expect(
+        scout
+          .getSkippedIssues()
+          .find((s) => s.url === "https://github.com/o/r/issues/21")?.permanent,
+      ).toBe(true);
+    });
   });
 
   describe("setStarredRepos", () => {
