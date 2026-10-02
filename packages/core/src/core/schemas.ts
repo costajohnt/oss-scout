@@ -161,6 +161,14 @@ export const SkippedIssueSchema = z.looseObject({
   skippedAt: z.string(),
   /** Why it was skipped: the vetter's reasons, or absent for a manual skip (#343). */
   reason: z.string().optional(),
+  /**
+   * Whether this entry is permanent. Manual skips are permanent (true); vetter-
+   * derived skips for transient conditions (linked PR closed, own PR in flight,
+   * accumulated soft-skips) are non-permanent (false) and eligible for
+   * cullExpiredSkips. Entries without this field (written before #348) default
+   * to true so they are never silently dropped.
+   */
+  permanent: z.boolean().default(true),
 });
 
 // ── Saved candidate schema ─────────────────────────────────────────
