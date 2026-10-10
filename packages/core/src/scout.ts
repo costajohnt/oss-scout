@@ -965,6 +965,10 @@ export class OssScout implements ScoutStateReader, ScoutStateWriter {
       // (e.g., issue gets closed after a closed-competing-PR skip was recorded).
       if (metadata?.permanent === true && hit.permanent !== true) {
         hit.permanent = true;
+        // Bump skippedAt so the upgraded entry wins the gist merge over the
+        // stale transient copy, and outlives a cull tombstone another
+        // machine recorded for that copy.
+        hit.skippedAt = new Date().toISOString();
         this.dirty = true;
       }
       return;
@@ -1027,13 +1031,14 @@ export class OssScout implements ScoutStateReader, ScoutStateWriter {
    * Called at the start of each search (#348) to re-surface issues whose
    * transient block condition (closed competing PR, own in-flight PR, soft-skip
    * accumulation) has aged out. Permanent entries (manual skips, terminal vetter
-   * reasons) are never touched.
+   * reasons) are never touched. Culled URLs get deletion tombstones so a gist
+   * merge with another machine's older copy does not bring them back.
    * @returns The number of expired entries that were removed.
    */
   cullExpiredSkips(maxDays: number = 90): number {
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - maxDays);
-    const before = (this.state.skippedIssues ?? []).length;
+    const culledUrls: string[] = [];
     this.state.skippedIssues = (this.state.skippedIssues ?? []).filter((s) => {
       // Permanent entries are never culled.
       if (s.permanent !== false) return true;
@@ -1041,11 +1046,15 @@ export class OssScout implements ScoutStateReader, ScoutStateWriter {
       if (isNaN(d.getTime())) {
         return true; // keep entries with invalid dates rather than silently dropping
       }
-      return d >= cutoff;
+      if (d >= cutoff) return true;
+      culledUrls.push(s.url);
+      return false;
     });
-    const culled = before - this.state.skippedIssues.length;
-    if (culled > 0) this.dirty = true;
-    return culled;
+    if (culledUrls.length > 0) {
+      this.addTombstones(culledUrls);
+      this.dirty = true;
+    }
+    return culledUrls.length;
   }
 
   // ── Persistence ─────────────────────────────────────────────────────
