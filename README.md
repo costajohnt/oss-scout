@@ -320,13 +320,15 @@ jobs:
   digest:
     runs-on: ubuntu-latest
     steps:
-      - uses: costajohnt/oss-scout@v1
+      - uses: costajohnt/oss-scout@core-v1.8.0 # x-release-please-version
         with:
           github-username: your-github-login
           search-token: ${{ secrets.OSS_SCOUT_TOKEN }} # PAT for personalization (optional)
 ```
 
 Inputs: `github-username`, `search-token`, `issue-token`, `max-results`, `strategy`, `issue-title`, `issue-label`, `version`. The action reuses the existing CLI (`search` + `results --markdown`); no extra machinery.
+
+Pin the action to a release tag (`core-vX.Y.Z`, as above) or a commit SHA; there is no moving `v1` tag. The `version` input (default `latest`) separately controls which `@oss-scout/core` CLI version the action installs and runs.
 
 ### As a Library
 
