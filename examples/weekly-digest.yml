@@ -6,6 +6,9 @@
 # For personalized results (your starred repos + merged-PR history), set a
 # repository secret `OSS_SCOUT_TOKEN` to a personal access token with `repo`
 # read scope. Without it the action still runs, just with less personalization.
+#
+# `uses:` pins a release tag (core-vX.Y.Z) or a commit SHA; there is no moving
+# `v1` tag. The `version` input separately picks the @oss-scout/core CLI version.
 
 name: oss-scout digest
 
@@ -21,7 +24,7 @@ jobs:
   digest:
     runs-on: ubuntu-latest
     steps:
-      - uses: costajohnt/oss-scout@v1
+      - uses: costajohnt/oss-scout@core-v1.8.0 # x-release-please-version
         with:
           github-username: your-github-login
           search-token: ${{ secrets.OSS_SCOUT_TOKEN }}
