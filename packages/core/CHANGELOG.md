@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.8.2](https://github.com/costajohnt/oss-scout/compare/core-v1.8.1...core-v1.8.2) (2026-10-10)
+
+
+### Bug Fixes
+
+* **deps:** patch transitive security advisories ([#360](https://github.com/costajohnt/oss-scout/issues/360)) ([96804bf](https://github.com/costajohnt/oss-scout/commit/96804bf0b171f5f42cd0cf63551c27627a2db294))
+* tombstone culled transient skips so gist merges cannot restore them ([#358](https://github.com/costajohnt/oss-scout/issues/358)) ([0059415](https://github.com/costajohnt/oss-scout/commit/00594154204278e80accd103124033334bba1ea1))
+
 ## [1.8.1](https://github.com/costajohnt/oss-scout/compare/core-v1.8.0...core-v1.8.1) (2026-10-10)
 
 

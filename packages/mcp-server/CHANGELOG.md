@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.2](https://github.com/costajohnt/oss-scout/compare/mcp-server-v0.12.1...mcp-server-v0.12.2) (2026-10-10)
+
+
+### Bug Fixes
+
+* **deps:** patch transitive security advisories ([#360](https://github.com/costajohnt/oss-scout/issues/360)) ([96804bf](https://github.com/costajohnt/oss-scout/commit/96804bf0b171f5f42cd0cf63551c27627a2db294))
+
 ## [0.12.1](https://github.com/costajohnt/oss-scout/compare/mcp-server-v0.12.0...mcp-server-v0.12.1) (2026-10-10)
 
 
