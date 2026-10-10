@@ -536,8 +536,13 @@ async function runPhase3(
   const categoryTopics = getTopicsForCategories(projectCategories);
   const topicQuery =
     categoryTopics.length > 0 ? `topic:${categoryTopics[0]}` : "";
+  // Drop `stars:>=` from the Search API query: combining it with `pushed:`
+  // causes GitHub's search backend to silently return 0 results even though
+  // each qualifier alone matches hundreds of issues (#331). The star threshold
+  // is already enforced by filterVetAndScore's STAR_FILTER after vetting, so
+  // removing it here is safe and restores the expected result set.
   const phase3Query =
-    `is:issue is:open no:assignee ${langQuery} ${topicQuery} stars:>=${minStars} pushed:>=${pushedSince} archived:false`
+    `is:issue is:open no:assignee ${langQuery} ${topicQuery} pushed:>=${pushedSince} archived:false`
       .replace(/  +/g, " ")
       .trim();
 
