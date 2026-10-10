@@ -33,6 +33,7 @@ function createMockScout(overrides: Partial<OssScout> = {}): OssScout {
     unskipIssue: vi.fn(),
     clearSkippedIssues: vi.fn(),
     checkpoint: vi.fn().mockResolvedValue(true),
+    isDirty: vi.fn().mockReturnValue(false),
     features: vi.fn().mockResolvedValue({
       quickWins: [],
       biggerBets: [],
@@ -276,6 +277,30 @@ describe("registerTools", () => {
 
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain("API rate limited");
+    });
+
+    it("checkpoints dirty state on failure so rotation-cursor advances survive a dry run", async () => {
+      // A zero-candidate search advances the search-rotation cursors and
+      // throws; without a checkpoint in the catch, the same dry strategy and
+      // repo windows would lead every retry (the CLI already persists this).
+      const checkpoint = vi.fn().mockResolvedValue(true);
+      const errorScout = createMockScout({
+        search: vi.fn().mockRejectedValue(new Error("No issue candidates")),
+        isDirty: vi.fn().mockReturnValue(true),
+        checkpoint,
+      } as Partial<OssScout>);
+      const errorServer = new McpServer({ name: "test", version: "0.0.1" });
+      vi.spyOn(errorServer, "tool");
+      registerTools(errorServer, errorScout);
+
+      const handler = getToolHandler(errorServer, "search");
+      const result = (await handler({}, {})) as {
+        content: Array<{ type: string; text: string }>;
+        isError?: boolean;
+      };
+
+      expect(result.isError).toBe(true);
+      expect(checkpoint).toHaveBeenCalled();
     });
   });
 

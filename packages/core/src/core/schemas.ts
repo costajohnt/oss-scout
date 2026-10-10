@@ -275,11 +275,27 @@ export const ScoutPreferencesSchema = z.looseObject({
 
 // ── Root state schema ───────────────────────────────────────────────
 
+/**
+ * Bump when adding a compatible migration step to `migrateScoutState`.
+ * Fresh state is born at this revision; persisted state below it is
+ * migrated on load.
+ */
+export const CURRENT_STATE_REVISION = 1;
+
 // Persisted schemas are loose (unknown keys round-trip) so an older binary
 // loading state written by a newer one cannot silently strip and then
 // persist away the newer fields (#137).
 export const ScoutStateSchema = z.looseObject({
   version: z.literal(1),
+
+  /**
+   * Highest compatible migration applied to this state (see
+   * `parseScoutState`). Unlike `version`, a bump here never locks out an
+   * older binary: the key round-trips through the loose schema, and every
+   * migration it tracks leaves the shape valid for version 1 readers.
+   * State written before the counter existed reads as 0.
+   */
+  stateRevision: z.number().int().min(0).default(CURRENT_STATE_REVISION),
 
   preferences: ScoutPreferencesSchema.default(() =>
     ScoutPreferencesSchema.parse({}),
@@ -363,13 +379,59 @@ export const ScoutStateSchema = z.looseObject({
 
 /**
  * Single entry point for parsing persisted state (local file, gist, gist
- * cache). Version migrations belong here: when a version 2 ships, transform
- * older raw shapes before validation so no load site ever sees unmigrated
- * data. Unknown keys round-trip via the loose schemas above.
+ * cache). Migrations belong here so no load site ever sees unmigrated data.
+ * Unknown keys round-trip via the loose schemas above.
+ *
+ * Two kinds of migration exist. A shape change that older binaries cannot
+ * read bumps `version` (none has shipped yet). A compatible fix-up of
+ * already-valid data bumps `CURRENT_STATE_REVISION` and adds a step below;
+ * the persisted `stateRevision` records which steps a state has been
+ * through, so a value the user later sets on purpose is never rewritten
+ * again.
  */
 export function parseScoutState(raw: unknown): ScoutState {
-  // No migrations yet; version 1 is current.
-  return ScoutStateSchema.parse(raw);
+  return ScoutStateSchema.parse(migrateScoutState(raw));
+}
+
+/**
+ * The `interPhaseDelayMs` default before #344 dropped it to 0. Zod
+ * materialises defaults at parse time and saves persist the parsed state,
+ * so every state written under the old default carries this literal (#349).
+ */
+const LEGACY_INTER_PHASE_DELAY_MS = 30000;
+
+function migrateScoutState(raw: unknown): unknown {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+    return raw;
+  }
+  const state = raw as Record<string, unknown>;
+  const revision =
+    typeof state.stateRevision === "number" ? state.stateRevision : 0;
+  if (revision >= CURRENT_STATE_REVISION) return raw;
+
+  let migrated = state;
+  if (revision < 1) migrated = dropInheritedInterPhaseDelay(migrated);
+  return { ...migrated, stateRevision: CURRENT_STATE_REVISION };
+}
+
+/**
+ * Revision 1: a stored `interPhaseDelayMs` of 30000 on a pre-revision state
+ * is the inherited default, not a choice, so it becomes the new default of 0
+ * (#349). Anyone who wants the spacing back can set the knob again; once the
+ * state is at revision 1 that value sticks.
+ */
+function dropInheritedInterPhaseDelay(
+  state: Record<string, unknown>,
+): Record<string, unknown> {
+  const prefs = state.preferences;
+  if (typeof prefs !== "object" || prefs === null || Array.isArray(prefs)) {
+    return state;
+  }
+  const preferences = prefs as Record<string, unknown>;
+  if (preferences.interPhaseDelayMs !== LEGACY_INTER_PHASE_DELAY_MS) {
+    return state;
+  }
+  return { ...state, preferences: { ...preferences, interPhaseDelayMs: 0 } };
 }
 
 // ── Inferred types ──────────────────────────────────────────────────

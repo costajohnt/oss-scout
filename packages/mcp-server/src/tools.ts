@@ -161,6 +161,11 @@ export function registerTools(server: McpServer, scout: OssScout): void {
           ],
         };
       } catch (err) {
+        // State mutated before the failure (notably the search-rotation
+        // cursors, which advance even when a run finds nothing) would
+        // otherwise be dropped, so the same dry strategy/repo window leads
+        // every retry. The CLI persists this in its own catch; mirror it.
+        if (scout.isDirty()) await scout.checkpoint().catch(() => false);
         const msg = err instanceof Error ? err.message : String(err);
         return {
           content: [{ type: "text", text: `Error: ${msg}` }],

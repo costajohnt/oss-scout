@@ -3,6 +3,7 @@ import {
   ScoutStateSchema,
   ScoutPreferencesSchema,
   parseScoutState,
+  CURRENT_STATE_REVISION,
   RepoScoreSchema,
   SavedCandidateSchema,
   HorizonSchema,
@@ -379,6 +380,60 @@ describe("parseScoutState", () => {
 
   it("still rejects an unknown version", () => {
     expect(() => parseScoutState({ version: 2 })).toThrow();
+  });
+});
+
+// ── Compatible migrations (#349) ─────────────────────────────────────
+
+describe("parseScoutState migrations", () => {
+  const legacy = (interPhaseDelayMs: number) => ({
+    version: 1,
+    preferences: { interPhaseDelayMs, languages: ["go"] },
+  });
+
+  it("is born at the current revision", () => {
+    expect(ScoutStateSchema.parse({ version: 1 }).stateRevision).toBe(
+      CURRENT_STATE_REVISION,
+    );
+  });
+
+  it("rewrites the inherited 30s inter-phase delay to the new default", () => {
+    const state = parseScoutState(legacy(30000));
+    expect(state.preferences.interPhaseDelayMs).toBe(0);
+    expect(state.preferences.languages).toEqual(["go"]);
+    expect(state.stateRevision).toBe(CURRENT_STATE_REVISION);
+  });
+
+  it("keeps a pre-revision delay that is not the old default", () => {
+    expect(parseScoutState(legacy(15000)).preferences.interPhaseDelayMs).toBe(
+      15000,
+    );
+  });
+
+  it("keeps 30000 once the state has been through the migration", () => {
+    const state = parseScoutState({ ...legacy(30000), stateRevision: 1 });
+    expect(state.preferences.interPhaseDelayMs).toBe(30000);
+  });
+
+  it("stamps the revision on legacy state with no preferences", () => {
+    const state = parseScoutState({ version: 1 });
+    expect(state.stateRevision).toBe(CURRENT_STATE_REVISION);
+    expect(state.preferences.interPhaseDelayMs).toBe(0);
+  });
+
+  it("never lowers a revision written by a newer binary", () => {
+    const state = parseScoutState({
+      ...legacy(30000),
+      stateRevision: CURRENT_STATE_REVISION + 1,
+    });
+    expect(state.stateRevision).toBe(CURRENT_STATE_REVISION + 1);
+    expect(state.preferences.interPhaseDelayMs).toBe(30000);
+  });
+
+  it("does not mutate the raw input", () => {
+    const raw = legacy(30000);
+    parseScoutState(raw);
+    expect(raw.preferences.interPhaseDelayMs).toBe(30000);
   });
 });
 

@@ -25,7 +25,7 @@
     "prepublishOnly": "pnpm run build && pnpm run bundle"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.27.1",
+    "@modelcontextprotocol/sdk": "^1.32.1",
     "@oss-scout/core": "workspace:^",
     "zod": "^4.3.6"
   },

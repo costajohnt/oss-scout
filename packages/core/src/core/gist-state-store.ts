@@ -538,6 +538,7 @@ export function mergeStates(local: ScoutState, remote: ScoutState): ScoutState {
     ...local,
     ...remote,
     version: 1,
+    stateRevision: Math.max(local.stateRevision, remote.stateRevision),
     preferences,
     preferencesUpdatedAt,
     tombstones,
