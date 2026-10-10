@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.12.1](https://github.com/costajohnt/oss-scout/compare/mcp-server-v0.12.0...mcp-server-v0.12.1) (2026-10-10)
+
+
+### Bug Fixes
+
+* **deps:** bump @modelcontextprotocol/sdk to 1.32.1 and express to 5.3.0 to clear the high and critical production audit advisories ([a91d0f7](https://github.com/costajohnt/oss-scout/commit/a91d0f7cd42f4630b6af7dc737fb0e0fdb2f56a0))
+* **mcp:** checkpoint dirty state when the search tool fails ([582f8ca](https://github.com/costajohnt/oss-scout/commit/582f8ca9a30003b16d4ea216561d69d2c47fbd8e))
+
 ## [0.12.0](https://github.com/costajohnt/oss-scout/compare/mcp-server-v0.11.0...mcp-server-v0.12.0) (2026-09-19)
 
 
