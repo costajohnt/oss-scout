@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { createScout, OssScout, toGistOctokit } from "./scout.js";
-import { GistStateStore } from "./core/gist-state-store.js";
+import { GistStateStore, mergeStates } from "./core/gist-state-store.js";
 import type { BootstrapResult } from "./core/gist-state-store.js";
 import { ScoutStateSchema } from "./core/schemas.js";
 import type { ScoutState } from "./core/schemas.js";
@@ -557,6 +557,78 @@ describe("OssScout", () => {
       });
       scout.cullExpiredSkips(1);
       expect(scout.getSkippedIssues()).toHaveLength(0);
+    });
+
+    it("cullExpiredSkips tombstones culled entries so a merge cannot restore them", () => {
+      const expired = {
+        url: "https://github.com/o/r/issues/14",
+        repo: "o/r",
+        number: 14,
+        title: "t",
+        skippedAt: "2025-01-01T00:00:00Z",
+        permanent: false,
+      };
+      const scout = makeScout({ skippedIssues: [{ ...expired }] });
+      expect(scout.cullExpiredSkips(1)).toBe(1);
+      expect((scout.getState().tombstones ?? []).map((t) => t.url)).toEqual([
+        expired.url,
+      ]);
+
+      // Another machine's gist copy still carries the expired transient skip.
+      const merged = mergeStates(
+        scout.getState(),
+        makeState({ skippedIssues: [{ ...expired }] }),
+      );
+      expect(merged.skippedIssues.map((s) => s.url)).not.toContain(expired.url);
+    });
+
+    it("cullExpiredSkips records no tombstones when nothing expires", () => {
+      const scout = makeScout({
+        skippedIssues: [
+          {
+            url: "https://github.com/o/r/issues/15",
+            repo: "o/r",
+            number: 15,
+            title: "t",
+            skippedAt: "2025-01-01T00:00:00Z",
+            permanent: true,
+          },
+        ],
+      });
+      expect(scout.cullExpiredSkips(1)).toBe(0);
+      expect(scout.getState().tombstones ?? []).toHaveLength(0);
+      expect(scout.isDirty()).toBe(false);
+    });
+
+    it("a permanent upgrade survives another machine's cull of the transient copy", () => {
+      const transient = {
+        url: "https://github.com/o/r/issues/16",
+        repo: "o/r",
+        number: 16,
+        title: "t",
+        skippedAt: "2025-01-01T00:00:00Z",
+        permanent: false,
+      };
+      vi.useFakeTimers();
+      try {
+        // Machine A culls its expired transient copy.
+        vi.setSystemTime(new Date("2026-06-01T00:00:00Z"));
+        const a = makeScout({ skippedIssues: [{ ...transient }] });
+        a.cullExpiredSkips(1);
+        // Later, machine B sees a terminal reason and upgrades the same entry.
+        vi.setSystemTime(new Date("2026-06-02T00:00:00Z"));
+        const b = makeScout({ skippedIssues: [{ ...transient }] });
+        b.skipIssue(transient.url, {
+          permanent: true,
+          reason: "Issue is closed",
+        });
+
+        const merged = mergeStates(a.getState(), b.getState());
+        const entry = merged.skippedIssues.find((s) => s.url === transient.url);
+        expect(entry?.permanent).toBe(true);
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it("cullExpiredSkips keeps non-permanent entries within TTL", () => {
