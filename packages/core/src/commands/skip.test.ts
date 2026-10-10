@@ -362,12 +362,12 @@ describe("OssScout skip methods", () => {
     expect(scout.getSkippedIssues()).toHaveLength(0);
   });
 
-  it("cullExpiredSkips removes old entries and keeps recent ones", async () => {
+  it("cullExpiredSkips removes expired non-permanent entries and keeps recent/permanent ones", async () => {
     const { OssScout } = await import("../scout.js");
     const state = ScoutStateSchema.parse({ version: 1 });
     const scout = new OssScout("fake-token", state);
 
-    // Add an old skip (100 days ago)
+    // Add an old non-permanent skip (100 days ago) — should be culled
     const oldDate = new Date();
     oldDate.setDate(oldDate.getDate() - 100);
     state.skippedIssues = [
@@ -375,16 +375,18 @@ describe("OssScout skip methods", () => {
         url: "https://github.com/old/repo/issues/1",
         repo: "old/repo",
         number: 1,
-        title: "Old issue",
+        title: "Old transient skip",
         skippedAt: oldDate.toISOString(),
+        permanent: false,
       },
     ];
 
-    // Add a recent skip
+    // Add a recent non-permanent skip — within TTL, should survive
     scout.skipIssue("https://github.com/new/repo/issues/2", {
       repo: "new/repo",
       number: 2,
       title: "New issue",
+      permanent: false,
     });
 
     expect(scout.getSkippedIssues()).toHaveLength(2);
@@ -397,19 +399,21 @@ describe("OssScout skip methods", () => {
     );
   });
 
-  it("search does not cull old skips: the skip list is permanent (#343)", async () => {
+  it("search culls expired non-permanent skips but preserves permanent ones (#348)", async () => {
     const { OssScout } = await import("../scout.js");
     const state = ScoutStateSchema.parse({ version: 1 });
     const scout = new OssScout("fake-token", state);
     const oldDate = new Date();
     oldDate.setDate(oldDate.getDate() - 400);
+    // permanent: true (manual skip) — must survive even if ancient
     state.skippedIssues = [
       {
         url: "https://github.com/old/repo/issues/1",
         repo: "old/repo",
         number: 1,
-        title: "Old issue",
+        title: "Old permanent skip",
         skippedAt: oldDate.toISOString(),
+        permanent: true,
       },
     ];
     const cull = vi.spyOn(scout, "cullExpiredSkips");
@@ -418,7 +422,7 @@ describe("OssScout skip methods", () => {
       .search({ maxResults: 1, strategies: ["merged"] })
       .catch(() => {});
 
-    expect(cull).not.toHaveBeenCalled();
+    expect(cull).toHaveBeenCalledOnce();
     expect(scout.getSkippedIssues()).toHaveLength(1);
   });
 

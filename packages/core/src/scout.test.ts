@@ -433,6 +433,211 @@ describe("OssScout", () => {
     });
   });
 
+  describe("transient vs permanent skip routing (#348)", () => {
+    function makeCandidate(
+      url: string,
+      reasonsToSkip: string[],
+    ): IssueCandidate {
+      return {
+        issue: {
+          url,
+          repo: "o/r",
+          number: 1,
+          title: "t",
+          body: "",
+          labels: [],
+          createdAt: "2026-01-01T00:00:00Z",
+          updatedAt: "2026-01-01T00:00:00Z",
+          commentsCount: 0,
+          author: "user",
+        },
+        recommendation: "skip",
+        reasonsToSkip,
+        reasonsToApprove: [],
+        viabilityScore: 0,
+        searchPriority: "normal",
+        notes: [],
+      };
+    }
+
+    it("marks terminal skip (issue closed) as permanent", () => {
+      const scout = makeScout();
+      scout.saveResults([
+        makeCandidate("https://github.com/o/r/issues/1", ["Issue is closed"]),
+      ]);
+      const entry = scout
+        .getSkippedIssues()
+        .find((s) => s.url === "https://github.com/o/r/issues/1");
+      expect(entry?.permanent).toBe(true);
+    });
+
+    it("marks terminal skip (linked PR merged) as permanent", () => {
+      const scout = makeScout();
+      scout.saveResults([
+        makeCandidate("https://github.com/o/r/issues/2", [
+          "Linked PR already merged",
+        ]),
+      ]);
+      const entry = scout
+        .getSkippedIssues()
+        .find((s) => s.url === "https://github.com/o/r/issues/2");
+      expect(entry?.permanent).toBe(true);
+    });
+
+    it("marks transient skip (closed competing PR) as non-permanent", () => {
+      const scout = makeScout();
+      scout.saveResults([
+        makeCandidate("https://github.com/o/r/issues/3", [
+          "Linked PR closed without merge",
+        ]),
+      ]);
+      const entry = scout
+        .getSkippedIssues()
+        .find((s) => s.url === "https://github.com/o/r/issues/3");
+      expect(entry?.permanent).toBe(false);
+    });
+
+    it("marks transient skip (own in-flight PR) as non-permanent", () => {
+      const scout = makeScout();
+      scout.saveResults([
+        makeCandidate("https://github.com/o/r/issues/4", [
+          "You already have a PR in flight",
+        ]),
+      ]);
+      const entry = scout
+        .getSkippedIssues()
+        .find((s) => s.url === "https://github.com/o/r/issues/4");
+      expect(entry?.permanent).toBe(false);
+    });
+
+    it("marks transient skip (soft-skip accumulation) as non-permanent", () => {
+      const scout = makeScout();
+      scout.saveResults([
+        makeCandidate("https://github.com/o/r/issues/5", [
+          "Already claimed",
+          "Inactive project",
+          "Unclear requirements",
+        ]),
+      ]);
+      const entry = scout
+        .getSkippedIssues()
+        .find((s) => s.url === "https://github.com/o/r/issues/5");
+      expect(entry?.permanent).toBe(false);
+    });
+
+    it("cullExpiredSkips does not remove permanent entries", () => {
+      const scout = makeScout({
+        skippedIssues: [
+          {
+            url: "https://github.com/o/r/issues/10",
+            repo: "o/r",
+            number: 10,
+            title: "t",
+            skippedAt: "2025-01-01T00:00:00Z",
+            permanent: true,
+          },
+        ],
+      });
+      scout.cullExpiredSkips(1);
+      expect(scout.getSkippedIssues()).toHaveLength(1);
+    });
+
+    it("cullExpiredSkips removes expired non-permanent entries", () => {
+      const scout = makeScout({
+        skippedIssues: [
+          {
+            url: "https://github.com/o/r/issues/11",
+            repo: "o/r",
+            number: 11,
+            title: "t",
+            skippedAt: "2025-01-01T00:00:00Z",
+            permanent: false,
+          },
+        ],
+      });
+      scout.cullExpiredSkips(1);
+      expect(scout.getSkippedIssues()).toHaveLength(0);
+    });
+
+    it("cullExpiredSkips keeps non-permanent entries within TTL", () => {
+      const scout = makeScout({
+        skippedIssues: [
+          {
+            url: "https://github.com/o/r/issues/12",
+            repo: "o/r",
+            number: 12,
+            title: "t",
+            skippedAt: new Date().toISOString(),
+            permanent: false,
+          },
+        ],
+      });
+      scout.cullExpiredSkips(90);
+      expect(scout.getSkippedIssues()).toHaveLength(1);
+    });
+
+    it("backward compat: entries without permanent field are treated as permanent", () => {
+      // Entries written before #348 lack the permanent field. Zod's .default(true)
+      // hydrates it when loading from disk; simulate that path by bypassing the
+      // TS type system to inject a pre-#348 entry directly.
+      const scout = makeScout();
+      // biome-ignore: simulating pre-#348 state that lacks the permanent field
+      (scout as any).state.skippedIssues = [
+        {
+          url: "https://github.com/o/r/issues/13",
+          repo: "o/r",
+          number: 13,
+          title: "t",
+          skippedAt: "2025-01-01T00:00:00Z",
+        },
+      ];
+      scout.cullExpiredSkips(1);
+      expect(scout.getSkippedIssues()).toHaveLength(1);
+    });
+
+    it("skipIssue upgrades a transient entry to permanent when a terminal reason arrives", () => {
+      const scout = makeScout();
+      // First call: transient skip (e.g. closed competing PR)
+      scout.skipIssue("https://github.com/o/r/issues/20", {
+        permanent: false,
+        reason: "Linked PR closed without merge",
+      });
+      expect(
+        scout
+          .getSkippedIssues()
+          .find((s) => s.url === "https://github.com/o/r/issues/20")?.permanent,
+      ).toBe(false);
+
+      // Second call: terminal reason (issue got closed later)
+      scout.skipIssue("https://github.com/o/r/issues/20", {
+        permanent: true,
+        reason: "Issue is closed",
+      });
+      expect(
+        scout
+          .getSkippedIssues()
+          .find((s) => s.url === "https://github.com/o/r/issues/20")?.permanent,
+      ).toBe(true);
+      // Confirm the entry is not duplicated
+      expect(
+        scout
+          .getSkippedIssues()
+          .filter((s) => s.url === "https://github.com/o/r/issues/20"),
+      ).toHaveLength(1);
+    });
+
+    it("skipIssue does not downgrade a permanent entry to transient", () => {
+      const scout = makeScout();
+      scout.skipIssue("https://github.com/o/r/issues/21", { permanent: true });
+      scout.skipIssue("https://github.com/o/r/issues/21", { permanent: false });
+      expect(
+        scout
+          .getSkippedIssues()
+          .find((s) => s.url === "https://github.com/o/r/issues/21")?.permanent,
+      ).toBe(true);
+    });
+  });
+
   describe("setStarredRepos", () => {
     it("updates starred repos with timestamp", () => {
       const scout = makeScout();
