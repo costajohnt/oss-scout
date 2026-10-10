@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.8.1](https://github.com/costajohnt/oss-scout/compare/core-v1.8.0...core-v1.8.1) (2026-10-10)
+
+
+### Bug Fixes
+
+* **core:** migrate the inherited 30s inter-phase delay to 0 on load ([#351](https://github.com/costajohnt/oss-scout/issues/351)) ([cf1113c](https://github.com/costajohnt/oss-scout/commit/cf1113c47734a3905022168261cddb7a04edaefe)), closes [#349](https://github.com/costajohnt/oss-scout/issues/349)
+* **deps:** bump @modelcontextprotocol/sdk to 1.32.1 and express to 5.3.0 to clear the high and critical production audit advisories ([a91d0f7](https://github.com/costajohnt/oss-scout/commit/a91d0f7cd42f4630b6af7dc737fb0e0fdb2f56a0))
+* **formatter:** link digest issues via redirect.github.com to avoid backlinks ([#357](https://github.com/costajohnt/oss-scout/issues/357)) ([4bbf161](https://github.com/costajohnt/oss-scout/commit/4bbf161c9e75e32f52670954e76abdfce72296ad)), closes [#356](https://github.com/costajohnt/oss-scout/issues/356)
+* **search:** comma syntax for multi-label, drop stars from phase-3 query ([#347](https://github.com/costajohnt/oss-scout/issues/347)) ([409933b](https://github.com/costajohnt/oss-scout/commit/409933b75acfb3afb085ce20e7a13bf29e434ae6))
+* **skip:** TTL vetter-derived transient skips instead of making them permanent ([#353](https://github.com/costajohnt/oss-scout/issues/353)) ([9b63c4b](https://github.com/costajohnt/oss-scout/commit/9b63c4b4f95129fa8a660ea29e9471d1dec9e27a))
+
 ## [1.8.0](https://github.com/costajohnt/oss-scout/compare/core-v1.7.1...core-v1.8.0) (2026-09-19)
 
 
