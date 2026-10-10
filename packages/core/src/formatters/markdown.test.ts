@@ -72,9 +72,30 @@ describe("formatResultsMarkdown (#170)", () => {
     const row = md.split("\n").find((l) => l.includes("[#1]"))!;
     // Title text sits inside a link to the real issue URL; GFM does not
     // autolink inside link text, so the pasted URL stays inert.
-    expect(row).toContain("](https://github.com/owner/repo/issues/1) |");
+    expect(row).toContain(
+      "](https://redirect.github.com/owner/repo/issues/1) |",
+    );
     expect(row).toMatch(
-      /\[See https:\/\/evil\.example now\]\(https:\/\/github\.com\/owner\/repo\/issues\/1\)/,
+      /\[See https:\/\/evil\.example now\]\(https:\/\/redirect\.github\.com\/owner\/repo\/issues\/1\)/,
+    );
+  });
+
+  it("links through redirect.github.com so the digest creates no backlinks (#356)", () => {
+    const md = formatResultsMarkdown([
+      candidate({ issueUrl: "https://github.com/owner/repo/issues/1" }),
+      candidate({
+        number: 7,
+        issueUrl: "https://www.github.com/other/thing/issues/7",
+      }),
+    ]);
+    // Any github.com issue URL in an issue body becomes a cross-reference
+    // on the target issue; none may survive in the digest.
+    expect(md).not.toMatch(/https:\/\/(www\.)?github\.com\//);
+    expect(md).toContain(
+      "[#1](https://redirect.github.com/owner/repo/issues/1)",
+    );
+    expect(md).toContain(
+      "[#7](https://redirect.github.com/other/thing/issues/7)",
     );
   });
 });

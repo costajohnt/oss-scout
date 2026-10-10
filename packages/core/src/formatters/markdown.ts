@@ -19,6 +19,21 @@ function cell(value: string): string {
 }
 
 /**
+ * Point github.com links at redirect.github.com (#356). The digest is posted
+ * as an issue body, and GitHub turns every github.com issue URL in an issue
+ * body into a "mentioned this issue" cross-reference on the target issue, so
+ * each scheduled run would ping maintainers of every candidate. The redirect
+ * host resolves to the same page but creates no backlink (Dependabot uses the
+ * same trick).
+ */
+function noBacklinkUrl(url: string): string {
+  return url.replace(
+    /^https:\/\/(www\.)?github\.com\//i,
+    "https://redirect.github.com/",
+  );
+}
+
+/**
  * Render saved results as a GitHub-flavored markdown table, sorted by
  * viability score descending. Returns a friendly message when empty.
  */
@@ -34,11 +49,12 @@ export function formatResultsMarkdown(results: SavedCandidate[]): string {
   const header = "| Score | Repo | Issue | Recommendation | Title |";
   const divider = "| ----- | ---- | ----- | -------------- | ----- |";
   const rows = sorted.map((r) => {
-    const issueLink = `[#${r.number}](${r.issueUrl})`;
+    const url = noBacklinkUrl(r.issueUrl);
+    const issueLink = `[#${r.number}](${url})`;
     // Title rendered as a link to the real issue: GFM does not process
     // autolinks inside link text, so a bare URL pasted into a title can't
     // become a clickable phishing link either (#308).
-    const titleLink = `[${cell(r.title)}](${r.issueUrl})`;
+    const titleLink = `[${cell(r.title)}](${url})`;
     return `| ${r.viabilityScore} | ${cell(r.repo)} | ${issueLink} | ${cell(r.recommendation)} | ${titleLink} |`;
   });
 
