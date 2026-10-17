@@ -154,6 +154,10 @@ program
     `Search strategies (${CONCRETE_STRATEGIES.join(",")},all). Defaults to the defaultStrategy preference, or all.`,
   )
   .option(
+    "--full",
+    "Run every enabled strategy in this search instead of one per search in rotation. More API calls, paced by the rate-limit budget.",
+  )
+  .option(
     "--prefer-languages <list>",
     "Comma-separated languages to soft-boost in ranking (#1244). Candidates whose repo language matches sort above equally-recommended non-matches. Does not filter results.",
   )
@@ -179,6 +183,7 @@ program
       options: {
         json?: boolean;
         strategy?: string;
+        full?: boolean;
         preferLanguages?: string;
         preferRepos?: string;
         avoidRepos?: string;
@@ -252,6 +257,7 @@ program
           maxResults,
           state,
           strategies,
+          full: options.full,
           preferLanguages: splitCsv(options.preferLanguages),
           preferRepos: splitCsv(options.preferRepos),
           avoidRepos: splitCsv(options.avoidRepos),

@@ -295,7 +295,11 @@ export class OssScout implements ScoutStateReader, ScoutStateWriter {
           starred: rotation.starredOffset ?? 0,
           maintained: rotation.maintainedOffset ?? 0,
         },
-        strategyRotationOffset: rotation.strategyOffset ?? 0,
+        // A full search runs every enabled phase in one run, so it skips the
+        // one-strategy round-robin (#336) that the default search uses.
+        strategyRotationOffset: options?.full
+          ? undefined
+          : (rotation.strategyOffset ?? 0),
       }));
     } catch (err) {
       // A zero-candidate search throws ValidationError (see issue-discovery.ts)
