@@ -1488,6 +1488,8 @@ describe("OssScout.search language rotation cursor (#249 follow-up)", () => {
 
     expect(captured).toBeDefined();
     expect(captured!.strategyRotationOffset).toBeUndefined();
+    // The round-robin turn order survives a full search.
+    expect(scout.getState().searchRotation.strategyOffset).toBe(7);
   });
 
   // Orgs has no repo/language cursor of its own; a run that used only orgs
