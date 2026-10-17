@@ -295,7 +295,11 @@ export class OssScout implements ScoutStateReader, ScoutStateWriter {
           starred: rotation.starredOffset ?? 0,
           maintained: rotation.maintainedOffset ?? 0,
         },
-        strategyRotationOffset: rotation.strategyOffset ?? 0,
+        // A full search runs every enabled phase in one run, so it skips the
+        // one-strategy round-robin (#336) that the default search uses.
+        strategyRotationOffset: options?.full
+          ? undefined
+          : (rotation.strategyOffset ?? 0),
       }));
     } catch (err) {
       // A zero-candidate search throws ValidationError (see issue-discovery.ts)
@@ -304,7 +308,7 @@ export class OssScout implements ScoutStateReader, ScoutStateWriter {
       // barren language slice leading the next run. Advance the cursor off the
       // strategiesUsed the error carries, then rethrow unchanged (#249 follow-up).
       if (err instanceof ValidationError) {
-        this.advanceRotation(rotation, err.strategiesUsed ?? []);
+        this.advanceRotation(rotation, err.strategiesUsed ?? [], options?.full);
       }
       throw err;
     }
@@ -312,7 +316,7 @@ export class OssScout implements ScoutStateReader, ScoutStateWriter {
     // Advance each rotation cursor only when its phase actually ran —
     // otherwise a search that skipped it (e.g. sufficient results from
     // cheaper phases) would still shift that phase's next starting point.
-    this.advanceRotation(rotation, strategiesUsed);
+    this.advanceRotation(rotation, strategiesUsed, options?.full);
 
     // Feed the freshly observed maintainer-responsiveness signals back into the
     // repo scores so the next search ranks responsive/active repos higher (#167).
@@ -340,11 +344,13 @@ export class OssScout implements ScoutStateReader, ScoutStateWriter {
    * nothing must still rotate, or the same barren slice would lead every
    * subsequent run. Skipped/gated phases don't burn a rotation slot. The
    * round-robin strategy cursor (#336) moves to just after the strategy that
-   * led (the first one used), so the next search starts with the next one.
+   * led (the first one used), so the next search starts with the next one. A
+   * full search ran every strategy, so it leaves that cursor where it was.
    */
   private advanceRotation(
     rotation: SearchRotation,
     strategiesUsed: readonly string[],
+    full = false,
   ): void {
     const ran = (strategy: string): number =>
       strategiesUsed.includes(strategy) ? 1 : 0;
@@ -355,10 +361,11 @@ export class OssScout implements ScoutStateReader, ScoutStateWriter {
       phase0Offset: (rotation.phase0Offset ?? 0) + ran("merged"),
       starredOffset: (rotation.starredOffset ?? 0) + ran("starred"),
       maintainedOffset: (rotation.maintainedOffset ?? 0) + ran("maintained"),
-      strategyOffset:
-        CONCRETE_STRATEGIES.indexOf(
-          strategiesUsed[0] as (typeof CONCRETE_STRATEGIES)[number],
-        ) + 1,
+      strategyOffset: full
+        ? rotation.strategyOffset
+        : CONCRETE_STRATEGIES.indexOf(
+            strategiesUsed[0] as (typeof CONCRETE_STRATEGIES)[number],
+          ) + 1,
       lastRotatedAt: new Date().toISOString(),
     };
     this.dirty = true;

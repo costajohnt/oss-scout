@@ -1468,6 +1468,30 @@ describe("OssScout.search language rotation cursor (#249 follow-up)", () => {
     expect(scout.getState().searchRotation.strategyOffset).toBe(4);
   });
 
+  it("runs every phase instead of round-robin for a full search (#336)", async () => {
+    const scout = new OssScout(
+      "test-token",
+      ScoutStateSchema.parse({
+        version: 1,
+        searchRotation: { languageOffset: 0, strategyOffset: 7 },
+      }),
+    );
+    let captured: { strategyRotationOffset?: number } | undefined;
+    vi.spyOn(IssueDiscovery.prototype, "searchIssues").mockImplementation(
+      async (opts: { strategyRotationOffset?: number }) => {
+        captured = opts;
+        return { candidates: [], strategiesUsed: ["merged"] as never[] };
+      },
+    );
+
+    await scout.search({ full: true });
+
+    expect(captured).toBeDefined();
+    expect(captured!.strategyRotationOffset).toBeUndefined();
+    // The round-robin turn order survives a full search.
+    expect(scout.getState().searchRotation.strategyOffset).toBe(7);
+  });
+
   // Orgs has no repo/language cursor of its own; a run that used only orgs
   // must still move the strategy cursor, or every search would pick orgs.
   it("advances the strategy cursor when only the orgs strategy ran (#336)", async () => {

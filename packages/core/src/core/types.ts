@@ -312,6 +312,13 @@ export interface SearchOptions {
   maxResults?: number;
   strategies?: SearchStrategy[];
   /**
+   * Run every enabled strategy in this one search instead of the default
+   * one-strategy round-robin (#336). Costs more API calls (the budget tracker
+   * paces them), so it suits an explicit, interactive search rather than a
+   * frequent or scheduled one.
+   */
+  full?: boolean;
+  /**
    * Per-call personalization bias: candidates whose repo language matches
    * one of these (case-insensitive) get a soft sort boost above
    * equally-recommended non-matches (#1244). Does not filter results, does

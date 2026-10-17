@@ -111,6 +111,7 @@ Each search runs **one** strategy, taking turns across runs (round-robin): the n
 oss-scout search --strategy merged           # only repos you've contributed to
 oss-scout search --strategy starred,broad     # alternate between starred repos and general discovery
 oss-scout search --strategy all               # rotate through all strategies (default)
+oss-scout search --full                       # run every strategy in this one search
 ```
 
 The starred strategy is skipped when your GitHub REST search quota is critically low; broad and maintained run on the GraphQL API and aren't affected by it.
@@ -405,6 +406,7 @@ Setup:
 Search:
   search [count]                Search for issues (default: 10)
     --strategy <s>              Strategies: merged,orgs,starred,broad,maintained,all
+    --full                      Run every strategy this search (not one in rotation)
     --prefer-languages <list>   Soft-boost ranking for matching repo languages
     --prefer-repos <list>       Soft-boost ranking for these owner/repo slugs
     --avoid-repos <list>        Soft-penalize ranking for these owner/repo slugs

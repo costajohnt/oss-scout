@@ -66,6 +66,8 @@ interface SearchCommandOptions {
   maxResults: number;
   state?: ScoutState;
   strategies?: SearchStrategy[];
+  /** Run every enabled strategy this search instead of one in rotation (#336). */
+  full?: boolean;
   /** Soft sort boost for candidates whose repo language matches (#1244). */
   preferLanguages?: string[];
   /** Soft sort boost for candidates in these `owner/repo` slugs (#1244). */
@@ -89,6 +91,7 @@ export async function runSearch(
         result = await scout.search({
           maxResults: options.maxResults,
           strategies: options.strategies,
+          full: options.full,
           preferLanguages: options.preferLanguages,
           preferRepos: options.preferRepos,
           avoidRepos: options.avoidRepos,

@@ -62,6 +62,9 @@ Searches actively maintained repos filtered by project categories (devtools, web
 # Rotate through all strategies, one per search (default)
 oss-scout search
 
+# Run every strategy in this one search (more API calls, takes a few minutes)
+oss-scout search --full
+
 # Run a single strategy
 oss-scout search --strategy starred
 
@@ -72,7 +75,7 @@ oss-scout search --strategy merged,starred
 oss-scout config set defaultStrategy "merged,starred"
 ```
 
-Turn order is merged -> orgs -> starred -> broad -> maintained. A search runs the strategy whose turn it is; strategies with nothing to search (no `preferredOrgs`, no starred repos) are passed over, and if the chosen strategy finds nothing usable the search moves on to the next one. A single search's results therefore come from one source: run another search for the next strategy. Results are sorted by priority (merged_pr > starred > normal), then recommendation, then score. The starred strategy is skipped when the REST search quota is critically low; the others don't use that quota.
+Turn order is merged -> orgs -> starred -> broad -> maintained. A search runs the strategy whose turn it is; strategies with nothing to search (no `preferredOrgs`, no starred repos) are passed over, and if the chosen strategy finds nothing usable the search moves on to the next one. A single search's results therefore come from one source: run another search for the next strategy, or pass `--full` to run them all at once. Results are sorted by priority (merged_pr > starred > normal), then recommendation, then score. The starred strategy is skipped when the REST search quota is critically low; the others don't use that quota.
 
 ## Viability Scoring (0-100)
 

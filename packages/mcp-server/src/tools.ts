@@ -71,6 +71,12 @@ export function registerTools(server: McpServer, scout: OssScout): void {
         .describe(
           "Comma-separated search strategies: merged, orgs, starred, broad, maintained, all",
         ),
+      full: z
+        .boolean()
+        .optional()
+        .describe(
+          "Run every enabled strategy in this search instead of one per search in rotation. More API calls, so it can take a few minutes",
+        ),
       preferLanguages: z
         .array(z.string())
         .optional()
@@ -107,6 +113,7 @@ export function registerTools(server: McpServer, scout: OssScout): void {
     async ({
       maxResults,
       strategies,
+      full,
       preferLanguages,
       preferRepos,
       avoidRepos,
@@ -133,6 +140,7 @@ export function registerTools(server: McpServer, scout: OssScout): void {
           scout.search({
             maxResults: maxResults ?? 10,
             strategies: parsedStrategies,
+            full,
             preferLanguages,
             preferRepos,
             avoidRepos,
