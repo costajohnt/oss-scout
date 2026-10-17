@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.0](https://github.com/costajohnt/oss-scout/compare/mcp-server-v0.12.2...mcp-server-v0.13.0) (2026-10-17)
+
+
+### Features
+
+* **search:** add a full search that runs every strategy in one run ([#362](https://github.com/costajohnt/oss-scout/issues/362)) ([171a766](https://github.com/costajohnt/oss-scout/commit/171a766fec908c246b975fef0b27876faa86b075))
+
 ## [0.12.2](https://github.com/costajohnt/oss-scout/compare/mcp-server-v0.12.1...mcp-server-v0.12.2) (2026-10-10)
 
 
