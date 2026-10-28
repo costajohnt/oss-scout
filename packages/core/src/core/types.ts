@@ -92,6 +92,7 @@ export type AntiLLMPolicySourceFile =
   | "CONTRIBUTING.md"
   | "CODE_OF_CONDUCT.md"
   | "AI_POLICY.md"
+  | "AGENTS.md"
   | "README.md";
 
 /** Result of scanning a repo's policy docs for anti-LLM/AI keywords. */
