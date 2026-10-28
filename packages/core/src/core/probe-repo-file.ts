@@ -27,11 +27,13 @@ import { getHttpCache, cachedRequest } from "./http-cache.js";
 const MODULE = "probe-repo-file";
 
 /**
- * Clean 404s are cached on disk for a day. Missing CONTRIBUTING/README/CoC
- * probes were ~57% of core calls in a measured search, re-requested by every
- * process because only 200 bodies were ETag-cached.
+ * Clean 404s are cached on disk for 4h (matching the repo-health snapshot).
+ * Missing CONTRIBUTING/README/CoC probes were ~57% of core calls in a measured
+ * search, re-requested by every process because only 200 bodies were
+ * ETag-cached. Kept short because a newly added CONTRIBUTING with an AI ban
+ * must reach the anti-LLM scan within hours, not a day.
  */
-const MISSING_FILE_TTL_MS = 24 * 60 * 60 * 1000;
+const MISSING_FILE_TTL_MS = 4 * 60 * 60 * 1000;
 
 /**
  * Result of probing one repo file path.

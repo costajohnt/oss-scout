@@ -70,6 +70,16 @@ export function isAuthError(error: unknown): boolean {
 }
 
 export function isRateLimitError(error: unknown): boolean {
+  // GraphQL's primary limit arrives as HTTP 200 with errors[].type
+  // RATE_LIMITED; @octokit/graphql throws it with no status at all.
+  const gqlErrors = (error as { errors?: Array<{ type?: string }> } | null)
+    ?.errors;
+  if (
+    Array.isArray(gqlErrors) &&
+    gqlErrors.some((e) => e?.type === "RATE_LIMITED")
+  ) {
+    return true;
+  }
   const status = getHttpStatusCode(error);
   if (status === 429) return true;
   if (status === 403) {
