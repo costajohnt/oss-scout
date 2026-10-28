@@ -457,3 +457,11 @@ describe("fetchAndScanAntiLLMPolicy", () => {
     expect(probedPaths).toContain("CONTRIBUTING.md");
   });
 });
+
+describe("scanForAntiLLMPolicy: agent-only bans", () => {
+  it("matches a good-first-issue agent ban (cot-rs AI_POLICY.md wording)", () => {
+    const text =
+      "Issues labeled `good first issue` must not be completed by automated agents.";
+    expect(scanForAntiLLMPolicy(text).matched).toBe(true);
+  });
+});

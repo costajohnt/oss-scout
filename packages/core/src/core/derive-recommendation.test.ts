@@ -236,3 +236,25 @@ describe("repoAcceptsContributionsFromHealth (#248/#249/#1575)", () => {
     ).toBeNull();
   });
 });
+
+describe("deriveRecommendation: notTakeableReason", () => {
+  it("hard-skips an otherwise clean issue and surfaces the reason", () => {
+    const out = deriveRecommendation(
+      baseInput({ notTakeableReason: "Reporter offered to send the fix" }),
+    );
+    expect(out.recommendation).toBe("skip");
+    expect(out.reasonsToSkip).toContain("Reporter offered to send the fix");
+  });
+});
+
+describe("deriveRecommendation: cautionReasons", () => {
+  it("downgrades approve to needs_review and names the policy file", () => {
+    const out = deriveRecommendation(
+      baseInput({ cautionReasons: ["AI contribution policy in AI_POLICY.md"] }),
+    );
+    expect(out.recommendation).toBe("needs_review");
+    expect(out.reasonsToSkip).toContain(
+      "AI contribution policy in AI_POLICY.md",
+    );
+  });
+});

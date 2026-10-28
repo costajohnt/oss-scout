@@ -40,6 +40,7 @@ import {
   checkNotClaimed,
   checkUserMergedPRsInRepo,
   analyzeRequirements,
+  commentClaimsIssue,
 } from "./issue-eligibility.js";
 import {
   checkProjectHealth,
@@ -50,6 +51,7 @@ import {
   prefetchIssueCores,
   prefetchMergedPRCounts,
   issueCoreKey,
+  looksLikeBotLogin,
   type PrefetchedIssueCore,
   type MergedPRRepoRef,
 } from "./issue-graphql.js";
@@ -242,6 +244,19 @@ export interface RecommendationInput {
    * is the VIEWER's own history. See repoAcceptsContributionsFromHealth.
    */
   repoAcceptsContributions: boolean | null;
+  /**
+   * Set when the issue is spoken for without a formal claim: the reporter
+   * offered to send the fix in the issue body, or a bot account filed it.
+   * A hard skip, like ownPR.
+   */
+  notTakeableReason?: string;
+  /**
+   * Weak not-takeable signals (an AI-policy keyword match, a bot-looking
+   * login). Each is surfaced as a skip reason and downgrades "approve" to
+   * "needs_review" rather than skipping: some matches are conditional ("don't
+   * submit AI code you don't understand") or wrong ("bot-hunter" is a person).
+   */
+  cautionReasons?: string[];
 }
 
 export interface RecommendationOutput {
@@ -340,6 +355,7 @@ export function deriveRecommendation(
   if (input.issueClosed) {
     reasonsToSkip.push("Issue is closed");
   }
+  if (input.notTakeableReason) reasonsToSkip.push(input.notTakeableReason);
 
   // Recommendation.
   let recommendation: "approve" | "skip" | "needs_review";
@@ -353,6 +369,8 @@ export function deriveRecommendation(
     recommendation = "skip";
   } else if (input.ownPR) {
     // You're already working on this; don't re-surface it as competition.
+    recommendation = "skip";
+  } else if (input.notTakeableReason) {
     recommendation = "skip";
   } else if (
     input.passedAllChecks &&
@@ -381,6 +399,10 @@ export function deriveRecommendation(
     notes.push(
       "Recommendation downgraded: one or more checks were inconclusive",
     );
+  }
+  if (input.cautionReasons?.length) {
+    reasonsToSkip.push(...input.cautionReasons);
+    if (recommendation === "approve") recommendation = "needs_review";
   }
 
   return { notes, reasonsToApprove, reasonsToSkip, recommendation };
@@ -508,6 +530,26 @@ export class IssueVetter {
     // Is the linked PR the user's own open PR (#166)? If so the issue is
     // "you're already on it", not competition.
     const username = this.stateReader.getGitHubUsername?.() ?? "";
+
+    // Takeability: signals that the issue is spoken for even with no
+    // assignee, linked PR or claiming comment. Both read the issue itself, so
+    // they cost no API calls.
+    const isOwnIssue =
+      username !== "" &&
+      core.authorLogin?.toLowerCase() === username.toLowerCase();
+    let notTakeableReason: string | undefined;
+    if (core.authorIsBot) {
+      notTakeableReason = "Filed by a bot account";
+    } else if (!isOwnIssue && commentClaimsIssue(core.body)) {
+      notTakeableReason = "Reporter offered to send the fix";
+    }
+    const cautionReasons: string[] = [];
+    if (!core.authorIsBot && core.authorLooksLikeBot)
+      cautionReasons.push("Author login looks like a bot");
+    if (antiLLMPolicy.matched)
+      cautionReasons.push(
+        `AI contribution policy in ${antiLLMPolicy.sourceFile ?? "repo docs"}`,
+      );
     const linkedPR = existingPRCheck.linkedPR;
     const ownPR =
       !noExistingPR &&
@@ -636,6 +678,8 @@ export class IssueVetter {
         issueClosed,
         passedAllChecks: vettingResult.passedAllChecks,
         repoAcceptsContributions,
+        notTakeableReason,
+        cautionReasons,
       });
     vettingResult.notes = notes;
 
@@ -747,6 +791,11 @@ export class IssueVetter {
       commentCount: ghIssue.comments,
       createdAt: ghIssue.created_at,
       updatedAt: ghIssue.updated_at,
+      authorLogin: ghIssue.user?.login,
+      authorIsBot:
+        ghIssue.user?.type === "Bot" ||
+        /\[bot\]$/i.test(ghIssue.user?.login ?? ""),
+      authorLooksLikeBot: looksLikeBotLogin(ghIssue.user?.login),
     };
   }
 

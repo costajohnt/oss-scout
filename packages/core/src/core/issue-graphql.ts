@@ -44,6 +44,24 @@ export interface PrefetchedIssueCore {
   commentCount: number;
   createdAt: string;
   updatedAt: string;
+  /** Issue author login; absent for deleted ("ghost") accounts. */
+  authorLogin?: string;
+  /** True when GitHub types the author as a bot (App account / `[bot]`). */
+  authorIsBot?: boolean;
+  /**
+   * True when a User-typed login reads like a bot ("worktrunk-bot",
+   * "jerrai-bot-heygen"). Weaker than authorIsBot: humans pick such names too.
+   */
+  authorLooksLikeBot?: boolean;
+}
+
+/**
+ * Login-only bot heuristic for User-typed accounts operated as bots. Weak
+ * signal ("bot-hunter" is a person), so callers treat it as needs_review.
+ */
+export function looksLikeBotLogin(login: string | undefined): boolean {
+  if (!login) return false;
+  return /(?:^|-)bot(?:-|$)/i.test(login);
 }
 
 /** A single issue to prefetch. */
@@ -71,6 +89,7 @@ interface GraphQLIssueNode {
   comments: { totalCount: number };
   createdAt: string;
   updatedAt: string;
+  author?: { login: string; __typename?: string } | null;
 }
 
 /** Shape of the aliased batch response: `{ i0: { issue }, i1: { issue }, ... }`. */
@@ -86,6 +105,11 @@ function normalizeNode(node: GraphQLIssueNode): PrefetchedIssueCore {
     commentCount: node.comments.totalCount,
     createdAt: node.createdAt,
     updatedAt: node.updatedAt,
+    authorLogin: node.author?.login,
+    authorIsBot:
+      node.author?.__typename === "Bot" ||
+      /\[bot\]$/i.test(node.author?.login ?? ""),
+    authorLooksLikeBot: looksLikeBotLogin(node.author?.login),
   };
 }
 
@@ -136,6 +160,7 @@ export async function prefetchIssueCores(
           comments { totalCount }
           createdAt
           updatedAt
+          author { login __typename }
         }
       }`,
     );

@@ -720,3 +720,43 @@ describe("analyzeRequirements", () => {
     expect(analyzeRequirements(body)).toBe(false);
   });
 });
+
+describe("commentClaimsIssue: offers to send the fix", () => {
+  it.each([
+    "I'm happy to open a src-only PR with golden cases.",
+    "I can send this as a PR if that works.",
+    "I'd love to contribute this myself and open a PR if accepted.",
+    "I'm happy to have a go at this.",
+    "I plan to make the focused reservation fix described here.",
+    "Glad to submit a patch.",
+    "Happy to send a PR for this.",
+  ])("treats %j as a claim", (body) => {
+    expect(commentClaimsIssue(body)).toBe(true);
+  });
+
+  it.each([
+    "Happy to accept a PR for this!",
+    "We'd be happy to review a PR.",
+    "PRs welcome.",
+    "Anyone willing to submit a PR is welcome.",
+    "If someone is happy to send a PR, I'll review it.",
+    "If you're keen to write a fix, see CONTRIBUTING.md",
+    "<!-- If you're willing to submit a PR, please say so -->",
+    "### Participation\n\n- [ ] I am willing to submit a pull request for this issue.",
+    "> I'm happy to open a PR",
+    "I'm not willing to send a PR, sorry.",
+    "I'd be happy to submit a fix but I don't know Rust.",
+    "I'd love to contribute this myself but don't have time right now.",
+    "I can open it in VS Code but not in Vim.",
+    "I can send it to you privately if you need the crash dump.",
+    "Happy to give it a try if you push a build.",
+  ])("does not treat the invitation %j as a claim", (body) => {
+    expect(commentClaimsIssue(body)).toBe(false);
+  });
+
+  it("treats a checked issue-form offer as a claim", () => {
+    expect(
+      commentClaimsIssue("- [x] I'm willing to submit a PR to fix this issue"),
+    ).toBe(true);
+  });
+});
