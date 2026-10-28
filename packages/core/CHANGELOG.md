@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.10.1](https://github.com/costajohnt/oss-scout/compare/core-v1.10.0...core-v1.10.1) (2026-10-28)
+
+
+### Bug Fixes
+
+* cut rate-limit pressure: cache missing-file probes, merge stats via GraphQL ([#367](https://github.com/costajohnt/oss-scout/issues/367)) ([269e68f](https://github.com/costajohnt/oss-scout/commit/269e68f432fb2e8d10fb76dbe7e9876c432b21a4))
+
 ## [1.10.0](https://github.com/costajohnt/oss-scout/compare/core-v1.9.0...core-v1.10.0) (2026-10-28)
 
 
