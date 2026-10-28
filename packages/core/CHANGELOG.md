@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.11.0](https://github.com/costajohnt/oss-scout/compare/core-v1.10.2...core-v1.11.0) (2026-10-28)
+
+
+### Features
+
+* flag untakeable issues during vetting (reporter offers, bot filers, AI policies) ([#371](https://github.com/costajohnt/oss-scout/issues/371)) ([b1c5057](https://github.com/costajohnt/oss-scout/commit/b1c505792b967dc7ba3275bfb25e0ca4434a78e4))
+
 ## [1.10.2](https://github.com/costajohnt/oss-scout/compare/core-v1.10.1...core-v1.10.2) (2026-10-28)
 
 
