@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.12.0](https://github.com/costajohnt/oss-scout/compare/core-v1.11.0...core-v1.12.0) (2026-10-28)
+
+
+### Features
+
+* catch "we" offers, investigate-and-fix claims, and AGENTS.md bans ([#373](https://github.com/costajohnt/oss-scout/issues/373)) ([d997ce9](https://github.com/costajohnt/oss-scout/commit/d997ce937d145ab22aeb81f79e240f1ade5fde3c))
+
 ## [1.11.0](https://github.com/costajohnt/oss-scout/compare/core-v1.10.2...core-v1.11.0) (2026-10-28)
 
 
