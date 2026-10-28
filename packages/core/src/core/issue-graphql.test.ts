@@ -4,6 +4,7 @@ import {
   prefetchIssueCores,
   graphqlSearchIssues,
   issueCoreKey,
+  isBotLogin,
   type IssueRef,
 } from "./issue-graphql.js";
 
@@ -69,6 +70,8 @@ describe("prefetchIssueCores", () => {
       commentCount: 4,
       createdAt: "2026-01-01T00:00:00Z",
       updatedAt: "2026-03-01T00:00:00Z",
+      authorLogin: undefined,
+      authorIsBot: false,
     });
 
     const c2 = result.get(issueCoreKey("owner", "repo", 2));
@@ -331,4 +334,17 @@ describe("graphqlSearchIssues", () => {
       graphqlSearchIssues(makeOctokit(graphql), "q", 10),
     ).rejects.toThrow("rate limit");
   });
+});
+
+describe("isBotLogin", () => {
+  it.each([
+    "dependabot[bot]",
+    "worktrunk-bot",
+    "jerrai-bot-heygen",
+    "bot-owner",
+  ])("flags %s", (login) => expect(isBotLogin(login)).toBe(true));
+  it.each(["abbott", "robotics-fan", "talbot", undefined])(
+    "does not flag %s",
+    (login) => expect(isBotLogin(login)).toBe(false),
+  );
 });

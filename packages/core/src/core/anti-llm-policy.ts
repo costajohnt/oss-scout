@@ -52,6 +52,10 @@ export const ANTI_LLM_KEYWORDS: readonly string[] = [
   "ban on ai-generated",
   "prohibit ai-generated",
   "prohibits ai-generated",
+  "not be completed by automated agents",
+  "must not be done by automated agents",
+  "are for humans only",
+  "tasks are for humans",
 ] as const;
 
 /**
@@ -92,6 +96,11 @@ const SOURCE_FILE_FAMILIES: ReadonlyArray<{
       "docs/CODE_OF_CONDUCT.md",
       "code_of_conduct.md",
     ],
+  },
+  {
+    // Repos that state an AI policy in a dedicated file (e.g. cot-rs/cot).
+    canonical: "AI_POLICY.md",
+    paths: ["AI_POLICY.md", ".github/AI_POLICY.md", "docs/AI_POLICY.md"],
   },
   {
     canonical: "README.md",

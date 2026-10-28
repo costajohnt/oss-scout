@@ -44,6 +44,19 @@ export interface PrefetchedIssueCore {
   commentCount: number;
   createdAt: string;
   updatedAt: string;
+  /** Issue author login; absent for deleted ("ghost") accounts. */
+  authorLogin?: string;
+  /** True when the author is a GitHub App/bot account. */
+  authorIsBot?: boolean;
+}
+
+/**
+ * Bot detection from a login alone, for accounts GitHub types as User but that
+ * are operated as bots (e.g. "worktrunk-bot", "jerrai-bot-heygen").
+ */
+export function isBotLogin(login: string | undefined): boolean {
+  if (!login) return false;
+  return /\[bot\]$|(?:^|-)bot(?:-|$)/i.test(login);
 }
 
 /** A single issue to prefetch. */
@@ -71,6 +84,7 @@ interface GraphQLIssueNode {
   comments: { totalCount: number };
   createdAt: string;
   updatedAt: string;
+  author?: { login: string; __typename?: string } | null;
 }
 
 /** Shape of the aliased batch response: `{ i0: { issue }, i1: { issue }, ... }`. */
@@ -86,6 +100,9 @@ function normalizeNode(node: GraphQLIssueNode): PrefetchedIssueCore {
     commentCount: node.comments.totalCount,
     createdAt: node.createdAt,
     updatedAt: node.updatedAt,
+    authorLogin: node.author?.login,
+    authorIsBot:
+      node.author?.__typename === "Bot" || isBotLogin(node.author?.login),
   };
 }
 
@@ -136,6 +153,7 @@ export async function prefetchIssueCores(
           comments { totalCount }
           createdAt
           updatedAt
+          author { login __typename }
         }
       }`,
     );

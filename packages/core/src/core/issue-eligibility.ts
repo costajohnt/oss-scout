@@ -131,6 +131,15 @@ const FIRST_PERSON_CLAIM_PATTERNS: readonly RegExp[] = [
   /\bi\s*(?:'m|am) on it\b/,
   /\bi\s*(?:'ll|will) submit a pr\b/,
   /\bassigned to me\b/,
+  // Offers to send the fix, mostly from the reporter in the issue body.
+  // Verb list excludes "accept"/"review" so a maintainer's "happy to accept a
+  // PR" stays an invitation, not a claim.
+  /\b(?:happy|glad|willing|keen) to (?:open|send|submit|make|put up|raise|contribute|write) (?:a |the |an? )?(?:[\w-]+ ){0,2}(?:pr|pull request|patch|fix)\b/,
+  /\b(?:happy|glad|willing|keen) to (?:have a go|take a stab|give it a (?:go|try|shot))\b/,
+  /\bi can (?:send|open|submit|put up) (?:this|it|a pr|a pull request|a fix|the fix)\b/,
+  /\bi\s*(?:'ll|will) (?:open|send|put up|raise) a (?:pr|pull request)\b/,
+  /\bi\s*(?:'d|would) love to contribute (?:this|it|a fix|the fix)\b/,
+  /\bi plan to (?:make|send|submit|open) (?:a |the )?(?:[\w-]+ ){0,2}(?:pr|pull request|fix|change)\b/,
 ];
 
 /**

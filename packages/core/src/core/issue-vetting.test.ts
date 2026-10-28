@@ -78,6 +78,7 @@ vi.mock("./issue-eligibility.js", () => ({
   checkNotClaimed: vi.fn().mockResolvedValue({ passed: true }),
   checkUserMergedPRsInRepo: vi.fn().mockResolvedValue(0),
   analyzeRequirements: vi.fn(() => true),
+  commentClaimsIssue: vi.fn(() => false),
   // Imported by issue-graphql's merged-PR prefetch (#182) to build the cache
   // key it writes; keep it consistent with the real implementation's shape.
   mergedPRsCacheKey: (owner: string, repo: string) =>

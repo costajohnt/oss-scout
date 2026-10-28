@@ -720,3 +720,24 @@ describe("analyzeRequirements", () => {
     expect(analyzeRequirements(body)).toBe(false);
   });
 });
+
+describe("commentClaimsIssue: offers to send the fix", () => {
+  it.each([
+    "I'm happy to open a src-only PR with golden cases.",
+    "I can send this as a PR if that works.",
+    "I'd love to contribute this myself and open a PR if accepted.",
+    "I'm happy to have a go at this.",
+    "I plan to make the focused reservation fix described here.",
+    "Glad to submit a patch.",
+  ])("treats %j as a claim", (body) => {
+    expect(commentClaimsIssue(body)).toBe(true);
+  });
+
+  it.each([
+    "Happy to accept a PR for this!",
+    "We'd be happy to review a PR.",
+    "PRs welcome.",
+  ])("does not treat the invitation %j as a claim", (body) => {
+    expect(commentClaimsIssue(body)).toBe(false);
+  });
+});
