@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.1](https://github.com/costajohnt/oss-scout/compare/mcp-server-v0.13.0...mcp-server-v0.13.1) (2026-10-28)
+
+
+### Bug Fixes
+
+* **deps:** bump zod to 4.6.7 and body-parser to 2.4.0 for high advisories ([#365](https://github.com/costajohnt/oss-scout/issues/365)) ([1cb8a99](https://github.com/costajohnt/oss-scout/commit/1cb8a9958c1672ac67c6d4140d90bc66c83e846a))
+
 ## [0.13.0](https://github.com/costajohnt/oss-scout/compare/mcp-server-v0.12.2...mcp-server-v0.13.0) (2026-10-17)
 
 
