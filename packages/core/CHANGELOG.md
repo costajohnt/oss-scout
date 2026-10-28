@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.10.0](https://github.com/costajohnt/oss-scout/compare/core-v1.9.0...core-v1.10.0) (2026-10-28)
+
+
+### Features
+
+* log per-run GitHub API usage to ~/.oss-scout/runs.jsonl ([#364](https://github.com/costajohnt/oss-scout/issues/364)) ([de9d15b](https://github.com/costajohnt/oss-scout/commit/de9d15b007cf708a79e6c53e88f53a1be3487f4f))
+
+
+### Bug Fixes
+
+* **deps:** bump zod to 4.6.7 and body-parser to 2.4.0 for high advisories ([#365](https://github.com/costajohnt/oss-scout/issues/365)) ([1cb8a99](https://github.com/costajohnt/oss-scout/commit/1cb8a9958c1672ac67c6d4140d90bc66c83e846a))
+
 ## [1.9.0](https://github.com/costajohnt/oss-scout/compare/core-v1.8.2...core-v1.9.0) (2026-10-17)
 
 
