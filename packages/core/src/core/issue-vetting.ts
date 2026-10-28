@@ -477,7 +477,7 @@ export class IssueVetter {
     ] = await Promise.all([
       checkNoExistingPR(this.octokit, owner, repo, number),
       checkNotClaimed(this.octokit, owner, repo, number, core.commentCount),
-      checkProjectHealth(this.octokit, owner, repo, this.budgetTracker),
+      checkProjectHealth(this.octokit, owner, repo),
       fetchContributionGuidelines(this.octokit, owner, repo),
       hasMergedPRsInRepo
         ? Promise.resolve(0)

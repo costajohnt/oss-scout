@@ -4,7 +4,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // cachedRequest. Exercise the real fetcher here without touching the on-disk
 // ETag cache; ETag behavior is covered in probe-repo-file.etag tests.
 vi.mock("./http-cache.js", () => ({
-  getHttpCache: () => ({}),
+  getHttpCache: () => ({ getIfFresh: () => null, set: () => {} }),
   cachedRequest: async (
     _cache: unknown,
     _url: string,

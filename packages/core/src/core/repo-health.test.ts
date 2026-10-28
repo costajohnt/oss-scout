@@ -14,7 +14,7 @@ vi.mock("./logger.js", () => ({
 // Mock http-cache to pass through to the real fetcher (no caching in tests)
 vi.mock("./http-cache.js", () => ({
   versionedCacheKey: (key: string) => key,
-  getHttpCache: () => ({}),
+  getHttpCache: () => ({ getIfFresh: () => null, set: () => {} }),
   cachedRequest: async (
     _cache: unknown,
     _url: string,
@@ -54,13 +54,11 @@ describe("checkProjectHealth", () => {
           data: [{ commit: { author: { date: recentDate } } }],
         }),
       },
-      search: {
-        // Two calls: merged count, then closed-unmerged count.
-        issuesAndPullRequests: vi
-          .fn()
-          .mockResolvedValueOnce({ data: { total_count: 9 } })
-          .mockResolvedValueOnce({ data: { total_count: 1 } }),
-      },
+      // One GraphQL query, two aliased counts: merged and closed-unmerged.
+      graphql: vi.fn().mockResolvedValue({
+        merged: { issueCount: 9 },
+        closedUnmerged: { issueCount: 1 },
+      }),
     } as unknown as Octokit;
 
     const health = await checkProjectHealth(
@@ -98,11 +96,10 @@ describe("checkProjectHealth", () => {
           data: [{ commit: { author: { date: oldDate } } }],
         }),
       },
-      search: {
-        issuesAndPullRequests: vi
-          .fn()
-          .mockResolvedValue({ data: { total_count: 0 } }),
-      },
+      graphql: vi.fn().mockResolvedValue({
+        merged: { issueCount: 0 },
+        closedUnmerged: { issueCount: 0 },
+      }),
     } as unknown as Octokit;
 
     const health = await checkProjectHealth(
@@ -135,11 +132,7 @@ describe("checkProjectHealth", () => {
           data: [{ commit: { author: { date: recentDate } } }],
         }),
       },
-      search: {
-        issuesAndPullRequests: vi
-          .fn()
-          .mockRejectedValue(new Error("search blip")),
-      },
+      graphql: vi.fn().mockRejectedValue(new Error("search blip")),
     } as unknown as Octokit;
 
     const health = await checkProjectHealth(octokit, "blip-org", "blip-repo");

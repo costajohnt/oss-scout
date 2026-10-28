@@ -22,10 +22,6 @@ import {
   versionedCacheKey,
 } from "./http-cache.js";
 import { probeRepoFile } from "./probe-repo-file.js";
-import {
-  type SearchBudgetTracker,
-  getSearchBudgetTracker,
-} from "./search-budget.js";
 
 const MODULE = "repo-health";
 
@@ -35,8 +31,10 @@ const MERGE_WINDOW_DAYS = 90;
 /**
  * Repo-intrinsic merge signal: how much outside work a repo actually merges,
  * measured from repo-wide PR history over the last 90 days (#248/#249/#1575) —
- * NOT the viewer's own contribution relationship. Two budget-tracked Search API
- * calls (merged count, closed-unmerged count); the result is cached with the
+ * NOT the viewer's own contribution relationship. One GraphQL query with two
+ * aliased issueCount searches (merged, closed-unmerged), so it draws from the
+ * 5000-point GraphQL bucket instead of the 30/min REST Search bucket it used to
+ * drain (two Search calls per repo); the result is cached with the
  * surrounding health snapshot, so repeated candidates from one repo pay nothing.
  *
  * Errors are NOT swallowed here: they propagate to checkProjectHealth's outer
@@ -51,26 +49,26 @@ async function fetchRepoMergeStats(
   octokit: Octokit,
   owner: string,
   repo: string,
-  tracker: SearchBudgetTracker,
 ): Promise<{ recentMergedPRCount: number; recentMergeRate: number | null }> {
   const since = new Date(Date.now() - MERGE_WINDOW_DAYS * 24 * 60 * 60 * 1000)
     .toISOString()
     .slice(0, 10);
-  const count = async (qualifiers: string): Promise<number> => {
-    await tracker.waitForBudget();
-    try {
-      const { data } = await octokit.search.issuesAndPullRequests({
-        q: `repo:${owner}/${repo} ${qualifiers} closed:>=${since}`,
-        per_page: 1, // only total_count is needed
-      });
-      return data.total_count;
-    } finally {
-      // Always record — a failed request still consumes rate-limit budget.
-      tracker.recordCall();
-    }
-  };
-  const merged = await count("is:pr is:merged");
-  const closedUnmerged = await count("is:pr is:unmerged is:closed");
+  const scope = `repo:${owner}/${repo} is:pr closed:>=${since}`;
+  const data = await octokit.graphql<{
+    merged: { issueCount: number };
+    closedUnmerged: { issueCount: number };
+  }>(
+    `query repoMergeStats($merged: String!, $closedUnmerged: String!) {
+      merged: search(type: ISSUE, query: $merged, first: 0) { issueCount }
+      closedUnmerged: search(type: ISSUE, query: $closedUnmerged, first: 0) { issueCount }
+    }`,
+    {
+      merged: `${scope} is:merged`,
+      closedUnmerged: `${scope} is:unmerged is:closed`,
+    },
+  );
+  const merged = data.merged.issueCount;
+  const closedUnmerged = data.closedUnmerged.issueCount;
   const denom = merged + closedUnmerged;
   return {
     recentMergedPRCount: merged,
@@ -128,9 +126,6 @@ export async function checkProjectHealth(
   octokit: Octokit,
   owner: string,
   repo: string,
-  // Optional injected budget tracker for the repo-wide merge-stat searches.
-  // Defaults to the shared singleton so existing callers behave identically.
-  tracker: SearchBudgetTracker = getSearchBudgetTracker(),
 ): Promise<ProjectHealth> {
   const cache = getHttpCache();
   // Versioned (#158): the cached ProjectHealth is read back with an unchecked
@@ -190,12 +185,7 @@ export async function checkProjectHealth(
 
         const ciStatus: "passing" | "failing" | "unknown" = "unknown";
 
-        const mergeStats = await fetchRepoMergeStats(
-          octokit,
-          owner,
-          repo,
-          tracker,
-        );
+        const mergeStats = await fetchRepoMergeStats(octokit, owner, repo);
 
         return {
           repo: `${owner}/${repo}`,
