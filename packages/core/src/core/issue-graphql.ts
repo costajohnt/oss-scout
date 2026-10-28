@@ -371,7 +371,7 @@ interface GraphQLSearchIssueNode {
   title?: string;
   updatedAt?: string;
   labels?: { nodes: { name: string }[] } | null;
-  repository?: { nameWithOwner: string } | null;
+  repository?: { nameWithOwner: string; stargazerCount?: number } | null;
 }
 
 /** Shape of the `search` connection response. */
@@ -418,7 +418,7 @@ export async function graphqlSearchIssues(
           title
           updatedAt
           labels(first: 20) { nodes { name } }
-          repository { nameWithOwner }
+          repository { nameWithOwner stargazerCount }
         }
       }
     }
@@ -462,6 +462,7 @@ export async function graphqlSearchIssues(
       updated_at: node.updatedAt ?? "",
       title: node.title,
       labels: node.labels?.nodes ?? [],
+      repositoryStars: node.repository?.stargazerCount,
     });
   }
 

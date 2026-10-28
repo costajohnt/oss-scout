@@ -588,14 +588,32 @@ export async function filterVetAndScore(
     );
   }
 
+  // Drop repos already known to be below minStars before vetting: the vet
+  // budget (remainingNeeded * 2) was otherwise spent mostly on tiny repos and
+  // the post-vet STAR_FILTER below discarded nearly all of them. Items from
+  // REST search carry no star count and still rely on the post-vet filter.
+  let preVetStarDropped = 0;
   const itemsToVet = filterIssues(items)
     .filter((item) => {
       const repoFullName = extractRepoFromUrl(item.repository_url);
       if (!repoFullName) return false;
       if (spamRepos.has(repoFullName)) return false;
+      if (
+        typeof item.repositoryStars === "number" &&
+        item.repositoryStars < minStars
+      ) {
+        preVetStarDropped++;
+        return false;
+      }
       return excludedRepoSets.every((s) => !s.has(repoFullName));
     })
     .slice(0, remainingNeeded * 2);
+  if (preVetStarDropped > 0) {
+    debug(
+      MODULE,
+      `[STAR_FILTER] Dropped ${preVetStarDropped} ${phaseLabel} items below ${minStars} stars before vetting`,
+    );
+  }
 
   if (itemsToVet.length === 0) {
     debug(
