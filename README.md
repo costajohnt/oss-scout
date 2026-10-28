@@ -321,7 +321,7 @@ jobs:
   digest:
     runs-on: ubuntu-latest
     steps:
-      - uses: costajohnt/oss-scout@core-v1.10.1 # x-release-please-version
+      - uses: costajohnt/oss-scout@core-v1.10.2 # x-release-please-version
         with:
           github-username: your-github-login
           search-token: ${{ secrets.OSS_SCOUT_TOKEN }} # PAT for personalization (optional)

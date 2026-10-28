@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.10.2](https://github.com/costajohnt/oss-scout/compare/core-v1.10.1...core-v1.10.2) (2026-10-28)
+
+
+### Bug Fixes
+
+* drop sub-minStars repos before vetting in GraphQL search phases ([#369](https://github.com/costajohnt/oss-scout/issues/369)) ([342db3d](https://github.com/costajohnt/oss-scout/commit/342db3d3d9910a66e9c41ae881aaa15b0e8c7ecd))
+
 ## [1.10.1](https://github.com/costajohnt/oss-scout/compare/core-v1.10.0...core-v1.10.1) (2026-10-28)
 
 
