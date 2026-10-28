@@ -346,6 +346,48 @@ describe("IssueVetter", () => {
       expect(result.issue.updatedAt).toBe("2026-04-01T00:00:00Z");
     });
 
+    it("hard-skips an issue filed by a bot-typed account", async () => {
+      const vetter = makeVetter();
+      const result = await vetter.vetIssue(VALID_ISSUE_URL, {
+        prefetched: {
+          id: 7,
+          title: "ci-fix: flaky test",
+          body: "1. repro\n2. expected\n```js\ncode\n```",
+          state: "open",
+          labels: [],
+          commentCount: 0,
+          createdAt: "2026-02-01T00:00:00Z",
+          updatedAt: "2026-04-01T00:00:00Z",
+          authorLogin: "ci[bot]",
+          authorIsBot: true,
+        },
+      });
+      expect(result.recommendation).toBe("skip");
+      expect(result.reasonsToSkip).toContain("Filed by a bot account");
+    });
+
+    it("does not treat the user's own offer in the body as a reporter claim", async () => {
+      const { commentClaimsIssue } = await import("./issue-eligibility.js");
+      vi.mocked(commentClaimsIssue).mockReturnValueOnce(true);
+      const vetter = makeVetter({ getGitHubUsername: vi.fn(() => "octocat") });
+      const result = await vetter.vetIssue(VALID_ISSUE_URL, {
+        prefetched: {
+          id: 8,
+          title: "My own issue",
+          body: "I'm happy to open a PR. 1. repro\n2. expected\n```js\ncode\n```",
+          state: "open",
+          labels: [],
+          commentCount: 0,
+          createdAt: "2026-02-01T00:00:00Z",
+          updatedAt: "2026-04-01T00:00:00Z",
+          authorLogin: "OctoCat",
+        },
+      });
+      expect(result.reasonsToSkip).not.toContain(
+        "Reporter offered to send the fix",
+      );
+    });
+
     it("treats a prefetched closed core as skip (#169)", async () => {
       const vetter = makeVetter();
       const result = await vetter.vetIssue(VALID_ISSUE_URL, {

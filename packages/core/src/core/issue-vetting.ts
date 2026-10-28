@@ -51,7 +51,7 @@ import {
   prefetchIssueCores,
   prefetchMergedPRCounts,
   issueCoreKey,
-  isBotLogin,
+  looksLikeBotLogin,
   type PrefetchedIssueCore,
   type MergedPRRepoRef,
 } from "./issue-graphql.js";
@@ -251,11 +251,12 @@ export interface RecommendationInput {
    */
   notTakeableReason?: string;
   /**
-   * Policy file whose text matched an anti-LLM keyword, if any. Downgrades
-   * "approve" to "needs_review" rather than skipping: some matches are
-   * conditional ("don't submit AI code you don't understand").
+   * Weak not-takeable signals (an AI-policy keyword match, a bot-looking
+   * login). Each is surfaced as a skip reason and downgrades "approve" to
+   * "needs_review" rather than skipping: some matches are conditional ("don't
+   * submit AI code you don't understand") or wrong ("bot-hunter" is a person).
    */
-  aiPolicySource?: string | null;
+  cautionReasons?: string[];
 }
 
 export interface RecommendationOutput {
@@ -399,8 +400,8 @@ export function deriveRecommendation(
       "Recommendation downgraded: one or more checks were inconclusive",
     );
   }
-  if (input.aiPolicySource) {
-    reasonsToSkip.push(`AI contribution policy in ${input.aiPolicySource}`);
+  if (input.cautionReasons?.length) {
+    reasonsToSkip.push(...input.cautionReasons);
     if (recommendation === "approve") recommendation = "needs_review";
   }
 
@@ -542,6 +543,13 @@ export class IssueVetter {
     } else if (!isOwnIssue && commentClaimsIssue(core.body)) {
       notTakeableReason = "Reporter offered to send the fix";
     }
+    const cautionReasons: string[] = [];
+    if (!core.authorIsBot && core.authorLooksLikeBot)
+      cautionReasons.push("Author login looks like a bot");
+    if (antiLLMPolicy.matched)
+      cautionReasons.push(
+        `AI contribution policy in ${antiLLMPolicy.sourceFile ?? "repo docs"}`,
+      );
     const linkedPR = existingPRCheck.linkedPR;
     const ownPR =
       !noExistingPR &&
@@ -671,7 +679,7 @@ export class IssueVetter {
         passedAllChecks: vettingResult.passedAllChecks,
         repoAcceptsContributions,
         notTakeableReason,
-        aiPolicySource: antiLLMPolicy.matched ? antiLLMPolicy.sourceFile : null,
+        cautionReasons,
       });
     vettingResult.notes = notes;
 
@@ -785,7 +793,9 @@ export class IssueVetter {
       updatedAt: ghIssue.updated_at,
       authorLogin: ghIssue.user?.login,
       authorIsBot:
-        ghIssue.user?.type === "Bot" || isBotLogin(ghIssue.user?.login),
+        ghIssue.user?.type === "Bot" ||
+        /\[bot\]$/i.test(ghIssue.user?.login ?? ""),
+      authorLooksLikeBot: looksLikeBotLogin(ghIssue.user?.login),
     };
   }
 

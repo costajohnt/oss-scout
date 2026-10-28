@@ -247,10 +247,10 @@ describe("deriveRecommendation: notTakeableReason", () => {
   });
 });
 
-describe("deriveRecommendation: aiPolicySource", () => {
+describe("deriveRecommendation: cautionReasons", () => {
   it("downgrades approve to needs_review and names the policy file", () => {
     const out = deriveRecommendation(
-      baseInput({ aiPolicySource: "AI_POLICY.md" }),
+      baseInput({ cautionReasons: ["AI contribution policy in AI_POLICY.md"] }),
     );
     expect(out.recommendation).toBe("needs_review");
     expect(out.reasonsToSkip).toContain(

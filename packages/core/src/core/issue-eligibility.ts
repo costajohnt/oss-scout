@@ -131,16 +131,43 @@ const FIRST_PERSON_CLAIM_PATTERNS: readonly RegExp[] = [
   /\bi\s*(?:'m|am) on it\b/,
   /\bi\s*(?:'ll|will) submit a pr\b/,
   /\bassigned to me\b/,
-  // Offers to send the fix, mostly from the reporter in the issue body.
-  // Verb list excludes "accept"/"review" so a maintainer's "happy to accept a
-  // PR" stays an invitation, not a claim.
-  /\b(?:happy|glad|willing|keen) to (?:open|send|submit|make|put up|raise|contribute|write) (?:a |the |an? )?(?:[\w-]+ ){0,2}(?:pr|pull request|patch|fix)\b/,
-  /\b(?:happy|glad|willing|keen) to (?:have a go|take a stab|give it a (?:go|try|shot))\b/,
-  /\bi can (?:send|open|submit|put up) (?:this|it|a pr|a pull request|a fix|the fix)\b/,
+];
+
+/**
+ * Offers to send the fix, mostly from the reporter in the issue body. The
+ * subject must be the writer ("I'm happy to...", or a clause opening with
+ * "Happy to...") so "anyone willing to submit a PR" stays an invitation, and
+ * the verb list excludes "accept"/"review"/"test" for the same reason.
+ */
+const OFFER_SUBJECT = String.raw`(?:^\s*|\bi\s*(?:'m|am|'d be|would be|'ll be|will be)\s+(?:(?:really|very|more than|absolutely|also)\s+)?)`;
+const OFFER_PATTERNS: readonly RegExp[] = [
+  new RegExp(
+    String.raw`${OFFER_SUBJECT}(?:happy|glad|willing|keen) to (?:open|send|submit|make|put up|raise|contribute|write) (?:a |the |an )?(?:[\w-]+ ){0,2}(?:pr|pull request|patch|fix)\b`,
+  ),
+  new RegExp(
+    String.raw`${OFFER_SUBJECT}(?:happy|glad|willing|keen) to (?:have a go|take a stab)\b`,
+  ),
+  /\bi can (?:send|open|submit|put up) (?:this |it )?(?:as )?(?:a |the )?(?:pr|pull request|patch|fix)\b/,
   /\bi\s*(?:'ll|will) (?:open|send|put up|raise) a (?:pr|pull request)\b/,
   /\bi\s*(?:'d|would) love to contribute (?:this|it|a fix|the fix)\b/,
   /\bi plan to (?:make|send|submit|open) (?:a |the )?(?:[\w-]+ ){0,2}(?:pr|pull request|fix|change)\b/,
 ];
+
+/** Negations and hedges that turn an offer into a non-offer. */
+const OFFER_VETO = /\bnot\b|n't\b|\bbut\b|\bunless\b/;
+
+/**
+ * Text the writer did not author as a statement: unchecked issue-form
+ * checkboxes ("- [ ] I'm willing to submit a PR"), HTML comments left from
+ * templates, blockquotes and fenced code.
+ */
+function stripNonStatements(body: string): string {
+  return body
+    .replace(/<!--[\s\S]*?-->/g, " ")
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/^\s*[-*] \[ \].*$/gm, " ")
+    .replace(/^\s*>.*$/gm, " ");
+}
 
 /**
  * Generic "working on ..." phrasings. These also match third-person claims
@@ -163,11 +190,15 @@ const NON_CLAIM_SUBJECTS =
 
 /** True when a single comment body claims the issue. */
 export function commentClaimsIssue(body: string): boolean {
-  const clauses = body.toLowerCase().split(/(?<=[.!?])|\n+/);
+  const clauses = stripNonStatements(body)
+    .toLowerCase()
+    .split(/(?<=[.!?])|\n+/);
   for (const clause of clauses) {
     if (PERMISSION_CLAIM_PATTERN.test(clause)) return true;
     if (clause.trimEnd().endsWith("?")) continue;
     if (FIRST_PERSON_CLAIM_PATTERNS.some((p) => p.test(clause))) return true;
+    if (!OFFER_VETO.test(clause) && OFFER_PATTERNS.some((p) => p.test(clause)))
+      return true;
     if (NON_CLAIM_SUBJECTS.test(clause)) continue;
     if (GENERIC_WORKING_PATTERNS.some((p) => p.test(clause))) return true;
   }

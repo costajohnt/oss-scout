@@ -46,17 +46,22 @@ export interface PrefetchedIssueCore {
   updatedAt: string;
   /** Issue author login; absent for deleted ("ghost") accounts. */
   authorLogin?: string;
-  /** True when the author is a GitHub App/bot account. */
+  /** True when GitHub types the author as a bot (App account / `[bot]`). */
   authorIsBot?: boolean;
+  /**
+   * True when a User-typed login reads like a bot ("worktrunk-bot",
+   * "jerrai-bot-heygen"). Weaker than authorIsBot: humans pick such names too.
+   */
+  authorLooksLikeBot?: boolean;
 }
 
 /**
- * Bot detection from a login alone, for accounts GitHub types as User but that
- * are operated as bots (e.g. "worktrunk-bot", "jerrai-bot-heygen").
+ * Login-only bot heuristic for User-typed accounts operated as bots. Weak
+ * signal ("bot-hunter" is a person), so callers treat it as needs_review.
  */
-export function isBotLogin(login: string | undefined): boolean {
+export function looksLikeBotLogin(login: string | undefined): boolean {
   if (!login) return false;
-  return /\[bot\]$|(?:^|-)bot(?:-|$)/i.test(login);
+  return /(?:^|-)bot(?:-|$)/i.test(login);
 }
 
 /** A single issue to prefetch. */
@@ -102,7 +107,9 @@ function normalizeNode(node: GraphQLIssueNode): PrefetchedIssueCore {
     updatedAt: node.updatedAt,
     authorLogin: node.author?.login,
     authorIsBot:
-      node.author?.__typename === "Bot" || isBotLogin(node.author?.login),
+      node.author?.__typename === "Bot" ||
+      /\[bot\]$/i.test(node.author?.login ?? ""),
+    authorLooksLikeBot: looksLikeBotLogin(node.author?.login),
   };
 }
 
