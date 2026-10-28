@@ -175,7 +175,7 @@ export async function cachedSearchIssues(
  * Same param shape as {@link cachedSearchIssues}. Tries GraphQL
  * `search(type: ISSUE)` first (points bucket, 5000/hr — NOT charged to the
  * SearchBudgetTracker), caching non-empty results under a dedicated
- * `gqlsearch:` cache key so a GraphQL hit and a REST hit never collide. On a
+ * `gqlsearch2:` cache key so a GraphQL hit and a REST hit never collide. On a
  * non-fatal GraphQL failure it warns and delegates to the existing
  * budget-tracked `cachedSearchIssues` REST path unchanged. Fatal errors (401 /
  * rate limit) propagate from either layer.
@@ -190,8 +190,10 @@ export async function searchIssuesGraphQLFirst(
   },
   tracker: SearchBudgetTracker = getSearchBudgetTracker(),
 ): Promise<{ total_count: number; items: GitHubSearchItem[] }> {
+  // "gqlsearch2": items gained repositoryStars; entries cached before that
+  // would otherwise hide it for the TTL.
   const cacheKey = versionedCacheKey(
-    `gqlsearch:${params.q}:${params.sort}:${params.order}:${params.per_page}`,
+    `gqlsearch2:${params.q}:${params.sort}:${params.order}:${params.per_page}`,
   );
   const cache = getHttpCache();
 

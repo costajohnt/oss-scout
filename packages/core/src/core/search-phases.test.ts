@@ -407,7 +407,7 @@ describe("searchIssuesGraphQLFirst", () => {
     expect(getGraphQLSearchQueryCount()).toBe(0);
   });
 
-  it("caches a non-empty GraphQL result under the gqlsearch: key", async () => {
+  it("caches a non-empty GraphQL result under the gqlsearch2: key", async () => {
     mockGraphqlSearchIssues.mockResolvedValue({
       total_count: 1,
       items: [makeItem("https://github.com/a/b/issues/1", "a/b")],
@@ -415,7 +415,7 @@ describe("searchIssuesGraphQLFirst", () => {
     await searchIssuesGraphQLFirst(makeMockOctokit([]), params);
 
     expect(mockCache.set).toHaveBeenCalledTimes(1);
-    expect(mockCache.set.mock.calls[0][0]).toContain("gqlsearch:");
+    expect(mockCache.set.mock.calls[0][0]).toContain("gqlsearch2:");
   });
 
   it("does not cache an empty GraphQL result", async () => {
@@ -466,6 +466,38 @@ describe("filterVetAndScore", () => {
     // Vetter should only receive the non-excluded issue
     const vetterCall = vi.mocked(vetter.vetIssuesParallel).mock.calls[0];
     expect(vetterCall[0]).toEqual(["https://github.com/good/repo/issues/2"]);
+  });
+
+  it("drops items with a known star count below minStars before vetting", async () => {
+    const items = [
+      {
+        ...makeItem("https://github.com/tiny/repo/issues/1", "tiny/repo"),
+        repositoryStars: 3,
+      },
+      {
+        ...makeItem("https://github.com/big/repo/issues/2", "big/repo"),
+        repositoryStars: 900,
+      },
+      makeItem("https://github.com/unknown/repo/issues/3", "unknown/repo"),
+    ];
+    const vetter = makeMockVetter([makeCandidate("url", 100)]);
+
+    await filterVetAndScore(
+      vetter,
+      items,
+      (items) => items,
+      [],
+      10,
+      50,
+      "Phase2",
+    );
+
+    // Known-tiny repo never reaches the vetter; unknown star count still does.
+    const vetterCall = vi.mocked(vetter.vetIssuesParallel).mock.calls[0];
+    expect(vetterCall[0]).toEqual([
+      "https://github.com/big/repo/issues/2",
+      "https://github.com/unknown/repo/issues/3",
+    ]);
   });
 
   it("filters out low-star repos below minStars", async () => {
