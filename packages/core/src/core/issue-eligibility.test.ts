@@ -760,3 +760,22 @@ describe("commentClaimsIssue: offers to send the fix", () => {
     ).toBe(true);
   });
 });
+
+describe("commentClaimsIssue: round-2 offer phrasings", () => {
+  it.each([
+    "We would be happy to submit a PR if this approach is welcome!",
+    "We're happy to open a PR.",
+    "Hi, I'd like to investigate and fix this issue.",
+    "I'd love to tackle this.",
+  ])("treats %j as a claim", (body) => {
+    expect(commentClaimsIssue(body)).toBe(true);
+  });
+
+  it.each([
+    "We would be happy to review a PR.",
+    "We're not willing to send a PR for this.",
+    "I'd like to investigate this further before anyone fixes it?",
+  ])("does not treat %j as a claim", (body) => {
+    expect(commentClaimsIssue(body)).toBe(false);
+  });
+});

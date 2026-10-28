@@ -55,6 +55,11 @@ export const ANTI_LLM_KEYWORDS: readonly string[] = [
   "not be completed by automated agents",
   "must not be done by automated agents",
   "tasks are for humans only",
+  // AGENTS.md bans (e.g. servo). Most AGENTS.md files are agent guides
+  // that welcome AI work, so only outright refusals are listed.
+  "do not generate code",
+  "explicitly rejected the generative use of agents",
+  "you are explicitly forbidden from modifying",
 ] as const;
 
 /**
@@ -95,6 +100,11 @@ const SOURCE_FILE_FAMILIES: ReadonlyArray<{
       "docs/CODE_OF_CONDUCT.md",
       "code_of_conduct.md",
     ],
+  },
+  {
+    // Agent instruction files; matched only on the refusal keywords above.
+    canonical: "AGENTS.md",
+    paths: ["AGENTS.md"],
   },
   {
     // Repos that state an AI policy in a dedicated file (e.g. cot-rs/cot).

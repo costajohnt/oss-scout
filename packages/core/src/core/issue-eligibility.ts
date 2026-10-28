@@ -128,6 +128,10 @@ const FIRST_PERSON_CLAIM_PATTERNS: readonly RegExp[] = [
   new RegExp(
     String.raw`\bi\s*(?:'d|would) (?:like|love) to work on ${ISSUE_OBJECT}`,
   ),
+  // "I'd like to investigate and fix this", "I'd love to tackle it".
+  new RegExp(
+    String.raw`\bi\s*(?:'d|would) (?:like|love) to (?:\w+ and )?(?:fix|tackle|take on|pick up|implement) ${ISSUE_OBJECT}`,
+  ),
   /\bi\s*(?:'m|am) on it\b/,
   /\bi\s*(?:'ll|will) submit a pr\b/,
   /\bassigned to me\b/,
@@ -139,7 +143,7 @@ const FIRST_PERSON_CLAIM_PATTERNS: readonly RegExp[] = [
  * "Happy to...") so "anyone willing to submit a PR" stays an invitation, and
  * the verb list excludes "accept"/"review"/"test" for the same reason.
  */
-const OFFER_SUBJECT = String.raw`(?:^\s*|\bi\s*(?:'m|am|'d be|would be|'ll be|will be)\s+(?:(?:really|very|more than|absolutely|also)\s+)?)`;
+const OFFER_SUBJECT = String.raw`(?:^\s*|\b(?:i\s*(?:'m|am|'d be|would be|'ll be|will be)|we\s*(?:'re|are|'d be|would be|'ll be|will be))\s+(?:(?:really|very|more than|absolutely|also)\s+)?)`;
 const OFFER_PATTERNS: readonly RegExp[] = [
   new RegExp(
     String.raw`${OFFER_SUBJECT}(?:happy|glad|willing|keen) to (?:open|send|submit|make|put up|raise|contribute|write) (?:a |the |an )?(?:[\w-]+ ){0,2}(?:pr|pull request|patch|fix)\b`,

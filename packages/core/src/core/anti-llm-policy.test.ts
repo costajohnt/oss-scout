@@ -465,3 +465,20 @@ describe("scanForAntiLLMPolicy: agent-only bans", () => {
     expect(scanForAntiLLMPolicy(text).matched).toBe(true);
   });
 });
+
+describe("scanForAntiLLMPolicy: AGENTS.md refusals", () => {
+  it("matches servo's AGENTS.md ban", () => {
+    expect(
+      scanForAntiLLMPolicy(
+        "# Do not generate code\n\nYou are explicitly forbidden from modifying...",
+      ).matched,
+    ).toBe(true);
+  });
+  it("does not match an ordinary agent guide", () => {
+    expect(
+      scanForAntiLLMPolicy(
+        "# AGENTS.md\n\nRun `npm test` before committing. AI assistance is fine.",
+      ).matched,
+    ).toBe(false);
+  });
+});
