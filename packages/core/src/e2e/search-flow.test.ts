@@ -96,6 +96,12 @@ const { fakeOctokit } = vi.hoisted(() => {
           }
           return res;
         }
+        if (typeof query === "string" && query.includes("repoMergeStats")) {
+          return {
+            merged: { issueCount: 8 },
+            closedUnmerged: { issueCount: 2 },
+          };
+        }
         if (typeof query === "string" && query.includes("batchIssueCores")) {
           const res: Record<string, unknown> = {};
           for (const key of Object.keys(variables ?? {})) {
@@ -257,6 +263,9 @@ describe("search pipeline e2e (#161)", () => {
     expect(candidate.vettingResult.checks.notClaimed).toBe(true);
     // The real project-health check consumed the repo + commits responses.
     expect(fakeOctokit.repos.get).toHaveBeenCalled();
+    // Merge stats come from GraphQL; a missing route would fail health quietly.
+    expect(candidate.projectHealth.checkFailed).toBeFalsy();
+    expect(candidate.projectHealth.recentMergedPRCount).toBe(8);
 
     // The broad issue search now runs on GraphQL, so no REST is:issue search
     // should ever be issued (is:pr affinity/vetting queries are unaffected).

@@ -27,6 +27,13 @@ import { getHttpCache, cachedRequest } from "./http-cache.js";
 const MODULE = "probe-repo-file";
 
 /**
+ * Clean 404s are cached on disk for a day. Missing CONTRIBUTING/README/CoC
+ * probes were ~57% of core calls in a measured search, re-requested by every
+ * process because only 200 bodies were ETag-cached.
+ */
+const MISSING_FILE_TTL_MS = 24 * 60 * 60 * 1000;
+
+/**
  * Result of probing one repo file path.
  *
  * - `text` — decoded UTF-8 content on a 200 with a file payload, else `null`
@@ -65,13 +72,18 @@ export async function probeRepoFile(
   repo: string,
   path: string,
 ): Promise<ProbeRepoFileResult> {
+  const url = `/repos/${owner}/${repo}/contents/${path}`;
+  const missingKey = `missing:${url}`;
+  if (getHttpCache().getIfFresh(missingKey, MISSING_FILE_TTL_MS) !== null) {
+    return { text: null, transient: false };
+  }
   try {
     // ETag-revalidate the content GET. cachedRequest only intercepts 304
     // (returning the cached body); a 404 or fatal error propagates untouched to
     // the catch below, preserving the "file absent" semantics callers depend on.
     const data = await cachedRequest<unknown>(
       getHttpCache(),
-      `/repos/${owner}/${repo}/contents/${path}`,
+      url,
       (headers) =>
         octokit.repos.getContent({ owner, repo, path, headers }) as Promise<{
           data: unknown;
@@ -95,7 +107,10 @@ export async function probeRepoFile(
     return { text: null, transient: false };
   } catch (error) {
     const status = getHttpStatusCode(error);
-    if (status === 404) return { text: null, transient: false };
+    if (status === 404) {
+      getHttpCache().set(missingKey, "", true);
+      return { text: null, transient: false };
+    }
     rethrowIfFatal(error);
     warn(
       MODULE,

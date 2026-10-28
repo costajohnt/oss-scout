@@ -13,7 +13,7 @@ vi.mock("./logger.js", () => ({
 // touching the on-disk ETag cache. ETag-specific behavior is covered separately
 // in probe-repo-file.etag.test.ts against a real HttpCache.
 vi.mock("./http-cache.js", () => ({
-  getHttpCache: () => ({}),
+  getHttpCache: () => ({ getIfFresh: () => null, set: () => {} }),
   cachedRequest: async (
     _cache: unknown,
     _url: string,

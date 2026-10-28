@@ -307,7 +307,11 @@ describe("fetchAndScanAntiLLMPolicy", () => {
 
     const octokit = makeMockOctokit({}); // all 404s
     await fetchAndScanAntiLLMPolicy(octokit, "owner", "repo");
-    expect(cacheSet).toHaveBeenCalledTimes(1);
+    // probeRepoFile also negative-caches each 404 under "missing:" keys.
+    const policyWrites = cacheSet.mock.calls.filter(
+      ([key]: [string]) => !key.startsWith("missing:"),
+    );
+    expect(policyWrites).toHaveLength(1);
   });
 
   it("returns the cached value when it passes shape validation", async () => {
@@ -318,7 +322,10 @@ describe("fetchAndScanAntiLLMPolicy", () => {
     };
     const { getHttpCache } = await import("./http-cache.js");
     vi.mocked(getHttpCache).mockReturnValue({
-      getIfFresh: vi.fn(() => validCached),
+      // Scoped to the policy key so probe-level "missing:" lookups miss.
+      getIfFresh: vi.fn((key: string) =>
+        key.startsWith("missing:") ? null : validCached,
+      ),
       set: vi.fn(),
     } as unknown as ReturnType<typeof getHttpCache>);
 
@@ -332,7 +339,10 @@ describe("fetchAndScanAntiLLMPolicy", () => {
     const malformed = { matched: true, sourceFile: "CONTRIBUTING.md" };
     const { getHttpCache } = await import("./http-cache.js");
     vi.mocked(getHttpCache).mockReturnValue({
-      getIfFresh: vi.fn(() => malformed),
+      // Scoped to the policy key so probe-level "missing:" lookups miss.
+      getIfFresh: vi.fn((key: string) =>
+        key.startsWith("missing:") ? null : malformed,
+      ),
       set: vi.fn(),
     } as unknown as ReturnType<typeof getHttpCache>);
 
