@@ -14,6 +14,11 @@ export interface GitHubSearchItem {
   updated_at: string;
   title?: string;
   labels?: Array<{ name?: string } | string>;
+  /**
+   * Repo star count when the search source returned it (GraphQL search does,
+   * REST search does not). Lets callers drop sub-minStars repos before vetting.
+   */
+  repositoryStars?: number;
   [key: string]: unknown;
 }
 
