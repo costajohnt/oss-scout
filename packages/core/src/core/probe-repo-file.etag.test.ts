@@ -81,7 +81,7 @@ describe("probeRepoFile ETag caching", () => {
     expect(getContent).toHaveBeenCalledTimes(2);
   });
 
-  it("does not cache a 404: a known-absent path stays a miss (no phantom file)", async () => {
+  it("negative-caches a 404 without writing a phantom content entry", async () => {
     const { octokit, getContent } = makeOctokit(async () => {
       throw httpError(404, "Not Found");
     });
@@ -91,10 +91,22 @@ describe("probeRepoFile ETag caching", () => {
 
     expect(first).toEqual({ text: null, transient: false });
     expect(second).toEqual({ text: null, transient: false });
-    // Both probes hit the network (no phantom cache entry masking the absence),
-    // and nothing was written to the ETag cache for this path.
-    expect(getContent).toHaveBeenCalledTimes(2);
+    // The second probe is answered from the on-disk missing-file entry, and
+    // the ETag content slot for the path stays empty.
+    expect(getContent).toHaveBeenCalledTimes(1);
     expect(cache.get("/repos/o/r/contents/CONTRIBUTING.md")).toBeNull();
+  });
+
+  it("does not negative-cache a transient 5xx", async () => {
+    const { octokit, getContent } = makeOctokit(async () => {
+      throw httpError(503, "Service Unavailable");
+    });
+
+    await probeRepoFile(octokit, "o", "r", "README.md");
+    const second = await probeRepoFile(octokit, "o", "r", "README.md");
+
+    expect(second).toEqual({ text: null, transient: true });
+    expect(getContent).toHaveBeenCalledTimes(2);
   });
 
   it("still surfaces the decoded content when the 304 body was cached earlier", async () => {

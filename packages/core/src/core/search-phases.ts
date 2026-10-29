@@ -175,7 +175,7 @@ export async function cachedSearchIssues(
  * Same param shape as {@link cachedSearchIssues}. Tries GraphQL
  * `search(type: ISSUE)` first (points bucket, 5000/hr — NOT charged to the
  * SearchBudgetTracker), caching non-empty results under a dedicated
- * `gqlsearch:` cache key so a GraphQL hit and a REST hit never collide. On a
+ * `gqlsearch2:` cache key so a GraphQL hit and a REST hit never collide. On a
  * non-fatal GraphQL failure it warns and delegates to the existing
  * budget-tracked `cachedSearchIssues` REST path unchanged. Fatal errors (401 /
  * rate limit) propagate from either layer.
@@ -190,8 +190,10 @@ export async function searchIssuesGraphQLFirst(
   },
   tracker: SearchBudgetTracker = getSearchBudgetTracker(),
 ): Promise<{ total_count: number; items: GitHubSearchItem[] }> {
+  // "gqlsearch2": items gained repositoryStars; entries cached before that
+  // would otherwise hide it for the TTL.
   const cacheKey = versionedCacheKey(
-    `gqlsearch:${params.q}:${params.sort}:${params.order}:${params.per_page}`,
+    `gqlsearch2:${params.q}:${params.sort}:${params.order}:${params.per_page}`,
   );
   const cache = getHttpCache();
 
@@ -588,14 +590,32 @@ export async function filterVetAndScore(
     );
   }
 
+  // Drop repos already known to be below minStars before vetting: the vet
+  // budget (remainingNeeded * 2) was otherwise spent mostly on tiny repos and
+  // the post-vet STAR_FILTER below discarded nearly all of them. Items from
+  // REST search carry no star count and still rely on the post-vet filter.
+  let preVetStarDropped = 0;
   const itemsToVet = filterIssues(items)
     .filter((item) => {
       const repoFullName = extractRepoFromUrl(item.repository_url);
       if (!repoFullName) return false;
       if (spamRepos.has(repoFullName)) return false;
+      if (
+        typeof item.repositoryStars === "number" &&
+        item.repositoryStars < minStars
+      ) {
+        preVetStarDropped++;
+        return false;
+      }
       return excludedRepoSets.every((s) => !s.has(repoFullName));
     })
     .slice(0, remainingNeeded * 2);
+  if (preVetStarDropped > 0) {
+    debug(
+      MODULE,
+      `[STAR_FILTER] Dropped ${preVetStarDropped} ${phaseLabel} items below ${minStars} stars before vetting`,
+    );
+  }
 
   if (itemsToVet.length === 0) {
     debug(

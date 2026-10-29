@@ -29,7 +29,7 @@ vi.mock("@octokit/plugin-retry", () => ({
 }));
 
 // Must import after mocks are set up
-const { checkRateLimit, getOctokit, getRateLimitCallbacks } =
+const { checkRateLimit, getOctokit, getRateLimitCallbacks, getUsage } =
   await import("./github.js");
 const { throttling } = await import("@octokit/plugin-throttling");
 const { retry } = await import("@octokit/plugin-retry");
@@ -207,5 +207,35 @@ describe("rate limit callbacks", () => {
       3,
     );
     expect(result).toBe(false);
+  });
+});
+
+describe("usage telemetry", () => {
+  it("counts calls per rate-limit bucket and errors per status", async () => {
+    let wrapped: any;
+    mockOctokitInstance = {
+      hook: { wrap: (_n: string, fn: any) => (wrapped = fn) },
+    };
+    getOctokit("token-usage");
+    const ok = {
+      headers: {
+        "x-ratelimit-resource": "search",
+        "x-ratelimit-remaining": "7",
+      },
+    };
+    await wrapped(async () => ok, {});
+    await expect(
+      wrapped(async () => {
+        throw {
+          status: 404,
+          response: { headers: { "x-ratelimit-resource": "core" } },
+        };
+      }, {}),
+    ).rejects.toBeDefined();
+    const u = getUsage();
+    expect(u.calls.search).toBe(1);
+    expect(u.calls.core).toBe(1);
+    expect(u.minRemaining.search).toBe(7);
+    expect(u.errorsByStatus["404"]).toBe(1);
   });
 });

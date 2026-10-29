@@ -156,6 +156,21 @@ describe("isRateLimitError", () => {
   it("returns false for an error with no status", () => {
     expect(isRateLimitError(new Error("no status at all"))).toBe(false);
   });
+
+  it("classifies a status-less GraphQL RATE_LIMITED response error", () => {
+    const err = Object.assign(new Error("API rate limit exceeded"), {
+      errors: [{ type: "RATE_LIMITED", message: "API rate limit exceeded" }],
+    });
+    expect(isRateLimitError(err)).toBe(true);
+    expect(() => rethrowIfFatal(err)).toThrow();
+  });
+
+  it("does not treat other GraphQL errors as rate limits", () => {
+    const err = Object.assign(new Error("Could not resolve"), {
+      errors: [{ type: "NOT_FOUND" }],
+    });
+    expect(isRateLimitError(err)).toBe(false);
+  });
 });
 
 describe("resolveErrorCode", () => {

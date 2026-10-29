@@ -1,5 +1,45 @@
 # Changelog
 
+## [1.12.0](https://github.com/costajohnt/oss-scout/compare/core-v1.11.0...core-v1.12.0) (2026-10-28)
+
+
+### Features
+
+* catch "we" offers, investigate-and-fix claims, and AGENTS.md bans ([#373](https://github.com/costajohnt/oss-scout/issues/373)) ([d997ce9](https://github.com/costajohnt/oss-scout/commit/d997ce937d145ab22aeb81f79e240f1ade5fde3c))
+
+## [1.11.0](https://github.com/costajohnt/oss-scout/compare/core-v1.10.2...core-v1.11.0) (2026-10-28)
+
+
+### Features
+
+* flag untakeable issues during vetting (reporter offers, bot filers, AI policies) ([#371](https://github.com/costajohnt/oss-scout/issues/371)) ([b1c5057](https://github.com/costajohnt/oss-scout/commit/b1c505792b967dc7ba3275bfb25e0ca4434a78e4))
+
+## [1.10.2](https://github.com/costajohnt/oss-scout/compare/core-v1.10.1...core-v1.10.2) (2026-10-28)
+
+
+### Bug Fixes
+
+* drop sub-minStars repos before vetting in GraphQL search phases ([#369](https://github.com/costajohnt/oss-scout/issues/369)) ([342db3d](https://github.com/costajohnt/oss-scout/commit/342db3d3d9910a66e9c41ae881aaa15b0e8c7ecd))
+
+## [1.10.1](https://github.com/costajohnt/oss-scout/compare/core-v1.10.0...core-v1.10.1) (2026-10-28)
+
+
+### Bug Fixes
+
+* cut rate-limit pressure: cache missing-file probes, merge stats via GraphQL ([#367](https://github.com/costajohnt/oss-scout/issues/367)) ([269e68f](https://github.com/costajohnt/oss-scout/commit/269e68f432fb2e8d10fb76dbe7e9876c432b21a4))
+
+## [1.10.0](https://github.com/costajohnt/oss-scout/compare/core-v1.9.0...core-v1.10.0) (2026-10-28)
+
+
+### Features
+
+* log per-run GitHub API usage to ~/.oss-scout/runs.jsonl ([#364](https://github.com/costajohnt/oss-scout/issues/364)) ([de9d15b](https://github.com/costajohnt/oss-scout/commit/de9d15b007cf708a79e6c53e88f53a1be3487f4f))
+
+
+### Bug Fixes
+
+* **deps:** bump zod to 4.6.7 and body-parser to 2.4.0 for high advisories ([#365](https://github.com/costajohnt/oss-scout/issues/365)) ([1cb8a99](https://github.com/costajohnt/oss-scout/commit/1cb8a9958c1672ac67c6d4140d90bc66c83e846a))
+
 ## [1.9.0](https://github.com/costajohnt/oss-scout/compare/core-v1.8.2...core-v1.9.0) (2026-10-17)
 
 
