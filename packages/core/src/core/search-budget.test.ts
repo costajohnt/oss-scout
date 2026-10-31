@@ -122,6 +122,29 @@ describe("SearchBudgetTracker", () => {
     vi.restoreAllMocks();
   });
 
+  it("waitForBudget wakes at the quota reset when it comes before the window expiry (audit M2)", async () => {
+    const { sleep } = await import("./utils.js");
+    vi.mocked(sleep).mockClear();
+    const realNow = Date.now();
+    vi.spyOn(Date, "now").mockReturnValue(realNow);
+    // Preflight says 2 left, resetting in 10s; two calls drain it.
+    tracker.init(2, new Date(realNow + 10_000).toISOString());
+    tracker.recordCall();
+    tracker.recordCall();
+
+    vi.mocked(sleep).mockImplementation(async (ms: number) => {
+      vi.spyOn(Date, "now").mockReturnValue(realNow + ms);
+    });
+
+    await tracker.waitForBudget();
+    // Must wait ~10s for GitHub's reset, not the full 60s sliding window.
+    const waited = vi.mocked(sleep).mock.calls[0][0];
+    expect(waited).toBeGreaterThan(9_000);
+    expect(waited).toBeLessThan(11_000);
+    expect(vi.mocked(sleep)).toHaveBeenCalledTimes(1);
+    vi.restoreAllMocks();
+  });
+
   it("waitForBudget returns immediately when external budget exhausted and no reset is known", async () => {
     const { sleep } = await import("./utils.js");
     vi.mocked(sleep).mockClear();
