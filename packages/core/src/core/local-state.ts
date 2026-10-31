@@ -67,13 +67,16 @@ let tmpCounter = 0;
  * crash-free on its own.
  */
 export function saveLocalState(state: Readonly<ScoutState>): void {
-  const statePath = getStatePath();
-  const tmpPath = `${statePath}.tmp.${process.pid}.${tmpCounter++}`;
+  writeFileAtomic(getStatePath(), JSON.stringify(state, null, 2) + "\n");
+  debug(MODULE, "State saved");
+}
 
-  const data = JSON.stringify(state, null, 2) + "\n";
+/** Write via a unique tmp file + rename so a crash never leaves a truncated file. */
+export function writeFileAtomic(filePath: string, data: string): void {
+  const tmpPath = `${filePath}.tmp.${process.pid}.${tmpCounter++}`;
   fs.writeFileSync(tmpPath, data, { mode: 0o600 });
   try {
-    fs.renameSync(tmpPath, statePath);
+    fs.renameSync(tmpPath, filePath);
   } catch (err) {
     // Do not leave an orphan tmp file behind on a failed rename
     try {
@@ -83,5 +86,4 @@ export function saveLocalState(state: Readonly<ScoutState>): void {
     }
     throw err;
   }
-  debug(MODULE, "State saved");
 }

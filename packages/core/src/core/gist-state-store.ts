@@ -15,6 +15,7 @@ import type {
   SkippedIssue,
 } from "./schemas.js";
 import { getDataDir } from "./utils.js";
+import { writeFileAtomic } from "./local-state.js";
 import { debug, warn } from "./logger.js";
 import {
   errorMessage,
@@ -383,7 +384,7 @@ export class GistStateStore {
   }
 
   private saveGistId(id: string): void {
-    fs.writeFileSync(getGistIdPath(), id + "\n", { mode: 0o600 });
+    writeFileAtomic(getGistIdPath(), id + "\n");
   }
 
   /**
@@ -413,9 +414,7 @@ export class GistStateStore {
 
   private writeCache(state: ScoutState): void {
     try {
-      fs.writeFileSync(getCachePath(), JSON.stringify(state, null, 2) + "\n", {
-        mode: 0o600,
-      });
+      writeFileAtomic(getCachePath(), JSON.stringify(state, null, 2) + "\n");
     } catch (err) {
       warn(MODULE, `Failed to write cache: ${errorMessage(err)}`);
     }
