@@ -329,7 +329,7 @@ jobs:
 
 Inputs: `github-username`, `search-token`, `issue-token`, `max-results`, `strategy`, `issue-title`, `issue-label`, `version`. The action reuses the existing CLI (`search` + `results --markdown`); no extra machinery.
 
-Pin the action to a release tag (`core-vX.Y.Z`, as above) or a commit SHA; there is no moving `v1` tag. The `version` input (default `latest`) separately controls which `@oss-scout/core` CLI version the action installs and runs.
+Pin the action to a release tag (`core-vX.Y.Z`, as above) or a commit SHA; there is no moving `v1` tag. The `version` input controls which `@oss-scout/core` CLI version the action installs and runs; it defaults to the core release the action tag ships with, so pinning the action also pins the package. Pass `version: latest` to opt into the newest npm release.
 
 ### As a Library
 

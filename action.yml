@@ -39,9 +39,12 @@ inputs:
     required: false
     default: "oss-scout-digest"
   version:
-    description: "Version of @oss-scout/core to run."
+    description: >-
+      Version of @oss-scout/core to run. Defaults to the core release this
+      action tag ships with, so a pinned action executes a pinned package;
+      pass "latest" to opt into whatever is current on npm.
     required: false
-    default: "latest"
+    default: "1.12.0" # x-release-please-version
 
 runs:
   using: "composite"
