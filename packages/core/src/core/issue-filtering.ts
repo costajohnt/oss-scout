@@ -51,6 +51,16 @@ export function isDocOnlyIssue(item: GitHubSearchItem): boolean {
 const NON_ACTIONABLE_LABELS = new Set(["question", "discussion", "support"]);
 
 /**
+ * Question-shaped title: a wh-word, or an auxiliary verb followed by a
+ * pronoun/determiner ("Does the X work", "Is there a way", "Can we add").
+ * Requiring the continuation keeps negated and imperative bug titles
+ * ("Can't open", "Does not compile", "Should not throw", "Will crash if")
+ * out of the question bucket.
+ */
+const QUESTION_TITLE =
+  /^(?:(?:how|why|what|when|where|which|who)\b|(?:is|are|does|do|can|could|should|would|will|has|have)\s+(?:i|we|you|it|this|that|these|those|the|a|an|any|anyone|someone|there|my|your|our)\b)/i;
+
+/**
  * Drop issues that are not a change request (#332): labelled as a
  * question/discussion/support thread, titled as a question ("Does X work
  * with Y?"), or given a placeholder title under three words ("logan").
@@ -62,12 +72,7 @@ export function isNonActionableIssue(item: GitHubSearchItem): boolean {
   if (labelNames.some((n) => NON_ACTIONABLE_LABELS.has(n))) return true;
   const title = (item.title ?? "").trim();
   if (title.endsWith("?")) return true;
-  if (
-    /^(how|why|what|when|where|which|who|is|are|does|do|can|could|should|would|will|has|have)\b/i.test(
-      title,
-    )
-  )
-    return true;
+  if (QUESTION_TITLE.test(title)) return true;
   return title.split(/\s+/).filter(Boolean).length < 3;
 }
 
