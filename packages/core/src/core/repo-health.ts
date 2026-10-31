@@ -302,12 +302,18 @@ async function fetchContributionGuidelinesUncached(
     }
   }
 
-  // Cache the negative result too and prune if needed
-  guidelinesCache.set(cacheKey, {
-    guidelines: undefined,
-    fetchedAt: Date.now(),
-  });
-  pruneCache();
+  // Cache the negative result too, unless a probe failed transiently (5xx,
+  // network): a blip must not pin "no CONTRIBUTING" for an hour (audit L8).
+  const transient = results.some(
+    (r) => r.status === "fulfilled" && r.value.transient,
+  );
+  if (!transient) {
+    guidelinesCache.set(cacheKey, {
+      guidelines: undefined,
+      fetchedAt: Date.now(),
+    });
+    pruneCache();
+  }
   return undefined;
 }
 
