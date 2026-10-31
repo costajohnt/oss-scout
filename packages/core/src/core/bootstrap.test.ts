@@ -28,6 +28,7 @@ vi.mock("./logger.js", () => ({
 // Bootstrap paces its Search API calls through the shared budget tracker
 // singleton; stub it so tests don't wait on real sliding-window pacing.
 const mockTracker = {
+  init: vi.fn(),
   waitForBudget: vi.fn().mockResolvedValue(undefined),
   recordCall: vi.fn(),
 };
@@ -159,6 +160,9 @@ describe("bootstrapScout", () => {
     const scout = new OssScout(token, makeState());
     await bootstrapScout(scout, token);
 
+    // The preflight seeds the tracker so pacing uses the real remaining
+    // quota (audit L1).
+    expect(mockTracker.init).toHaveBeenCalledWith(30, expect.any(String));
     // One merged/closed/open Search call each; waitForBudget gates and
     // recordCall accounts for every one of them.
     expect(mockTracker.waitForBudget).toHaveBeenCalledTimes(3);
