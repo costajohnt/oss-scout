@@ -21,12 +21,13 @@ import type { VetOutput } from "../commands/vet.js";
 
 /** Emoji for a vetting recommendation, shared by the search and vet renderers. */
 /**
- * Strip C0 control characters (incl. ESC) so an issue title cannot inject
- * terminal escape sequences into the user's shell (audit L4).
+ * Strip C0/C1 control characters (incl. ESC and the 8-bit CSI) and bidi
+ * overrides so an issue title cannot inject terminal escape sequences or
+ * visually reorder itself in the user's shell (audit L4).
  */
 function safeTitle(title: string): string {
   // eslint-disable-next-line no-control-regex
-  return title.replace(/[\x00-\x1f\x7f]/g, "");
+  return title.replace(/[\x00-\x1f\x7f-\x9f\u202a-\u202e\u2066-\u2069]/g, "");
 }
 
 export function recommendationIcon(
