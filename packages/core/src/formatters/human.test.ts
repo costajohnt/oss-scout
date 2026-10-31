@@ -507,6 +507,23 @@ describe("renderVet", () => {
     expect(out).toContain("   https://github.com/owner/repo/issues/1");
   });
 
+  it("strips control characters from the title (audit L4)", () => {
+    const out = renderVet(
+      vetOutput({
+        issue: {
+          repo: "owner/repo",
+          number: 1,
+          title: "Fix \x1b[31mthe\x1b[0m bug\x07",
+          url: "https://github.com/owner/repo/issues/1",
+          labels: [],
+        },
+      }),
+    );
+    expect(out).toContain("   Fix [31mthe[0m bug");
+    expect(out).not.toContain("\x1b");
+    expect(out).not.toContain("\x07");
+  });
+
   it("renders reasons to approve and skip", () => {
     const out = renderVet(
       vetOutput({
