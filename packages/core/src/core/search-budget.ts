@@ -181,7 +181,15 @@ export class SearchBudgetTracker {
         this.reservedCalls++;
         return;
       }
-      const waitUntil = oldestInWindow + SEARCH_WINDOW_MS;
+      // When the external quota is the binding constraint, GitHub's reset
+      // may land well before the oldest local call ages out; wake at
+      // whichever comes first (audit M2).
+      const externalExhausted =
+        this.knownRemaining - this.callsSinceReset - this.reservedCalls <= 0;
+      const waitUntil =
+        externalExhausted && this.resetAt > Date.now()
+          ? Math.min(oldestInWindow + SEARCH_WINDOW_MS, this.resetAt)
+          : oldestInWindow + SEARCH_WINDOW_MS;
       const waitMs = waitUntil - Date.now();
 
       if (waitMs > 0) {

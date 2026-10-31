@@ -17,6 +17,10 @@
         {
           "type": "generic",
           "path": "/examples/weekly-digest.yml"
+        },
+        {
+          "type": "generic",
+          "path": "/action.yml"
         }
       ]
     },

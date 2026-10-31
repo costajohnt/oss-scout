@@ -20,6 +20,16 @@ import type { VetListResult } from "../core/types.js";
 import type { VetOutput } from "../commands/vet.js";
 
 /** Emoji for a vetting recommendation, shared by the search and vet renderers. */
+/**
+ * Strip C0/C1 control characters (incl. ESC and the 8-bit CSI) and bidi
+ * overrides so an issue title cannot inject terminal escape sequences or
+ * visually reorder itself in the user's shell (audit L4).
+ */
+function safeTitle(title: string): string {
+  // eslint-disable-next-line no-control-regex
+  return title.replace(/[\x00-\x1f\x7f-\x9f\u202a-\u202e\u2066-\u2069]/g, "");
+}
+
 export function recommendationIcon(
   recommendation: "approve" | "skip" | "needs_review",
 ): string {
@@ -56,7 +66,7 @@ export function renderSearch(results: SearchOutput): string {
     lines.push(
       `  ${icon} ${c.issue.repo}#${c.issue.number} [${c.viabilityScore}/100]${personalizationTag}${stalledTag}`,
     );
-    lines.push(`     ${c.issue.title}`);
+    lines.push(`     ${safeTitle(c.issue.title)}`);
     lines.push(`     ${c.issue.url}`);
     if (c.repoScore) {
       lines.push(
@@ -100,7 +110,7 @@ export function renderFeatures(
         ? " (stalled PR, revive opportunity)"
         : "";
       lines.push(
-        `  ${c.issue.repo}#${c.issue.number} [${c.viabilityScore}/100] ${c.issue.title}${stalledTag}`,
+        `  ${c.issue.repo}#${c.issue.number} [${c.viabilityScore}/100] ${safeTitle(c.issue.title)}${stalledTag}`,
       );
       lines.push(`     ${c.issue.url}`);
     }
@@ -113,7 +123,7 @@ export function renderFeatures(
         ? " (stalled PR, revive opportunity)"
         : "";
       lines.push(
-        `  ${c.issue.repo}#${c.issue.number} [${c.viabilityScore}/100] ${c.issue.title}${stalledTag}`,
+        `  ${c.issue.repo}#${c.issue.number} [${c.viabilityScore}/100] ${safeTitle(c.issue.title)}${stalledTag}`,
       );
       lines.push(`     ${c.issue.url}`);
     }
@@ -145,7 +155,10 @@ export function renderResults(results: SavedCandidate[]): string {
     const repo = r.repo.padEnd(32).slice(0, 32);
     const issue = `#${r.number}`.padEnd(6);
     const rec = r.recommendation.padEnd(14);
-    const title = r.title.length > 50 ? r.title.slice(0, 47) + "..." : r.title;
+    const title =
+      r.title.length > 50
+        ? safeTitle(r.title.slice(0, 47)) + "..."
+        : safeTitle(r.title);
     lines.push(`  ${score}    ${repo}  ${issue}  ${rec}  ${title}`);
   }
   lines.push("");
@@ -184,7 +197,7 @@ export function renderVetList(result: VetListResult): string {
     const icon = vetListStatusIcon(r.status);
     const score = r.ok ? ` [${r.viabilityScore}/100]` : "";
     lines.push(`  ${icon} ${r.repo}#${r.number} — ${r.status}${score}`);
-    lines.push(`     ${r.title}`);
+    lines.push(`     ${safeTitle(r.title)}`);
   }
   if (result.transitions.length > 0) {
     lines.push(`\n🔔 Changes since last check (${result.transitions.length}):`);
@@ -215,7 +228,7 @@ export function renderVet(result: VetOutput): string {
   lines.push(
     `\n${icon} ${result.issue.repo}#${result.issue.number}: ${result.recommendation.toUpperCase()}`,
   );
-  lines.push(`   ${result.issue.title}`);
+  lines.push(`   ${safeTitle(result.issue.title)}`);
   lines.push(`   ${result.issue.url}\n`);
   if (result.reasonsToApprove.length > 0) {
     lines.push("Reasons to approve:");

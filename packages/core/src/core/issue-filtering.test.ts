@@ -110,6 +110,29 @@ describe("isNonActionableIssue", () => {
     ).toBe(true);
   });
 
+  it.each([
+    "Is it possible to disable the progress bar",
+    "Can we add support for pnpm workspaces",
+    "Is there a way to skip the cache",
+    "Should I use the sync or async client",
+    "Does anyone have this working on Alpine",
+    "Why does the build take so long",
+  ])("drops question title without a trailing ?: %s", (title) => {
+    expect(isNonActionableIssue(item(title))).toBe(true);
+  });
+
+  it.each([
+    "Can't open files with spaces in path",
+    "Does not compile on Windows 11",
+    "Should not throw on empty input",
+    "Do not retry on 4xx responses",
+    "Will crash if config missing",
+    "Has no effect when flag is set",
+    "Is-even returns wrong result",
+  ])("keeps negated or imperative bug title: %s", (title) => {
+    expect(isNonActionableIssue(item(title))).toBe(false);
+  });
+
   it("drops placeholder titles under three words", () => {
     expect(isNonActionableIssue(item("logan"))).toBe(true);
     expect(isNonActionableIssue(item("Opencode free"))).toBe(true);

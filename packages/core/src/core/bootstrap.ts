@@ -64,6 +64,10 @@ export async function bootstrapScout(
     };
   }
 
+  // Seed the tracker from the preflight so the Search loops below pace
+  // against GitHub's real remaining quota, not the default 30 (audit L1).
+  tracker.init(rateLimit.remaining, rateLimit.resetAt);
+
   const octokit = getOctokit(token);
   const errors: string[] = [];
 

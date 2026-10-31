@@ -170,6 +170,23 @@ describe("checkProjectHealth", () => {
     ).rejects.toThrow("Unauthorized");
   });
 
+  it("does not cache a miss when every probe failed transiently (audit L8)", async () => {
+    const err = new Error("Service Unavailable") as Error & { status: number };
+    err.status = 503;
+    const getContent = vi.fn().mockRejectedValue(err);
+    const octokit = { repos: { getContent } } as unknown as Octokit;
+
+    await expect(
+      fetchContributionGuidelines(octokit, "flaky-org", "flaky-repo"),
+    ).resolves.toBeUndefined();
+    await expect(
+      fetchContributionGuidelines(octokit, "flaky-org", "flaky-repo"),
+    ).resolves.toBeUndefined();
+    // Four paths probed per call; a cached negative would make the second
+    // call hit the network zero times.
+    expect(getContent).toHaveBeenCalledTimes(8);
+  });
+
   it("propagates 429 rate-limit errors instead of swallowing", async () => {
     const rateErr = Object.assign(new Error("API rate limit exceeded"), {
       status: 429,
@@ -340,6 +357,23 @@ describe("fetchContributionGuidelines", () => {
     await expect(
       fetchContributionGuidelines(octokit, "auth-org", "auth-repo"),
     ).rejects.toThrow("Unauthorized");
+  });
+
+  it("does not cache a miss when every probe failed transiently (audit L8)", async () => {
+    const err = new Error("Service Unavailable") as Error & { status: number };
+    err.status = 503;
+    const getContent = vi.fn().mockRejectedValue(err);
+    const octokit = { repos: { getContent } } as unknown as Octokit;
+
+    await expect(
+      fetchContributionGuidelines(octokit, "flaky-org", "flaky-repo"),
+    ).resolves.toBeUndefined();
+    await expect(
+      fetchContributionGuidelines(octokit, "flaky-org", "flaky-repo"),
+    ).resolves.toBeUndefined();
+    // Four paths probed per call; a cached negative would make the second
+    // call hit the network zero times.
+    expect(getContent).toHaveBeenCalledTimes(8);
   });
 
   it("propagates 429 rate-limit errors instead of swallowing", async () => {
