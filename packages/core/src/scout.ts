@@ -677,6 +677,10 @@ export class OssScout implements ScoutStateReader, ScoutStateWriter {
     return { model, host: this.state.preferences.slmTriageHost ?? "" };
   }
 
+  getComplexIssuesMode(): "off" | "warm" {
+    return this.state.preferences.complexIssues ?? "off";
+  }
+
   /** Get current preferences (read-only). */
   getPreferences(): Readonly<ScoutPreferences> {
     return this.state.preferences;

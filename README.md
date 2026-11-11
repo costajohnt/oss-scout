@@ -264,6 +264,7 @@ oss-scout config reset                               # reset to defaults
 | `slmTriageHost` | string | (127.0.0.1:11434) | Override the Ollama HTTP host when it runs on another machine |
 | `featuresAnchorThreshold` | number | 3 | Min merged-PR count for a repo to be a `features` anchor (1-50) |
 | `featuresSplitRatio` | number | 0.6 | `features` quick-wins / bigger-bets split (0-1) |
+| `complexIssues` | `off` \| `warm` | off | `warm` relaxes vetting in repos where you already have a merged PR: only a PR that closes the issue counts as an existing PR (a mention does not), a maintainer-filed or triage-accepted issue passes the requirements check without code in its body, and a maintainer-filed issue is kept even with a question-shaped or short title. Those candidates carry `complexityUnlocked: true` |
 
 ## Install Options
 

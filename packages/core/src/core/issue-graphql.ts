@@ -22,7 +22,10 @@ import { rethrowIfFatal, errorMessage } from "./errors.js";
 import { warn } from "./logger.js";
 import { getHttpCache } from "./http-cache.js";
 import { mergedPRsCacheKey } from "./issue-eligibility.js";
-import type { GitHubSearchItem } from "./issue-filtering.js";
+import {
+  MAINTAINER_ASSOCIATIONS,
+  type GitHubSearchItem,
+} from "./issue-filtering.js";
 
 const MODULE = "issue-graphql";
 
@@ -53,6 +56,8 @@ export interface PrefetchedIssueCore {
    * "jerrai-bot-heygen"). Weaker than authorIsBot: humans pick such names too.
    */
   authorLooksLikeBot?: boolean;
+  /** True when the author is an owner, member or collaborator of the repo. */
+  authorIsMaintainer?: boolean;
 }
 
 /**
@@ -90,6 +95,7 @@ interface GraphQLIssueNode {
   createdAt: string;
   updatedAt: string;
   author?: { login: string; __typename?: string } | null;
+  authorAssociation?: string;
 }
 
 /** Shape of the aliased batch response: `{ i0: { issue }, i1: { issue }, ... }`. */
@@ -110,6 +116,9 @@ function normalizeNode(node: GraphQLIssueNode): PrefetchedIssueCore {
       node.author?.__typename === "Bot" ||
       /\[bot\]$/i.test(node.author?.login ?? ""),
     authorLooksLikeBot: looksLikeBotLogin(node.author?.login),
+    authorIsMaintainer: MAINTAINER_ASSOCIATIONS.has(
+      node.authorAssociation ?? "",
+    ),
   };
 }
 
@@ -161,6 +170,7 @@ export async function prefetchIssueCores(
           createdAt
           updatedAt
           author { login __typename }
+          authorAssociation
         }
       }`,
     );

@@ -205,6 +205,9 @@ export const SavedCandidateSchema = z.looseObject({
 
 export const PersistenceModeSchema = z.enum(["local", "gist"]);
 
+/** See `complexIssues` in ScoutPreferencesSchema. */
+export const ComplexIssuesModeSchema = z.enum(["off", "warm"]);
+
 export const ScoutPreferencesSchema = z.looseObject({
   githubUsername: z.string().default(""),
   languages: z.array(z.string()).default(["any"]),
@@ -267,6 +270,17 @@ export const ScoutPreferencesSchema = z.looseObject({
    * local network.
    */
   slmTriageHost: z.string().default(""),
+  /**
+   * Surface issues that are not starter-shaped. "warm" unlocks them in repos
+   * where the user already has a merged PR, and nowhere else: there a PR
+   * that merely mentions the issue no longer counts as an existing PR (only
+   * one that closes it does), a maintainer-filed or triage-accepted issue
+   * passes the requirements check without code in its body, and a
+   * maintainer-filed issue is not dropped for a question-shaped or short
+   * title. Unlocked candidates carry `complexityUnlocked: true`. "off" (the
+   * default) keeps the same rules everywhere.
+   */
+  complexIssues: ComplexIssuesModeSchema.default("off"),
   /**
    * Minimum merged-PR count for a repo to qualify as an anchor in
    * `scout features` (#98). Lowering surfaces more anchors at the cost

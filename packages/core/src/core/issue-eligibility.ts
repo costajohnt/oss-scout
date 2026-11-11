@@ -209,18 +209,89 @@ export function commentClaimsIssue(body: string): boolean {
   return false;
 }
 
+/** A PR that will close the issue on merge, from GraphQL. */
+type ClosingPRNode = {
+  number: number;
+  state: "OPEN" | "CLOSED" | "MERGED";
+  url: string;
+  updatedAt?: string;
+  author?: { login?: string } | null;
+};
+
+type ClosingPRsResponse = {
+  repository?: {
+    issue?: {
+      closedByPullRequestsReferences?: { nodes?: (ClosingPRNode | null)[] };
+    } | null;
+  } | null;
+};
+
+/** Which closing PR decides the verdict: merged, then open, then closed. */
+const CLOSING_PR_RANK = { MERGED: 0, OPEN: 1, CLOSED: 2 } as const;
+
+/**
+ * Existing-PR check that counts only PRs that close the issue ("Fixes #N" or
+ * a manual link), not every PR that mentions it. One GraphQL call.
+ */
+async function checkNoClosingPR(
+  octokit: Octokit,
+  owner: string,
+  repo: string,
+  issueNumber: number,
+): Promise<ExistingPRCheckResult> {
+  const data = await octokit.graphql<ClosingPRsResponse>(
+    `query closingPRs($owner: String!, $repo: String!, $number: Int!) {
+      repository(owner: $owner, name: $repo) {
+        issue(number: $number) {
+          closedByPullRequestsReferences(first: 20, includeClosedPrs: true) {
+            nodes { number state url updatedAt author { login } }
+          }
+        }
+      }
+    }`,
+    { owner, repo, number: issueNumber },
+  );
+  const nodes = (
+    data.repository?.issue?.closedByPullRequestsReferences?.nodes ?? []
+  ).filter((n): n is ClosingPRNode => n != null);
+  if (nodes.length === 0) return { passed: true, linkedPR: null };
+  const pr = [...nodes].sort(
+    (a, b) => CLOSING_PR_RANK[a.state] - CLOSING_PR_RANK[b.state],
+  )[0] as ClosingPRNode;
+  return {
+    passed: false,
+    linkedPR: {
+      number: pr.number,
+      // A deleted account has no login; the PR still blocks the issue.
+      author: pr.author?.login ?? "ghost",
+      state: pr.state === "OPEN" ? "open" : "closed",
+      merged: pr.state === "MERGED",
+      url: pr.url,
+      updatedAt: pr.updatedAt,
+    },
+  };
+}
+
 /**
  * Check whether an open PR already exists for the given issue.
  * Uses the timeline API (REST) to detect cross-referenced PRs, avoiding
  * the Search API's strict 30 req/min rate limit.
+ *
+ * `closingOnly` switches to closing references: a PR that only mentions the
+ * issue no longer counts. Long-lived issues collect mentions, and under the
+ * default rule the oldest one decides the verdict.
  */
 export async function checkNoExistingPR(
   octokit: Octokit,
   owner: string,
   repo: string,
   issueNumber: number,
+  opts: { closingOnly?: boolean } = {},
 ): Promise<ExistingPRCheckResult> {
   try {
+    if (opts.closingOnly) {
+      return await checkNoClosingPR(octokit, owner, repo, issueNumber);
+    }
     // Use the timeline API (REST, not Search) to detect linked PRs.
     // This avoids consuming GitHub Search API quota (30 req/min limit).
     // Timeline captures formally linked PRs via cross-referenced events

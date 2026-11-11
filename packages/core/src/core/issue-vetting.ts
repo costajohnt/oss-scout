@@ -56,6 +56,7 @@ import {
   type MergedPRRepoRef,
 } from "./issue-graphql.js";
 import { getHttpCache, versionedCacheKey } from "./http-cache.js";
+import { MAINTAINER_ASSOCIATIONS } from "./issue-filtering.js";
 import {
   getSearchBudgetTracker,
   type SearchBudgetTracker,
@@ -73,6 +74,16 @@ const MAX_CONCURRENT_VETTING = 3;
 
 /** TTL for cached vetting results (15 minutes). Kept short so config changes take effect quickly. */
 const VETTING_CACHE_TTL_MS = 15 * 60 * 1000;
+
+/**
+ * Labels a maintainer applies once an issue is accepted as work to do.
+ *
+ * ponytail: a word list, so "status: accepted" and "help wanted" match and
+ * "unconfirmed" does not, but a repo with its own vocabulary ("S-ready",
+ * "P2") is missed. Read the repo's label descriptions if that matters.
+ */
+const DECIDED_LABEL =
+  /\b(?:accepted|confirmed|approved|triaged|planned|help[- ]wanted)\b/i;
 
 /**
  * Feature-mode signals supplied by the caller (orchestrator) — the vetter
@@ -140,6 +151,11 @@ export interface ScoutStateReader {
    * apart from a competing one (#166). Optional; absent reads as "unknown".
    */
   getGitHubUsername?(): string;
+  /**
+   * The `complexIssues` preference. Optional so existing implementations
+   * keep compiling; absent reads as "off".
+   */
+  getComplexIssuesMode?(): "off" | "warm";
 }
 
 /**
@@ -457,7 +473,10 @@ export class IssueVetter {
     const sigKey = opts?.featureSignals
       ? `:r${opts.featureSignals.reactions}c${opts.featureSignals.comments}m${opts.featureSignals.hasMilestone ? 1 : 0}o${opts.featureSignals.onRoadmap ? 1 : 0}w${opts.featureSignals.wontfixNoContributor ? 1 : 0}`
       : "";
-    const cacheKey = versionedCacheKey(`vet:${issueUrl}${sigKey}`);
+    // The verdict depends on the complexIssues mode, so it is part of the key.
+    const complexMode = this.stateReader.getComplexIssuesMode?.() ?? "off";
+    const modeKey = complexMode === "off" ? "" : `:cx-${complexMode}`;
+    const cacheKey = versionedCacheKey(`vet:${issueUrl}${sigKey}${modeKey}`);
     const cached = cache.getIfFresh(cacheKey, VETTING_CACHE_TTL_MS);
     if (
       cached &&
@@ -488,6 +507,11 @@ export class IssueVetter {
     // Check if the user already has merged PRs in this repo (skip the Search API call)
     const reposWithMergedPRs = this.stateReader.getReposWithMergedPRs();
     const hasMergedPRsInRepo = reposWithMergedPRs.includes(repoFullName);
+    // ponytail: unlocks on the state's merged-PR list only. A merge that
+    // predates the state (found by the live count below) does not unlock,
+    // because the existing-PR check has to pick its mode before that count
+    // returns. Sync the state to pick those repos up.
+    const complexityUnlocked = complexMode === "warm" && hasMergedPRsInRepo;
 
     // Run all vetting checks in parallel — delegates to standalone functions
     const [
@@ -497,7 +521,9 @@ export class IssueVetter {
       contributionGuidelines,
       userMergedPRCount,
     ] = await Promise.all([
-      checkNoExistingPR(this.octokit, owner, repo, number),
+      checkNoExistingPR(this.octokit, owner, repo, number, {
+        closingOnly: complexityUnlocked,
+      }),
       checkNotClaimed(this.octokit, owner, repo, number, core.commentCount),
       checkProjectHealth(this.octokit, owner, repo),
       fetchContributionGuidelines(this.octokit, owner, repo),
@@ -567,7 +593,15 @@ export class IssueVetter {
       !!linkedPR && linkedPR.state === "closed" && !linkedPR.merged;
 
     // Analyze issue quality
-    const clearRequirements = analyzeRequirements(core.body);
+    const bodyIsClear = analyzeRequirements(core.body);
+    // In an unlocked repo, who filed or accepted the issue stands in for
+    // code in the body: a maintainer's prose spec is a decided piece of work.
+    const maintainerDecided =
+      complexityUnlocked &&
+      !bodyIsClear &&
+      ((!!core.authorIsMaintainer && !isOwnIssue) ||
+        core.labels.some((l) => DECIDED_LABEL.test(l)));
+    const clearRequirements = bodyIsClear || maintainerDecided;
 
     // When the health check itself failed (API error), use a neutral default:
     // don't penalize the repo as inactive, but don't credit it as active either.
@@ -682,6 +716,10 @@ export class IssueVetter {
         cautionReasons,
       });
     vettingResult.notes = notes;
+    if (maintainerDecided)
+      notes.push(
+        "Requirements taken as decided: maintainer-filed or triage-accepted",
+      );
 
     // Calculate repo quality bonus from star/fork counts. A failed health
     // check carries no counts (#158), so the bonus is 0 in that case.
@@ -751,6 +789,7 @@ export class IssueVetter {
       reasonsToApprove,
       viabilityScore,
       searchPriority,
+      ...(complexityUnlocked ? { complexityUnlocked: true } : {}),
     };
 
     // Cache the vetting result to avoid redundant API calls on repeated
@@ -796,6 +835,9 @@ export class IssueVetter {
         ghIssue.user?.type === "Bot" ||
         /\[bot\]$/i.test(ghIssue.user?.login ?? ""),
       authorLooksLikeBot: looksLikeBotLogin(ghIssue.user?.login),
+      authorIsMaintainer: MAINTAINER_ASSOCIATIONS.has(
+        ghIssue.author_association,
+      ),
     };
   }
 
