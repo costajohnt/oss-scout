@@ -5,16 +5,18 @@
  * Replaces the per-repo REST walk the merged phase used to do over a rotating
  * window of 10 repos. One aliased GraphQL query covers a batch of repos and
  * returns the fields needed to decide which issues deserve a vet (assignee,
- * open closing PR, author association, comment count), so every warm repo is
- * read on every run and the vet budget goes to the issues most likely to be
+ * closing PR, author association, comment count), so every warm repo is read
+ * on every run and the vet budget goes to the issues most likely to be
  * takeable instead of to whichever four happen to be newest.
  */
 
 import type { Octokit } from "@octokit/rest";
 import { errorMessage, getHttpStatusCode, isRateLimitError } from "./errors.js";
+import { getHttpCache, versionedCacheKey } from "./http-cache.js";
 import { warn } from "./logger.js";
 import { applyPerRepoCap, type GitHubSearchItem } from "./issue-filtering.js";
 import type { IssueVetter } from "./issue-vetting.js";
+import { KNOWN_REPO_PER_REPO_CAP } from "./search-phases.js";
 import type { IssueCandidate } from "./types.js";
 import { sleep } from "./utils.js";
 
@@ -33,23 +35,52 @@ const ISSUES_PER_REPO = 30;
 /** Pause between batches; GraphQL bills the points bucket, so a light pace is enough. */
 const INTER_BATCH_DELAY_MS = 500;
 
+/**
+ * Batches in a row that yielded nothing, even retried repo by repo, before the
+ * walk gives up. Two means the API is down, not that one repo is heavy.
+ */
+const MAX_DEAD_BATCHES = 2;
+
 /** Same segment rule GitHub applies to owner and repo names. */
 const GH_NAME_PATTERN = /^[A-Za-z0-9_.-]+$/;
 
 /**
- * Issues vetted per repo. One more than the search's final per-repo cap of 2,
- * so a single vetter reject does not cost the repo a result slot.
+ * Issues vetted per repo: one more than the per-repo result cap, so a single
+ * vetter reject does not cost the repo a result slot.
  */
-const VET_PER_REPO = 3;
+const VET_PER_REPO = KNOWN_REPO_PER_REPO_CAP + 1;
+
+/**
+ * Ceiling on issues vetted per run. Every vet costs REST calls and none stops
+ * early, so without it a large `maxResults` (the CLI count is unbounded) turns
+ * into hundreds of vets.
+ */
+const MAX_VETS = 60;
+
+/**
+ * How long a vetter skip is remembered. The ranking is deterministic, so a
+ * skipped issue that did not make the returned slice would otherwise be vetted
+ * again on every run and crowd out issues further down.
+ *
+ * ponytail: 24h because that is when the HTTP cache evicts entries. A longer
+ * memory needs a field in scout state.
+ */
+const SKIP_MEMORY_MS = 24 * 60 * 60 * 1000;
 
 const MAINTAINER_ASSOCIATIONS = new Set(["OWNER", "MEMBER", "COLLABORATOR"]);
 
-/** An unassigned open issue with no open closing PR, plus the ranking signals. */
+/** GraphQL error types that a retry cannot fix. */
+const PERMANENT_ERROR_TYPES = new Set(["NOT_FOUND", "FORBIDDEN"]);
+
+/**
+ * An open issue nobody has taken (unassigned, no open or merged PR that
+ * closes it), plus the ranking signals.
+ */
 export interface WarmIssue extends GitHubSearchItem {
-  /** "owner/repo". */
+  /** "owner/repo", as GitHub names the repo today. */
   repo: string;
   createdAt: string;
-  /** Filed by an OWNER, MEMBER or COLLABORATOR of the repo. */
+  /** Filed by an OWNER, MEMBER or COLLABORATOR of the repo other than the user. */
   maintainerFiled: boolean;
   commentCount: number;
 }
@@ -60,6 +91,7 @@ interface IssueNode {
   createdAt: string;
   updatedAt: string;
   authorAssociation: string;
+  viewerDidAuthor: boolean;
   assignees: { totalCount: number };
   comments: { totalCount: number };
   labels: { nodes: { name: string }[] } | null;
@@ -67,6 +99,7 @@ interface IssueNode {
 }
 
 interface RepoNode {
+  nameWithOwner: string;
   isArchived: boolean;
   issues: { nodes: (IssueNode | null)[] | null } | null;
 }
@@ -75,13 +108,13 @@ type BatchResponse = Record<string, RepoNode | null | undefined>;
 
 /**
  * Query one batch. Returns whatever aliases resolved plus the aliases GitHub
- * reported as NOT_FOUND (deleted or renamed repos, which a retry cannot fix).
- * Throws when nothing resolved or the points bucket is exhausted.
+ * reported as gone or forbidden (which a retry cannot fix). Throws when
+ * nothing resolved or the points bucket is exhausted.
  */
 async function queryRepos(
   octokit: Octokit,
   repos: string[],
-): Promise<{ data: BatchResponse; notFound: Set<string> }> {
+): Promise<{ data: BatchResponse; permanent: Set<string> }> {
   const varDefs: string[] = [];
   const selections: string[] = [];
   const variables: Record<string, string> = {};
@@ -92,6 +125,7 @@ async function queryRepos(
     variables[`n${i}`] = name;
     selections.push(
       `r${i}: repository(owner: $o${i}, name: $n${i}) {
+        nameWithOwner
         isArchived
         issues(first: ${ISSUES_PER_REPO}, states: OPEN, orderBy: { field: CREATED_AT, direction: DESC }) {
           nodes {
@@ -100,6 +134,7 @@ async function queryRepos(
             createdAt
             updatedAt
             authorAssociation
+            viewerDidAuthor
             assignees { totalCount }
             comments { totalCount }
             labels(first: 10) { nodes { name } }
@@ -114,7 +149,7 @@ async function queryRepos(
   try {
     return {
       data: await octokit.graphql<BatchResponse>(query, variables),
-      notFound: new Set(),
+      permanent: new Set(),
     };
   } catch (err) {
     // octokit attaches the aliases that did resolve to `.data` when only part
@@ -126,9 +161,9 @@ async function queryRepos(
       [];
     return {
       data: partial,
-      notFound: new Set(
+      permanent: new Set(
         gqlErrors
-          .filter((e) => e.type === "NOT_FOUND")
+          .filter((e) => PERMANENT_ERROR_TYPES.has(e.type ?? ""))
           .map((e) => String(e.path?.[0])),
       ),
     };
@@ -136,13 +171,13 @@ async function queryRepos(
 }
 
 /** Takeable issues from one resolved repo node, or null when the node did not resolve. */
-function takeableIssues(
-  repo: string,
-  node: RepoNode | null | undefined,
-): WarmIssue[] | null {
+function takeableIssues(node: RepoNode | null | undefined): WarmIssue[] | null {
   const nodes = node?.issues?.nodes;
   if (!node || !nodes) return null;
   if (node.isArchived) return [];
+  // GraphQL follows renames, so name the repo as GitHub does now: the issue
+  // URLs use that name, and so will the vetted candidates.
+  const repo = node.nameWithOwner;
   return nodes.flatMap((n) => {
     if (!n) return [];
     if (n.assignees.totalCount > 0) return [];
@@ -156,7 +191,9 @@ function takeableIssues(
         labels: (n.labels?.nodes ?? []).map((l) => ({ name: l.name })),
         repo,
         createdAt: n.createdAt,
-        maintainerFiled: MAINTAINER_ASSOCIATIONS.has(n.authorAssociation),
+        maintainerFiled:
+          MAINTAINER_ASSOCIATIONS.has(n.authorAssociation) &&
+          !n.viewerDidAuthor,
         commentCount: n.comments.totalCount,
       },
     ];
@@ -165,12 +202,14 @@ function takeableIssues(
 
 /**
  * List the newest open issues of every repo in `repos` that nobody has taken:
- * unassigned and without an open PR that closes them. Archived repos yield
- * nothing.
+ * unassigned and without an open or merged PR that closes them. Archived repos
+ * yield nothing. Each issue appears once even when two names in `repos` point
+ * at the same (renamed) repo.
  *
  * A 401 propagates. A rate limit stops the walk and returns what was read,
  * flagged, so the caller can report an incomplete search. Any other failure
- * costs only the repos involved.
+ * costs only the repos involved, unless batch after batch yields nothing, in
+ * which case the walk stops and the rest count as failed.
  */
 export async function listWarmRepoIssues(
   octokit: Octokit,
@@ -180,21 +219,24 @@ export async function listWarmRepoIssues(
     const parts = r.split("/");
     return parts.length === 2 && parts.every((p) => GH_NAME_PATTERN.test(p));
   });
-  const items: WarmIssue[] = [];
+  const byUrl = new Map<string, WarmIssue>();
   let failedRepos = repos.length - valid.length;
   let rateLimitHit = false;
 
-  /** Read one batch; returns the repos worth retrying on their own. */
-  const read = async (batch: string[]): Promise<string[]> => {
+  /**
+   * Read one batch. Returns the repos worth retrying on their own, or null
+   * when the query itself failed.
+   */
+  const read = async (batch: string[]): Promise<string[] | null> => {
     try {
-      const { data, notFound } = await queryRepos(octokit, batch);
+      const { data, permanent } = await queryRepos(octokit, batch);
       const retry: string[] = [];
       batch.forEach((repo, j) => {
-        const found = takeableIssues(repo, data[`r${j}`]);
-        if (found) items.push(...found);
+        const found = takeableIssues(data[`r${j}`]);
+        if (found) for (const issue of found) byUrl.set(issue.html_url, issue);
         // A repo that did not resolve next to others most likely lost out to
         // the per-query resource limit; alone it fits.
-        else if (batch.length > 1 && !notFound.has(`r${j}`)) retry.push(repo);
+        else if (batch.length > 1 && !permanent.has(`r${j}`)) retry.push(repo);
         else failedRepos++;
       });
       return retry;
@@ -209,21 +251,37 @@ export async function listWarmRepoIssues(
         MODULE,
         `Failed to list issues for ${batch.join(", ")}: ${errorMessage(err)}`,
       );
-      failedRepos += batch.length;
-      return [];
+      return null;
     }
   };
 
+  let deadBatches = 0;
   for (let i = 0; i < valid.length && !rateLimitHit; i += BATCH_SIZE) {
     if (i > 0) await sleep(INTER_BATCH_DELAY_MS);
-    const retry = await read(valid.slice(i, i + BATCH_SIZE));
-    for (const repo of retry) {
+    const batch = valid.slice(i, i + BATCH_SIZE);
+    const first = await read(batch);
+    let alive = first !== null;
+    if (first === null && batch.length === 1) failedRepos++;
+    // A batch that failed outright is retried repo by repo as well: batches
+    // are cut the same way every run, so one repo that breaks its query would
+    // otherwise hide the same seven neighbours forever.
+    for (const repo of first ?? (batch.length > 1 ? batch : [])) {
       if (rateLimitHit) break;
-      await read([repo]);
+      if ((await read([repo])) === null) failedRepos++;
+      else alive = true;
+    }
+    deadBatches = alive ? 0 : deadBatches + 1;
+    if (deadBatches >= MAX_DEAD_BATCHES) {
+      warn(
+        MODULE,
+        `${deadBatches} batches in a row returned nothing; stopping the warm-repo walk`,
+      );
+      failedRepos += Math.max(0, valid.length - (i + batch.length));
+      break;
     }
   }
 
-  return { items, failedRepos, rateLimitHit };
+  return { items: [...byUrl.values()], failedRepos, rateLimitHit };
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -266,10 +324,20 @@ export function rankWarmIssues(
     .map((entry) => entry.issue);
 }
 
+const skipMemoryKey = (url: string): string =>
+  versionedCacheKey(`warm-skip:${url}`);
+
 /**
  * List the untaken open issues of every warm repo, rank them on the listing
  * payload, and vet only the top of that ranking. Returns up to `maxResults`
- * candidates in rank order, viable ones first.
+ * candidates, at most two per repo, in rank order with viable ones first.
+ *
+ * The ranking decides which issues are vetted and which two a repo keeps. The
+ * search's final sort then orders candidates by recommendation and viability
+ * score, with this order breaking ties.
+ *
+ * A vetting failure other than a 401 costs this phase its candidates, not the
+ * whole search.
  */
 export async function fetchWarmRepoCandidates(
   octokit: Octokit,
@@ -283,10 +351,16 @@ export async function fetchWarmRepoCandidates(
   allReposFailed: boolean;
   rateLimitHit: boolean;
 }> {
+  const cache = getHttpCache();
   const listed = await listWarmRepoIssues(octokit, repos);
   const kept = new Set(filterFn(listed.items).map((i) => i.html_url));
   const ranked = rankWarmIssues(
-    listed.items.filter((i) => kept.has(i.html_url)),
+    listed.items.filter(
+      (i) =>
+        kept.has(i.html_url) &&
+        cache.getEntryIfFresh(skipMemoryKey(i.html_url), SKIP_MEMORY_MS) ===
+          null,
+    ),
     repoScore,
   );
   // Over-fetch 2x for the vetter's rejects, spread across repos so one busy
@@ -295,30 +369,47 @@ export async function fetchWarmRepoCandidates(
     ranked.map((i) => ({ url: i.html_url, issue: { repo: i.repo } })),
     VET_PER_REPO,
   )
-    .slice(0, maxResults * 2)
+    .slice(0, Math.min(maxResults * 2, MAX_VETS))
     .map((i) => i.url);
 
   let candidates: IssueCandidate[] = [];
   let rateLimitHit = listed.rateLimitHit;
-  if (toVet.length > 0) {
-    // Ask for every URL back: the vetter stops at its result cap whatever the
-    // recommendation, so a smaller cap would let early skips crowd out viable
-    // issues further down the ranking.
-    const vetted = await vetter.vetIssuesParallel(
-      toVet,
-      toVet.length,
-      "merged_pr",
-    );
-    rateLimitHit ||= vetted.rateLimitHit;
-    // Vets finish in any order; restore the ranking, viable candidates first.
-    const rank = new Map(toVet.map((url, i) => [url, i]));
-    const byRank = [...vetted.candidates].sort(
-      (a, b) => (rank.get(a.issue.url) ?? 0) - (rank.get(b.issue.url) ?? 0),
-    );
-    candidates = [
-      ...byRank.filter((c) => c.recommendation !== "skip"),
-      ...byRank.filter((c) => c.recommendation === "skip"),
-    ].slice(0, maxResults);
+  // A listing cut short by a rate limit means the vetter's own GraphQL
+  // prefetch would hit the same wall; keep the flag and vet nothing.
+  if (toVet.length > 0 && !listed.rateLimitHit) {
+    try {
+      // Ask for every URL back: the vetter stops at its result cap whatever
+      // the recommendation, so a smaller cap would let early skips crowd out
+      // viable issues further down the ranking.
+      const vetted = await vetter.vetIssuesParallel(
+        toVet,
+        toVet.length,
+        "merged_pr",
+      );
+      rateLimitHit ||= vetted.rateLimitHit;
+      for (const c of vetted.candidates) {
+        if (c.recommendation === "skip") {
+          cache.set(skipMemoryKey(c.issue.url), "", true);
+        }
+      }
+      // Vets finish in any order; restore the ranking, viable candidates
+      // first, then keep the best two of each repo.
+      const rank = new Map(toVet.map((url, i) => [url, i]));
+      const byRank = [...vetted.candidates].sort(
+        (a, b) => (rank.get(a.issue.url) ?? 0) - (rank.get(b.issue.url) ?? 0),
+      );
+      candidates = applyPerRepoCap(
+        [
+          ...byRank.filter((c) => c.recommendation !== "skip"),
+          ...byRank.filter((c) => c.recommendation === "skip"),
+        ],
+        KNOWN_REPO_PER_REPO_CAP,
+      ).slice(0, maxResults);
+    } catch (err) {
+      if (getHttpStatusCode(err) === 401) throw err;
+      rateLimitHit ||= isRateLimitError(err);
+      warn(MODULE, `Vetting warm-repo issues failed: ${errorMessage(err)}`);
+    }
   }
 
   return {

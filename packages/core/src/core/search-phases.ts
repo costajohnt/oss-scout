@@ -35,11 +35,11 @@ const MODULE = "search-phases";
 const INTER_QUERY_DELAY_MS = 2000;
 
 /**
- * Max candidates vetted per repo in the known-repo phases (Phase 0 merged-PR,
+ * Max candidates kept per repo in the known-repo phases (Phase 0 merged-PR,
  * Phase 1 starred). Matches the final `applyPerRepoCap(viableFirst, 2)` in
- * issue-discovery.ts: vetting more than 2 per repo is wasted work because the
- * surplus is discarded there, and it let a single productive repo fill the
- * whole phase cap so the remaining repos were never queried.
+ * issue-discovery.ts: returning more than 2 per repo is wasted work because
+ * the surplus is discarded there, and it let a single productive repo fill
+ * the whole phase cap so the remaining repos were never queried.
  */
 export const KNOWN_REPO_PER_REPO_CAP = 2;
 
@@ -319,7 +319,8 @@ export async function fetchIssuesFromMaintainedRepos(
 
 /**
  * Fetch open issues from known repos using REST API (no Search API quota).
- * Used by Phase 0 (merged-PR repos) and Phase 1 (starred repos).
+ * Used by Phase 1 (starred repos). Phase 0 (merged-PR repos) reads its repos
+ * through warm-repos.ts instead.
  *
  * Instead of the Search API (`octokit.search.issuesAndPullRequests`), this
  * calls `GET /repos/{owner}/{repo}/issues` which counts against the much

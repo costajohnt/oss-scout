@@ -468,6 +468,7 @@ Automatically filtered out:
 ├── linked-pr / roadmap     Stalled-PR detection, ROADMAP.md scraping
 ├── slm-triage              Optional local Ollama SLM pre-triage
 ├── search-phases           GitHub Search API helpers, caching, batching
+├── warm-repos              Merged phase: list, rank, vet across all contributed repos
 ├── search-budget           Rate limit tracking (30 req/min sliding window)
 ├── repo-health             Project health checks, CONTRIBUTING.md parsing
 ├── category-mapping        Project categories to GitHub topic mapping

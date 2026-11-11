@@ -471,8 +471,8 @@ async function runPhase3(
 
   // Step 1: Try REST API with starred repos first (no Search API quota used).
   // Window the stable starred list, then filter: windowing the filtered list
-  // (whose length shifts with each run's Phase 0 window) can skip a repo for
-  // many runs (#324).
+  // (whose length shifts with the candidates each run has found so far) can
+  // skip a repo for many runs (#324).
   const eligibleStarred = rotatingWindow(
     starredRepos,
     MAINTAINED_REPOS_PER_RUN,
@@ -904,20 +904,27 @@ export class IssueDiscovery {
     // Phase 0: Repos the user has engaged with — merged PRs first (strongest
     // signal), then open PRs (active engagement even without a merge yet).
     // Every one is read each run; `repoRotationOffsets.merged` is no longer
-    // consulted.
+    // consulted. Empty when the merged strategy is off: the list doubles as
+    // the other phases' exclusion set, and excluding repos that no phase will
+    // search would hide them altogether.
     const repoRotation = options.repoRotationOffsets ?? {};
-    const phase0Repos = [...new Set([...mergedPRRepos, ...openPRRepos])].slice(
-      0,
-      PHASE0_MAX_REPOS,
-    );
+    const phase0Repos = enabledStrategies.has("merged")
+      ? [...new Set([...mergedPRRepos, ...openPRRepos])].slice(
+          0,
+          PHASE0_MAX_REPOS,
+        )
+      : [];
     const phase0RepoSet = new Set(phase0Repos);
     const preferredOrgs = config.preferredOrgs ?? [];
-    // Window the stable starred list, then filter (see runPhase3, #324).
+    // Filter, then window. The Phase 0 set is the same every run now, so the
+    // filtered list is stable; windowing first could land on ten repos that
+    // are all in the set, leaving nothing to search and the cursor stuck
+    // (it only advances when the phase runs).
     const starredToSearch = rotatingWindow(
-      starredRepos,
+      starredRepos.filter((r) => !phase0RepoSet.has(r)),
       STARRED_REPOS_PER_RUN,
       repoRotation.starred ?? 0,
-    ).filter((r) => !phase0RepoSet.has(r));
+    );
 
     // Whether each strategy has anything to search this run. Broad and
     // maintained always can; the starred phase is also REST-budget-gated.
@@ -1085,8 +1092,16 @@ export class IssueDiscovery {
       if (canRun.merged && enabledStrategies.has("merged")) {
         // Cap Phase 0's share so it can't consume the whole budget and starve
         // the starred/broad phases (which only run while results are needed).
+        // At least one slot stays reserved: rounding 80% up would otherwise
+        // hand Phase 0 the whole budget for maxResults under 5.
         const phase0Cap = otherStrategiesCanRun
-          ? Math.max(1, Math.ceil(maxResults * PHASE0_MAX_SHARE))
+          ? Math.max(
+              1,
+              Math.min(
+                Math.ceil(maxResults * PHASE0_MAX_SHARE),
+                maxResults - 1,
+              ),
+            )
           : maxResults;
         await runStrategy.merged(
           Math.min(maxResults - allCandidates.length, phase0Cap),
@@ -1341,6 +1356,7 @@ export class IssueDiscovery {
     const lowScoring: string[] = [];
     const knownRepos = new Set([
       ...this.stateReader.getReposWithMergedPRs(),
+      ...this.stateReader.getReposWithOpenPRs(),
       ...this.stateReader.getStarredRepos(),
     ]);
     for (const repo of knownRepos) {

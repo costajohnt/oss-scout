@@ -272,7 +272,8 @@ export class OssScout implements ScoutStateReader, ScoutStateWriter {
 
     // Rotation cursors: start Phase 2's broad-search language fan-out at a
     // different variant each run (#249 follow-up), and walk the capped repo
-    // lists of the merged/starred/maintained phases window by window (#324, #333).
+    // lists of the starred/maintained phases window by window (#324, #333).
+    // The merged phase reads every repo each run and ignores its cursor.
     const rotation = this.state.searchRotation ?? { languageOffset: 0 };
 
     let candidates: IssueCandidate[];
