@@ -247,7 +247,8 @@ export function rankWarmIssues(
 ): WarmIssue[] {
   const score = (issue: WarmIssue): number => {
     const ageDays = (now.getTime() - Date.parse(issue.createdAt)) / DAY_MS;
-    const freshness = ageDays <= 2 ? 3 : ageDays <= 14 ? 2 : ageDays <= 30 ? 1 : 0;
+    const freshness =
+      ageDays <= 2 ? 3 : ageDays <= 14 ? 2 : ageDays <= 30 ? 1 : 0;
     return (
       freshness +
       (issue.maintainerFiled ? 3 : 0) +
