@@ -148,6 +148,41 @@ describe("isNonActionableIssue", () => {
       ),
     ).toBe(false);
   });
+
+  describe("labelsOnly (complexIssues)", () => {
+    it("keeps a question-shaped title", () => {
+      const q = item("Should the exporter stream?");
+      expect(isNonActionableIssue(q, { labelsOnly: true })).toBe(false);
+      // The same title without the option is still dropped
+      expect(isNonActionableIssue(q)).toBe(true);
+      expect(isNonActionableIssue(q, { labelsOnly: false })).toBe(true);
+      expect(
+        isNonActionableIssue(item("How do I configure the output format"), {
+          labelsOnly: true,
+        }),
+      ).toBe(false);
+    });
+
+    it("keeps a title under three words", () => {
+      expect(
+        isNonActionableIssue(item("Stream exporter"), { labelsOnly: true }),
+      ).toBe(false);
+      expect(isNonActionableIssue(item("Stream exporter"))).toBe(true);
+    });
+
+    it("still drops question/discussion/support labels", () => {
+      expect(
+        isNonActionableIssue(item("Add retry to client", ["question"]), {
+          labelsOnly: true,
+        }),
+      ).toBe(true);
+      expect(
+        isNonActionableIssue(item("Should the exporter stream?", ["bug"]), {
+          labelsOnly: true,
+        }),
+      ).toBe(false);
+    });
+  });
 });
 
 describe("isLabelFarming", () => {

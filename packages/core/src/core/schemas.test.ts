@@ -230,6 +230,22 @@ describe("ScoutPreferencesSchema", () => {
       ScoutPreferencesSchema.parse({ featuresSplitRatio: 1.1 }),
     ).toThrow();
   });
+
+  it("defaults complexIssues to off", () => {
+    expect(ScoutPreferencesSchema.parse({}).complexIssues).toBe("off");
+  });
+
+  it("accepts complexIssues warm", () => {
+    expect(
+      ScoutPreferencesSchema.parse({ complexIssues: "warm" }).complexIssues,
+    ).toBe("warm");
+  });
+
+  it("rejects an unknown complexIssues mode", () => {
+    expect(() =>
+      ScoutPreferencesSchema.parse({ complexIssues: "anchor" }),
+    ).toThrow();
+  });
 });
 
 describe("RepoScoreSchema", () => {

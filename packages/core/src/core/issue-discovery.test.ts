@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { IssueCandidate } from "./types.js";
 import type { GitHubSearchItem } from "./issue-filtering.js";
 
@@ -162,7 +162,7 @@ vi.mock("./warm-repos.js", () => ({
 import { IssueDiscovery, rotatingWindow } from "./issue-discovery.js";
 import { checkRateLimit } from "./github.js";
 import { info } from "./logger.js";
-import { applyPerRepoCap } from "./issue-filtering.js";
+import { applyPerRepoCap, isNonActionableIssue } from "./issue-filtering.js";
 import { sleep, daysBetween } from "./utils.js";
 import type { ScoutStateReader } from "./issue-vetting.js";
 import type { ScoutPreferences } from "./schemas.js";
@@ -1597,6 +1597,118 @@ describe("IssueDiscovery", () => {
           },
         ]),
       ).toEqual([]);
+    });
+  });
+
+  describe("searchIssues — complexIssues filter", () => {
+    // The real title/label rules, not the file-level stub, so the tests say
+    // kept/dropped rather than "called with".
+    beforeEach(async () => {
+      const actual = await vi.importActual<
+        typeof import("./issue-filtering.js")
+      >("./issue-filtering.js");
+      vi.mocked(isNonActionableIssue).mockImplementation(
+        actual.isNonActionableIssue,
+      );
+    });
+    afterEach(() => {
+      vi.mocked(isNonActionableIssue).mockImplementation(() => false);
+    });
+
+    /** Run a search that yields nothing and return the Phase 0 filter. */
+    async function capturePhase0Filter(
+      discovery: IssueDiscovery,
+    ): Promise<(items: GitHubSearchItem[]) => GitHubSearchItem[]> {
+      await expect(discovery.searchIssues({ maxResults: 5 })).rejects.toThrow(
+        "No issue candidates found",
+      );
+      return mockFetchWarmRepoCandidates.mock.calls[0]![4] as (
+        items: GitHubSearchItem[],
+      ) => GitHubSearchItem[];
+    }
+
+    function warmItem(over: Partial<GitHubSearchItem> = {}): GitHubSearchItem {
+      return {
+        html_url: "https://github.com/org/warm/issues/1",
+        repository_url: "https://api.github.com/repos/org/warm",
+        updated_at: "2026-03-01T00:00:00Z",
+        title: "Should the exporter stream?",
+        labels: [],
+        maintainerFiled: true,
+        ...over,
+      };
+    }
+
+    const warmState = { getReposWithMergedPRs: vi.fn(() => ["org/warm"]) };
+
+    it("keeps a maintainer-filed question title in an unlocked repo", async () => {
+      const filter = await capturePhase0Filter(
+        makeDiscovery(warmState, { complexIssues: "warm" }),
+      );
+      const item = warmItem();
+      expect(filter([item])).toEqual([item]);
+    });
+
+    it("drops the same title when maintainerFiled is false", async () => {
+      const filter = await capturePhase0Filter(
+        makeDiscovery(warmState, { complexIssues: "warm" }),
+      );
+      expect(filter([warmItem({ maintainerFiled: false })])).toEqual([]);
+    });
+
+    it("drops the same title when complexIssues is off", async () => {
+      const filter = await capturePhase0Filter(
+        makeDiscovery(warmState, { complexIssues: "off" }),
+      );
+      expect(filter([warmItem()])).toEqual([]);
+    });
+
+    it("drops the same title when the repo has no merged PR", async () => {
+      const filter = await capturePhase0Filter(
+        makeDiscovery(
+          { getReposWithMergedPRs: vi.fn(() => ["org/other"]) },
+          { complexIssues: "warm" },
+        ),
+      );
+      expect(filter([warmItem()])).toEqual([]);
+    });
+
+    it("drops a 'question' label even when maintainer-filed and unlocked", async () => {
+      const filter = await capturePhase0Filter(
+        makeDiscovery(warmState, { complexIssues: "warm" }),
+      );
+      expect(
+        filter([
+          warmItem({
+            title: "Add retry to client",
+            labels: [{ name: "question" }],
+          }),
+        ]),
+      ).toEqual([]);
+    });
+
+    it("keeps a two-word maintainer title in an unlocked repo", async () => {
+      const filter = await capturePhase0Filter(
+        makeDiscovery(warmState, { complexIssues: "warm" }),
+      );
+      const item = warmItem({ title: "Stream exporter" });
+      expect(filter([item])).toEqual([item]);
+      expect(
+        filter([
+          warmItem({ title: "Stream exporter", maintainerFiled: false }),
+        ]),
+      ).toEqual([]);
+    });
+
+    it("matches the unlocked repo case-insensitively between state and API", async () => {
+      const filter = await capturePhase0Filter(
+        makeDiscovery(
+          { getReposWithMergedPRs: vi.fn(() => ["Org/Warm"]) },
+          { complexIssues: "warm" },
+        ),
+      );
+      const item = warmItem();
+      expect(filter([item])).toEqual([item]);
     });
   });
 
