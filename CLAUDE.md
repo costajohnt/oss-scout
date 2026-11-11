@@ -56,6 +56,7 @@ packages/core/src/
 │   ├── slm-triage.ts     # Optional Ollama SLM pre-triage during vetting
 │   ├── preference-fields.ts # Shared config-set field map (CLI + MCP)
 │   ├── search-phases.ts  # Search helpers, caching, batched search
+│   ├── warm-repos.ts     # Merged phase: list, rank, vet issues across all warm repos
 │   ├── search-budget.ts  # Rate limit management (30 req/min sliding window)
 │   ├── issue-graphql.ts  # GraphQL broad search + batched merged-PR prefetch
 │   ├── repo-health.ts    # Project health checks, CONTRIBUTING.md parsing
