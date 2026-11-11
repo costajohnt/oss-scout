@@ -100,6 +100,15 @@ vi.mock("./errors.js", () => ({
   }),
 }));
 
+/** Phase 0 (merged + open-PR repos) goes through warm-repos.ts. */
+const mockFetchWarmRepoCandidates = vi.fn().mockResolvedValue({
+  candidates: [],
+  allReposFailed: false,
+  rateLimitHit: false,
+  vetError: null,
+});
+
+/** Phase 1 (starred repos) still walks the REST list in search-phases.ts. */
 const mockFetchIssuesFromKnownRepos = vi.fn().mockResolvedValue({
   candidates: [],
   allReposFailed: false,
@@ -143,6 +152,11 @@ vi.mock("./search-phases.js", () => ({
   resetGraphQLSearchQueryCount: () => {
     mockGraphqlSearchQueryCount = 0;
   },
+}));
+
+vi.mock("./warm-repos.js", () => ({
+  fetchWarmRepoCandidates: (...args: unknown[]) =>
+    mockFetchWarmRepoCandidates(...args),
 }));
 
 import { IssueDiscovery, rotatingWindow } from "./issue-discovery.js";
@@ -273,6 +287,12 @@ describe("IssueDiscovery", () => {
     vi.clearAllMocks();
 
     // Reset mocks to defaults
+    mockFetchWarmRepoCandidates.mockResolvedValue({
+      candidates: [],
+      allReposFailed: false,
+      rateLimitHit: false,
+      vetError: null,
+    });
     mockFetchIssuesFromKnownRepos.mockResolvedValue({
       candidates: [],
       allReposFailed: false,
@@ -298,12 +318,13 @@ describe("IssueDiscovery", () => {
   });
 
   describe("searchIssues — phase execution", () => {
-    it("Phase 0: calls fetchIssuesFromKnownRepos with merged-PR repos, priority merged_pr", async () => {
+    it("Phase 0: calls fetchWarmRepoCandidates with merged-PR repos, the Phase 0 filter and a repoScore callback", async () => {
       const c = makeCandidate("org/merged-repo", "merged_pr");
-      mockFetchIssuesFromKnownRepos.mockResolvedValue({
+      mockFetchWarmRepoCandidates.mockResolvedValue({
         candidates: [c],
         allReposFailed: false,
         rateLimitHit: false,
+        vetError: null,
       });
 
       const discovery = makeDiscovery({
@@ -312,24 +333,26 @@ describe("IssueDiscovery", () => {
 
       const { candidates } = await discovery.searchIssues({ maxResults: 5 });
       expect(candidates.length).toBeGreaterThanOrEqual(1);
-      expect(mockFetchIssuesFromKnownRepos).toHaveBeenCalledWith(
+      expect(mockFetchWarmRepoCandidates).toHaveBeenCalledTimes(1);
+      expect(mockFetchWarmRepoCandidates).toHaveBeenCalledWith(
         expect.anything(), // octokit
         expect.anything(), // vetter
         ["org/merged-repo"],
-        [], // no labels for Phase 0
-        expect.any(Number),
-        "merged_pr",
-        expect.any(Function),
-        30, // PHASE0_PER_PAGE — deeper than the default 5 so the backlog is reachable
+        expect.any(Number), // maxResults for the phase
+        expect.any(Function), // filterIssuesPhase0
+        expect.any(Function), // repoScore
       );
+      // The merged phase no longer walks the REST list.
+      expect(mockFetchIssuesFromKnownRepos).not.toHaveBeenCalled();
     });
 
     it("Phase 0: uses a relaxed age filter that admits issues older than the default 90-day cutoff", async () => {
       const c = makeCandidate("org/merged-repo", "merged_pr");
-      mockFetchIssuesFromKnownRepos.mockResolvedValue({
+      mockFetchWarmRepoCandidates.mockResolvedValue({
         candidates: [c],
         allReposFailed: false,
         rateLimitHit: false,
+        vetError: null,
       });
 
       const discovery = makeDiscovery({
@@ -338,8 +361,8 @@ describe("IssueDiscovery", () => {
 
       await discovery.searchIssues({ maxResults: 5 });
 
-      // The 7th positional arg is the filter function passed to Phase 0.
-      const phase0Filter = mockFetchIssuesFromKnownRepos.mock.calls[0][6] as (
+      // The 5th positional arg is the filter function passed to Phase 0.
+      const phase0Filter = mockFetchWarmRepoCandidates.mock.calls[0][4] as (
         items: GitHubSearchItem[],
       ) => GitHubSearchItem[];
 
@@ -374,10 +397,11 @@ describe("IssueDiscovery", () => {
 
     it("Phase 0: unions merged-PR and open-PR repos, deduped, merged first", async () => {
       const c = makeCandidate("org/merged-a", "merged_pr");
-      mockFetchIssuesFromKnownRepos.mockResolvedValue({
+      mockFetchWarmRepoCandidates.mockResolvedValue({
         candidates: [c],
         allReposFailed: false,
         rateLimitHit: false,
+        vetError: null,
       });
 
       const discovery = makeDiscovery({
@@ -387,9 +411,7 @@ describe("IssueDiscovery", () => {
 
       await discovery.searchIssues({ maxResults: 5 });
 
-      const phase0Call = mockFetchIssuesFromKnownRepos.mock.calls.find(
-        (call) => call[5] === "merged_pr",
-      );
+      const phase0Call = mockFetchWarmRepoCandidates.mock.calls[0];
       expect(phase0Call).toBeDefined();
       expect(phase0Call![2]).toEqual([
         "org/merged-a",
@@ -400,10 +422,11 @@ describe("IssueDiscovery", () => {
 
     it("Phase 0: searches open-PR repos even when no merged PRs exist", async () => {
       const c = makeCandidate("org/open-only", "merged_pr");
-      mockFetchIssuesFromKnownRepos.mockResolvedValue({
+      mockFetchWarmRepoCandidates.mockResolvedValue({
         candidates: [c],
         allReposFailed: false,
         rateLimitHit: false,
+        vetError: null,
       });
 
       const discovery = makeDiscovery({
@@ -413,52 +436,26 @@ describe("IssueDiscovery", () => {
 
       await discovery.searchIssues({ maxResults: 5 });
 
-      const phase0Call = mockFetchIssuesFromKnownRepos.mock.calls.find(
-        (call) => call[5] === "merged_pr",
-      );
+      const phase0Call = mockFetchWarmRepoCandidates.mock.calls[0];
       expect(phase0Call).toBeDefined();
       expect(phase0Call![2]).toEqual(["org/open-only"]);
     });
 
-    it("Phase 0: caps total repos at 10 across merged + open", async () => {
-      const c = makeCandidate("org/merged-0", "merged_pr");
-      mockFetchIssuesFromKnownRepos.mockResolvedValue({
-        candidates: [c],
-        allReposFailed: false,
-        rateLimitHit: false,
-      });
-
-      const merged = Array.from({ length: 8 }, (_, i) => `org/merged-${i}`);
-      const open = Array.from({ length: 8 }, (_, i) => `org/open-${i}`);
-
-      const discovery = makeDiscovery({
-        getReposWithMergedPRs: vi.fn(() => merged),
-        getReposWithOpenPRs: vi.fn(() => open),
-      });
-
-      await discovery.searchIssues({ maxResults: 5 });
-
-      const phase0Call = mockFetchIssuesFromKnownRepos.mock.calls.find(
-        (call) => call[5] === "merged_pr",
-      );
-      expect(phase0Call).toBeDefined();
-      expect(phase0Call![2]).toHaveLength(10);
-      // Merged repos come first
-      expect(phase0Call![2].slice(0, 8)).toEqual(merged);
-    });
-
-    it("Phase 0: the next run searches the next window, so two runs cover all 16 repos (#333)", async () => {
-      mockFetchIssuesFromKnownRepos.mockResolvedValue({
+    // The merged phase used to walk a rotating window of 10 repos per run
+    // (#333). It now reads every warm repo in one call, so the merged cursor
+    // has no effect.
+    it("Phase 0: passes every merged + open-PR repo in one call, whatever repoRotationOffsets.merged says", async () => {
+      mockFetchWarmRepoCandidates.mockResolvedValue({
         candidates: [makeCandidate("org/merged-0", "merged_pr")],
         allReposFailed: false,
         rateLimitHit: false,
+        vetError: null,
       });
       const merged = Array.from({ length: 8 }, (_, i) => `org/merged-${i}`);
       const open = Array.from({ length: 8 }, (_, i) => `org/open-${i}`);
-      const searched = new Set<string>();
 
-      for (const offset of [0, 1]) {
-        mockFetchIssuesFromKnownRepos.mockClear();
+      for (const offset of [0, 1, 7]) {
+        mockFetchWarmRepoCandidates.mockClear();
         const discovery = makeDiscovery({
           getReposWithMergedPRs: vi.fn(() => merged),
           getReposWithOpenPRs: vi.fn(() => open),
@@ -467,41 +464,95 @@ describe("IssueDiscovery", () => {
           maxResults: 5,
           repoRotationOffsets: { merged: offset },
         });
-        const phase0Call = mockFetchIssuesFromKnownRepos.mock.calls.find(
-          (call) => call[5] === "merged_pr",
-        );
-        expect(phase0Call![2]).toHaveLength(10);
-        (phase0Call![2] as string[]).forEach((r) => searched.add(r));
+        expect(mockFetchWarmRepoCandidates).toHaveBeenCalledTimes(1);
+        expect(mockFetchWarmRepoCandidates.mock.calls[0][2]).toEqual([
+          ...merged,
+          ...open,
+        ]);
       }
+    });
 
-      expect(searched.size).toBe(16);
+    it("Phase 0: caps the repo list at 200, merged repos first", async () => {
+      mockFetchWarmRepoCandidates.mockResolvedValue({
+        candidates: [makeCandidate("org/merged-0", "merged_pr")],
+        allReposFailed: false,
+        rateLimitHit: false,
+        vetError: null,
+      });
+      const merged = Array.from({ length: 150 }, (_, i) => `org/merged-${i}`);
+      const open = Array.from({ length: 100 }, (_, i) => `org/open-${i}`);
+
+      const discovery = makeDiscovery({
+        getReposWithMergedPRs: vi.fn(() => merged),
+        getReposWithOpenPRs: vi.fn(() => open),
+      });
+
+      await discovery.searchIssues({ maxResults: 5 });
+
+      const repos = mockFetchWarmRepoCandidates.mock.calls[0][2] as string[];
+      expect(repos).toHaveLength(200);
+      expect(repos.slice(0, 150)).toEqual(merged);
+      // The weakest relationships (the tail of the open-PR list) are dropped.
+      expect(repos.slice(150)).toEqual(open.slice(0, 50));
+    });
+
+    it("Phase 0: the repoScore callback reads stateReader.getRepoScore", async () => {
+      mockFetchWarmRepoCandidates.mockResolvedValue({
+        candidates: [makeCandidate("org/merged-repo", "merged_pr")],
+        allReposFailed: false,
+        rateLimitHit: false,
+        vetError: null,
+      });
+      const getRepoScore = vi.fn((repo: string) =>
+        repo === "org/merged-repo" ? 7 : null,
+      );
+
+      const discovery = makeDiscovery({
+        getReposWithMergedPRs: vi.fn(() => ["org/merged-repo"]),
+        getRepoScore,
+      });
+
+      await discovery.searchIssues({ maxResults: 5 });
+
+      const repoScore = mockFetchWarmRepoCandidates.mock.calls[0][5] as (
+        repo: string,
+      ) => number | null;
+      getRepoScore.mockClear();
+      expect(repoScore("org/merged-repo")).toBe(7);
+      expect(repoScore("org/other")).toBeNull();
+      expect(getRepoScore.mock.calls).toEqual([
+        ["org/merged-repo"],
+        ["org/other"],
+      ]);
     });
 
     it("caps Phase 0's share of maxResults so starred (Phase 1) still runs", async () => {
       // Regression: Phase 0 previously took the whole budget, so the
       // `allCandidates < maxResults` gate skipped Phase 1 even when starred
-      // repos existed. Phase 0 is now capped at ceil(maxResults * 0.5).
+      // repos existed. Phase 0 is now capped at ceil(maxResults * 0.8).
       // The Phase 0 mock returns AS MANY as requested, so without the cap it
       // would fill maxResults and gate Phase 1 out — making this non-vacuous.
       const maxResults = 10;
-      mockFetchIssuesFromKnownRepos.mockImplementation(
+      mockFetchWarmRepoCandidates.mockImplementation(
         async (
           _octokit: unknown,
           _vetter: unknown,
           _repos: unknown,
-          _labels: unknown,
           reqMax: number,
-          priority: string,
-        ) => {
-          const candidates =
-            priority === "merged_pr"
-              ? Array.from({ length: reqMax }, (_, i) =>
-                  makeCandidate(`org/merged-${i}`, "merged_pr"),
-                )
-              : [makeCandidate("org/starred-repo", "starred")];
-          return { candidates, allReposFailed: false, rateLimitHit: false };
-        },
+        ) => ({
+          candidates: Array.from({ length: reqMax }, (_, i) =>
+            makeCandidate(`org/merged-${i}`, "merged_pr"),
+          ),
+          allReposFailed: false,
+          rateLimitHit: false,
+          vetError: null,
+        }),
       );
+      mockFetchIssuesFromKnownRepos.mockResolvedValue({
+        candidates: [makeCandidate("org/starred-repo", "starred")],
+        allReposFailed: false,
+        rateLimitHit: false,
+      });
 
       const discovery = makeDiscovery({
         getReposWithMergedPRs: vi.fn(() => ["org/merged-repo"]),
@@ -510,11 +561,10 @@ describe("IssueDiscovery", () => {
 
       await discovery.searchIssues({ maxResults });
 
-      // Phase 0 (first call) was capped at ceil(10 * 0.5) = 5, not 10.
-      const phase0Call = mockFetchIssuesFromKnownRepos.mock.calls[0];
-      expect(phase0Call[5]).toBe("merged_pr");
-      expect(phase0Call[4]).toBe(5);
-      // Phase 0 returned its capped 5, leaving room, so Phase 1 (starred) ran.
+      // Phase 0 was capped at ceil(10 * 0.8) = 8, not 10.
+      const phase0Call = mockFetchWarmRepoCandidates.mock.calls[0];
+      expect(phase0Call[3]).toBe(8);
+      // Phase 0 returned its capped 8, leaving room, so Phase 1 (starred) ran.
       // Without the cap Phase 0 would have returned 10 and gated Phase 1 out.
       const phase1Call = mockFetchIssuesFromKnownRepos.mock.calls.find(
         (call) => call[5] === "starred",
@@ -522,15 +572,142 @@ describe("IssueDiscovery", () => {
       expect(phase1Call).toBeDefined();
     });
 
+    it("reserves at least one slot for the other phases: Phase 0's cap for maxResults 3 is 2", async () => {
+      // ceil(3 * 0.8) = 3 would hand Phase 0 the whole budget.
+      mockFetchWarmRepoCandidates.mockImplementation(
+        async (
+          _octokit: unknown,
+          _vetter: unknown,
+          _repos: unknown,
+          reqMax: number,
+        ) => ({
+          candidates: Array.from({ length: reqMax }, (_, i) =>
+            makeCandidate(`org/merged-${i}`, "merged_pr"),
+          ),
+          allReposFailed: false,
+          rateLimitHit: false,
+          vetError: null,
+        }),
+      );
+      mockFetchIssuesFromKnownRepos.mockResolvedValue({
+        candidates: [makeCandidate("org/starred-repo", "starred")],
+        allReposFailed: false,
+        rateLimitHit: false,
+      });
+
+      const discovery = makeDiscovery({
+        getReposWithMergedPRs: vi.fn(() => ["org/merged-repo"]),
+        getStarredRepos: vi.fn(() => ["org/starred-repo"]),
+      });
+
+      await discovery.searchIssues({ maxResults: 3 });
+
+      expect(mockFetchWarmRepoCandidates.mock.calls[0][3]).toBe(2);
+      const phase1Call = mockFetchIssuesFromKnownRepos.mock.calls.find(
+        (call) => call[5] === "starred",
+      );
+      expect(phase1Call).toBeDefined();
+    });
+
+    it.each([
+      [1, 1],
+      [2, 1],
+    ])(
+      "Phase 0's cap for maxResults %i is %i when another strategy can run",
+      async (maxResults, cap) => {
+        // ceil(1 * 0.8) = 1 and maxResults - 1 = 0: the floor keeps Phase 0
+        // from being asked for nothing.
+        mockFetchWarmRepoCandidates.mockImplementation(
+          async (
+            _octokit: unknown,
+            _vetter: unknown,
+            _repos: unknown,
+            reqMax: number,
+          ) => ({
+            candidates: Array.from({ length: reqMax }, (_, i) =>
+              makeCandidate(`org/merged-${i}`, "merged_pr"),
+            ),
+            allReposFailed: false,
+            rateLimitHit: false,
+            vetError: null,
+          }),
+        );
+        mockFetchIssuesFromKnownRepos.mockResolvedValue({
+          candidates: [makeCandidate("org/starred-repo", "starred")],
+          allReposFailed: false,
+          rateLimitHit: false,
+        });
+
+        const discovery = makeDiscovery({
+          getReposWithMergedPRs: vi.fn(() => ["org/merged-repo"]),
+          getStarredRepos: vi.fn(() => ["org/starred-repo"]),
+        });
+
+        await discovery.searchIssues({ maxResults });
+
+        expect(mockFetchWarmRepoCandidates.mock.calls[0][3]).toBe(cap);
+      },
+    );
+
+    describe("the slot reserved for other strategies (--full, strategies merged+starred, maxResults 3)", () => {
+      function setup(starred: string[]) {
+        mockFetchWarmRepoCandidates.mockImplementation(
+          async (
+            _octokit: unknown,
+            _vetter: unknown,
+            _repos: unknown,
+            reqMax: number,
+          ) => ({
+            candidates: Array.from({ length: reqMax }, (_, i) =>
+              makeCandidate(`org/merged-${i}`, "merged_pr"),
+            ),
+            allReposFailed: false,
+            rateLimitHit: false,
+            vetError: null,
+          }),
+        );
+        return makeDiscovery({
+          getReposWithMergedPRs: vi.fn(() => ["org/contributed"]),
+          getStarredRepos: vi.fn(() => starred),
+        });
+      }
+
+      it("is not reserved when every starred repo is also a contributed repo: Phase 0 is asked for 3", async () => {
+        // The starred phase drops Phase 0's repos before windowing, so it has
+        // nothing to search and cannot use a reserved slot.
+        const discovery = setup(["org/contributed"]);
+
+        await discovery.searchIssues({
+          maxResults: 3,
+          strategies: ["merged", "starred"],
+        });
+
+        expect(mockFetchWarmRepoCandidates.mock.calls[0][3]).toBe(3);
+        expect(mockFetchIssuesFromKnownRepos).not.toHaveBeenCalled();
+      });
+
+      it("is reserved when a starred repo is not a contributed repo: Phase 0 is asked for 2", async () => {
+        const discovery = setup(["org/contributed", "org/starred-only"]);
+
+        await discovery.searchIssues({
+          maxResults: 3,
+          strategies: ["merged", "starred"],
+        });
+
+        expect(mockFetchWarmRepoCandidates.mock.calls[0][3]).toBe(2);
+      });
+    });
+
     it("does NOT cap Phase 0 when no other strategy can run (no under-fill)", async () => {
       // A contributed-only user (no starred repos; broad/maintained disabled)
       // must still get the full budget from Phase 0 — the cap only applies
       // when a later phase can actually consume the reserved share.
       const c = makeCandidate("org/merged-repo", "merged_pr");
-      mockFetchIssuesFromKnownRepos.mockResolvedValue({
+      mockFetchWarmRepoCandidates.mockResolvedValue({
         candidates: [c],
         allReposFailed: false,
         rateLimitHit: false,
+        vetError: null,
       });
 
       const discovery = makeDiscovery(
@@ -543,18 +720,18 @@ describe("IssueDiscovery", () => {
 
       await discovery.searchIssues({ maxResults: 10 });
 
-      // Phase 0 got the full budget (10), not the halved cap (5).
-      const phase0Call = mockFetchIssuesFromKnownRepos.mock.calls[0];
-      expect(phase0Call[5]).toBe("merged_pr");
-      expect(phase0Call[4]).toBe(10);
+      // Phase 0 got the full budget (10), not the 80% cap (8).
+      const phase0Call = mockFetchWarmRepoCandidates.mock.calls[0];
+      expect(phase0Call[3]).toBe(10);
     });
 
     it("Phase 1: excludes starred repos that are already searched as open-PR repos in Phase 0", async () => {
       const c = makeCandidate("org/shared", "merged_pr");
-      mockFetchIssuesFromKnownRepos.mockResolvedValue({
+      mockFetchWarmRepoCandidates.mockResolvedValue({
         candidates: [c],
         allReposFailed: false,
         rateLimitHit: false,
+        vetError: null,
       });
 
       const discovery = makeDiscovery({
@@ -603,10 +780,12 @@ describe("IssueDiscovery", () => {
       ]);
     });
 
-    // Windowing the list *after* dropping Phase 0's repos let its length shift
-    // with each run's Phase 0 window, which can leave a starred repo unsearched
-    // for many runs. The window is taken over the stable list, then filtered.
-    it("Phase 1: windows the stable starred list before dropping Phase 0 repos (#324)", async () => {
+    // The Phase 0 set is the same every run (every contributed repo, no
+    // window), so the filtered starred list is stable and is what gets
+    // windowed. Windowing first could land on a window made only of
+    // contributed repos, leaving the phase nothing to search and its cursor
+    // stuck.
+    it("Phase 1: drops Phase 0 repos from the starred list before windowing it", async () => {
       mockFetchIssuesFromKnownRepos.mockResolvedValue({
         candidates: [],
         allReposFailed: false,
@@ -632,15 +811,38 @@ describe("IssueDiscovery", () => {
       const phase1Call = mockFetchIssuesFromKnownRepos.mock.calls.find(
         (call) => call[5] === "starred",
       );
-      // 12-long list, window 10 at offset 1 = positions 10, 11, 0..7; the
-      // contributed repo at position 2 is dropped after windowing.
-      expect(phase1Call![2]).toEqual([
-        "org/s-9",
-        "org/s-10",
-        "org/s-0",
-        "org/s-1",
-        ...starredOnly.slice(2, 7),
-      ]);
+      // The contributed repo is dropped first, leaving the 11 starred-only
+      // repos; window 10 at offset 1 = positions 10, 0..8.
+      expect(phase1Call![2]).toEqual(["org/s-10", ...starredOnly.slice(0, 9)]);
+    });
+
+    it("Phase 1: still gets 10 starred repos when the first 10 of the starred list are all contributed repos", async () => {
+      mockFetchIssuesFromKnownRepos.mockResolvedValue({
+        candidates: [],
+        allReposFailed: false,
+        rateLimitHit: false,
+      });
+      const contributed = Array.from({ length: 10 }, (_, i) => `org/c-${i}`);
+      const starredOnly = Array.from({ length: 10 }, (_, i) => `org/s-${i}`);
+      const discovery = makeDiscovery({
+        getReposWithOpenPRs: vi.fn(() => contributed),
+        getStarredRepos: vi.fn(() => [...contributed, ...starredOnly]),
+      });
+
+      await expect(
+        discovery.searchIssues({
+          maxResults: 5,
+          repoRotationOffsets: { starred: 0 },
+        }),
+      ).rejects.toThrow("No issue candidates found");
+
+      // Windowing first would take the 10 contributed repos and filter them
+      // all away, so the starred phase would not run at all.
+      const phase1Call = mockFetchIssuesFromKnownRepos.mock.calls.find(
+        (call) => call[5] === "starred",
+      );
+      expect(phase1Call).toBeDefined();
+      expect(phase1Call![2]).toEqual(starredOnly);
     });
 
     it("Phase 3: the maintained cursor picks the window of the starred list (#324)", async () => {
@@ -684,6 +886,8 @@ describe("IssueDiscovery", () => {
       );
       expect(phase1Call).toBeDefined();
       expect(phase1Call![2]).toEqual(["org/starred-repo"]);
+      // No merged-PR repos, so the warm-repo phase never ran.
+      expect(mockFetchWarmRepoCandidates).not.toHaveBeenCalled();
     });
 
     it("Phase 2: calls searchWithChunkedLabels then filterVetAndScore", async () => {
@@ -882,10 +1086,11 @@ describe("IssueDiscovery", () => {
   describe("searchIssues — strategy filtering", () => {
     it("strategies=[merged] runs only Phase 0", async () => {
       const c = makeCandidate("org/merged-repo", "merged_pr");
-      mockFetchIssuesFromKnownRepos.mockResolvedValue({
+      mockFetchWarmRepoCandidates.mockResolvedValue({
         candidates: [c],
         allReposFailed: false,
         rateLimitHit: false,
+        vetError: null,
       });
 
       const discovery = makeDiscovery({
@@ -926,6 +1131,59 @@ describe("IssueDiscovery", () => {
       expect(strategiesUsed).toContain("starred");
       expect(strategiesUsed).toContain("broad");
     });
+
+    // With the merged strategy off, no phase searches the contributed repos,
+    // so excluding them from the other phases would hide them altogether.
+    it("strategies=[starred] does not exclude contributed repos from the starred phase", async () => {
+      mockFetchIssuesFromKnownRepos.mockResolvedValue({
+        candidates: [makeCandidate("org/other", "starred")],
+        allReposFailed: false,
+        rateLimitHit: false,
+      });
+      const discovery = makeDiscovery({
+        getReposWithMergedPRs: vi.fn(() => ["org/contributed"]),
+        getReposWithOpenPRs: vi.fn(() => ["org/open"]),
+        getStarredRepos: vi.fn(() => [
+          "org/contributed",
+          "org/open",
+          "org/other",
+        ]),
+      });
+
+      await discovery.searchIssues({ maxResults: 5, strategies: ["starred"] });
+
+      expect(mockFetchWarmRepoCandidates).not.toHaveBeenCalled();
+      const phase1Call = mockFetchIssuesFromKnownRepos.mock.calls.find(
+        (call) => call[5] === "starred",
+      );
+      expect(phase1Call![2]).toEqual([
+        "org/contributed",
+        "org/open",
+        "org/other",
+      ]);
+    });
+
+    it("strategies=[broad] passes an empty Phase 0 exclusion set to the broad phase", async () => {
+      mockFilterVetAndScore.mockResolvedValue({
+        candidates: [makeCandidate("org/other")],
+        allVetFailed: false,
+        rateLimitHit: false,
+      });
+      const discovery = makeDiscovery({
+        getReposWithMergedPRs: vi.fn(() => ["org/contributed"]),
+        getReposWithOpenPRs: vi.fn(() => ["org/open"]),
+      });
+
+      await discovery.searchIssues({ maxResults: 5, strategies: ["broad"] });
+
+      expect(mockFetchWarmRepoCandidates).not.toHaveBeenCalled();
+      // filterVetAndScore(vetter, items, filter, [phase0Set, starredSet, seen], ...)
+      const [phase0Set] = mockFilterVetAndScore.mock
+        .calls[0]![3] as Set<string>[];
+      expect(phase0Set).toEqual(new Set());
+      expect(phase0Set.has("org/contributed")).toBe(false);
+      expect(phase0Set.has("org/open")).toBe(false);
+    });
   });
 
   describe("searchIssues — budget management", () => {
@@ -939,10 +1197,11 @@ describe("IssueDiscovery", () => {
       });
 
       const c = makeCandidate("org/merged", "merged_pr");
-      mockFetchIssuesFromKnownRepos.mockResolvedValue({
+      mockFetchWarmRepoCandidates.mockResolvedValue({
         candidates: [c],
         allReposFailed: false,
         rateLimitHit: false,
+        vetError: null,
       });
 
       const discovery = makeDiscovery({
@@ -969,10 +1228,11 @@ describe("IssueDiscovery", () => {
         Object.assign(new Error("boom"), { status: 500 }),
       );
 
-      mockFetchIssuesFromKnownRepos.mockResolvedValue({
+      mockFetchWarmRepoCandidates.mockResolvedValue({
         candidates: [makeCandidate("org/merged", "merged_pr")],
         allReposFailed: false,
         rateLimitHit: false,
+        vetError: null,
       });
 
       const discovery = makeDiscovery({
@@ -1002,10 +1262,11 @@ describe("IssueDiscovery", () => {
         resetAt: new Date(Date.now() + 60000).toISOString(),
       });
 
-      mockFetchIssuesFromKnownRepos.mockResolvedValue({
+      mockFetchWarmRepoCandidates.mockResolvedValue({
         candidates: [makeCandidate("org/merged", "merged_pr")],
         allReposFailed: false,
         rateLimitHit: false,
+        vetError: null,
       });
 
       const discovery = makeDiscovery({
@@ -1042,10 +1303,11 @@ describe("IssueDiscovery", () => {
 
       // A merged-PR candidate keeps allCandidates > 0 (so the run doesn't throw)
       // while staying in the affinity set, so it doesn't trip the broad-skip gate.
-      mockFetchIssuesFromKnownRepos.mockResolvedValue({
+      mockFetchWarmRepoCandidates.mockResolvedValue({
         candidates: [makeCandidate("org/merged", "merged_pr")],
         allReposFailed: false,
         rateLimitHit: false,
+        vetError: null,
       });
 
       const discovery = makeDiscovery({
@@ -1118,10 +1380,11 @@ describe("IssueDiscovery", () => {
       });
 
       const c = makeCandidate("org/repo", "merged_pr");
-      mockFetchIssuesFromKnownRepos.mockResolvedValue({
+      mockFetchWarmRepoCandidates.mockResolvedValue({
         candidates: [c],
         allReposFailed: false,
         rateLimitHit: false,
+        vetError: null,
       });
 
       const discovery = makeDiscovery({
@@ -1140,10 +1403,11 @@ describe("IssueDiscovery", () => {
         makeCandidate("org/repo1", "normal"),
         makeCandidate("org/repo2", "normal"),
       ];
-      mockFetchIssuesFromKnownRepos.mockResolvedValue({
+      mockFetchWarmRepoCandidates.mockResolvedValue({
         candidates,
         allReposFailed: false,
         rateLimitHit: false,
+        vetError: null,
       });
 
       const discovery = makeDiscovery({
@@ -1160,10 +1424,11 @@ describe("IssueDiscovery", () => {
       const normal = makeCandidate("org/normal", "normal", "approve", 95);
 
       // Phase 0 returns merged
-      mockFetchIssuesFromKnownRepos.mockResolvedValueOnce({
+      mockFetchWarmRepoCandidates.mockResolvedValueOnce({
         candidates: [merged],
         allReposFailed: false,
         rateLimitHit: false,
+        vetError: null,
       });
       // Phase 1 returns starred
       mockFetchIssuesFromKnownRepos.mockResolvedValueOnce({
@@ -1258,10 +1523,11 @@ describe("IssueDiscovery", () => {
     it("filterIssues excludes repos in aiPolicyBlocklist", async () => {
       // Provide a candidate so the search doesn't throw
       const c = makeCandidate("allowed/repo", "merged_pr");
-      mockFetchIssuesFromKnownRepos.mockResolvedValue({
+      mockFetchWarmRepoCandidates.mockResolvedValue({
         candidates: [c],
         allReposFailed: false,
         rateLimitHit: false,
+        vetError: null,
       });
 
       const discovery = makeDiscovery(
@@ -1274,6 +1540,64 @@ describe("IssueDiscovery", () => {
       // and candidates from non-blocked repos are returned
       expect(candidates.length).toBeGreaterThanOrEqual(1);
     });
+
+    it("filterIssues does not treat a repo known only through an open PR as low-scoring, even at or below the threshold", async () => {
+      // One PR closed without merge plus a new open PR can score a repo at
+      // the threshold; adding open-PR repos to the low-scoring set removed
+      // the repo the user is contributing to from every phase.
+      const discovery = makeDiscovery(
+        {
+          getReposWithOpenPRs: vi.fn(() => ["org/open"]),
+          getRepoScore: vi.fn((repo: string) =>
+            repo === "org/open" ? 2 : null,
+          ),
+        },
+        { minRepoScoreThreshold: 2 },
+      );
+
+      await expect(discovery.searchIssues({ maxResults: 5 })).rejects.toThrow(
+        "No issue candidates found",
+      );
+
+      // Low-scoring repos are derived from the merged and starred lists only;
+      // the Phase 0 filter lets the open-PR repo's issue through.
+      const filterIssuesPhase0 = mockFetchWarmRepoCandidates.mock
+        .calls[0]![4] as (items: GitHubSearchItem[]) => GitHubSearchItem[];
+      const item: GitHubSearchItem = {
+        html_url: "https://github.com/org/open/issues/1",
+        repository_url: "https://api.github.com/repos/org/open",
+        updated_at: "2026-03-01T00:00:00Z",
+      };
+      expect(filterIssuesPhase0([item])).toEqual([item]);
+    });
+
+    it("filterIssues still excludes a low-scoring repo known through a merged PR", async () => {
+      const discovery = makeDiscovery(
+        {
+          getReposWithMergedPRs: vi.fn(() => ["org/low"]),
+          getRepoScore: vi.fn((repo: string) =>
+            repo === "org/low" ? 2 : null,
+          ),
+        },
+        { minRepoScoreThreshold: 2 },
+      );
+
+      await expect(discovery.searchIssues({ maxResults: 5 })).rejects.toThrow(
+        "No issue candidates found",
+      );
+
+      const filterIssuesPhase0 = mockFetchWarmRepoCandidates.mock
+        .calls[0]![4] as (items: GitHubSearchItem[]) => GitHubSearchItem[];
+      expect(
+        filterIssuesPhase0([
+          {
+            html_url: "https://github.com/org/low/issues/1",
+            repository_url: "https://api.github.com/repos/org/low",
+            updated_at: "2026-03-01T00:00:00Z",
+          },
+        ]),
+      ).toEqual([]);
+    });
   });
 
   describe("searchIssues — error handling", () => {
@@ -1282,6 +1606,44 @@ describe("IssueDiscovery", () => {
       await expect(discovery.searchIssues({ maxResults: 5 })).rejects.toThrow(
         "No issue candidates found",
       );
+    });
+
+    it("reports Phase 0's vet error in the zero-candidate ValidationError", async () => {
+      mockFetchWarmRepoCandidates.mockResolvedValue({
+        candidates: [],
+        allReposFailed: false,
+        rateLimitHit: false,
+        vetError: "boom",
+      });
+      const discovery = makeDiscovery({
+        getReposWithMergedPRs: vi.fn(() => ["org/merged-repo"]),
+      });
+
+      await expect(discovery.searchIssues({ maxResults: 5 })).rejects.toThrow(
+        "Phase 0 (merged-PR repos): boom",
+      );
+    });
+
+    it("reports all merged-PR repo fetches failing ahead of a vet error", async () => {
+      mockFetchWarmRepoCandidates.mockResolvedValue({
+        candidates: [],
+        allReposFailed: true,
+        rateLimitHit: false,
+        vetError: "boom",
+      });
+      const discovery = makeDiscovery({
+        getReposWithMergedPRs: vi.fn(() => ["org/merged-repo"]),
+      });
+
+      const err = await discovery.searchIssues({ maxResults: 5 }).then(
+        () => null,
+        (e: Error) => e,
+      );
+
+      expect(err?.message).toContain(
+        "Phase 0 (merged-PR repos): All merged-PR repo fetches failed",
+      );
+      expect(err?.message).not.toContain("boom");
     });
 
     it("attaches strategiesUsed to the zero-candidate ValidationError", async () => {
@@ -1322,10 +1684,11 @@ describe("IssueDiscovery", () => {
         { length: 15 },
         (_, i) => `org/affinity-${i}`,
       );
-      mockFetchIssuesFromKnownRepos.mockResolvedValue({
+      mockFetchWarmRepoCandidates.mockResolvedValue({
         candidates: affinityRepos.map((r) => makeCandidate(r, "merged_pr")),
         allReposFailed: false,
         rateLimitHit: false,
+        vetError: null,
       });
       vi.mocked(applyPerRepoCap).mockImplementation((c) => c);
 
@@ -1349,10 +1712,11 @@ describe("IssueDiscovery", () => {
       // the gate; in normal flow new-repo candidates only appear via the broad
       // phase itself.)
       const freshRepos = Array.from({ length: 15 }, (_, i) => `org/fresh-${i}`);
-      mockFetchIssuesFromKnownRepos.mockResolvedValue({
+      mockFetchWarmRepoCandidates.mockResolvedValue({
         candidates: freshRepos.map((r) => makeCandidate(r, "merged_pr")),
         allReposFailed: false,
         rateLimitHit: false,
+        vetError: null,
       });
       vi.mocked(applyPerRepoCap).mockImplementation((c) => c);
 
@@ -1372,10 +1736,11 @@ describe("IssueDiscovery", () => {
 
     it("does not report starred when every starred repo was already covered by Phase 0", async () => {
       const candidates = [makeCandidate("org/repo-0", "merged_pr")];
-      mockFetchIssuesFromKnownRepos.mockResolvedValue({
+      mockFetchWarmRepoCandidates.mockResolvedValue({
         candidates,
         allReposFailed: false,
         rateLimitHit: false,
+        vetError: null,
       });
       vi.mocked(applyPerRepoCap).mockImplementation((c) => c);
 
@@ -1401,10 +1766,11 @@ describe("IssueDiscovery", () => {
         makeCandidate("org/merged-1", "merged_pr"),
         makeCandidate("org/merged-2", "merged_pr"),
       ];
-      mockFetchIssuesFromKnownRepos.mockResolvedValue({
+      mockFetchWarmRepoCandidates.mockResolvedValue({
         candidates: phase0Candidates,
         allReposFailed: false,
         rateLimitHit: false,
+        vetError: null,
       });
       vi.mocked(applyPerRepoCap).mockImplementation((c) => c);
 
@@ -1424,10 +1790,11 @@ describe("IssueDiscovery", () => {
         makeCandidate("org/merged-1", "merged_pr"),
         makeCandidate("org/merged-2", "merged_pr"),
       ];
-      mockFetchIssuesFromKnownRepos.mockResolvedValue({
+      mockFetchWarmRepoCandidates.mockResolvedValue({
         candidates: phase0Candidates,
         allReposFailed: false,
         rateLimitHit: false,
+        vetError: null,
       });
       vi.mocked(applyPerRepoCap).mockImplementation((c) => c);
 
@@ -1451,10 +1818,11 @@ describe("IssueDiscovery", () => {
 
     it("skips delay when previous phases found 0 results", async () => {
       // No Phase 0/1 candidates, so Phase 2 should run without the broad delay
-      mockFetchIssuesFromKnownRepos.mockResolvedValue({
+      mockFetchWarmRepoCandidates.mockResolvedValue({
         candidates: [],
         allReposFailed: false,
         rateLimitHit: false,
+        vetError: null,
       });
 
       // Phase 2 returns candidates so we don't throw
@@ -1487,10 +1855,11 @@ describe("IssueDiscovery", () => {
       const candidates = Array.from({ length: 9 }, (_, i) =>
         makeCandidate(`org/clamp-${i}`, "merged_pr"),
       );
-      mockFetchIssuesFromKnownRepos.mockResolvedValue({
+      mockFetchWarmRepoCandidates.mockResolvedValue({
         candidates,
         allReposFailed: false,
         rateLimitHit: false,
+        vetError: null,
       });
       vi.mocked(applyPerRepoCap).mockImplementation((c) => c);
 
@@ -1509,10 +1878,11 @@ describe("IssueDiscovery", () => {
       const candidates = Array.from({ length: 20 }, (_, i) =>
         makeCandidate(`org/repo-${i}`, "merged_pr"),
       );
-      mockFetchIssuesFromKnownRepos.mockResolvedValue({
+      mockFetchWarmRepoCandidates.mockResolvedValue({
         candidates,
         allReposFailed: false,
         rateLimitHit: false,
+        vetError: null,
       });
       vi.mocked(applyPerRepoCap).mockImplementation((c) => c);
 
@@ -1539,10 +1909,11 @@ describe("IssueDiscovery", () => {
       // Phase 0 fills maxResults with skip-only candidates. The old
       // allCandidates.length gate would stop here with zero actionable
       // results; the viable-count gate must still run broad + maintained.
-      mockFetchIssuesFromKnownRepos.mockResolvedValue({
+      mockFetchWarmRepoCandidates.mockResolvedValue({
         candidates: skipCandidates(3),
         allReposFailed: false,
         rateLimitHit: false,
+        vetError: null,
       });
 
       const discovery = makeDiscovery({
@@ -1562,10 +1933,11 @@ describe("IssueDiscovery", () => {
 
     it("asks Phase 2 for the viable shortfall, not maxResults minus raw length", async () => {
       // 3 skips in allCandidates, 0 viable: remaining must be 3, not 0.
-      mockFetchIssuesFromKnownRepos.mockResolvedValue({
+      mockFetchWarmRepoCandidates.mockResolvedValue({
         candidates: skipCandidates(3),
         allReposFailed: false,
         rateLimitHit: false,
+        vetError: null,
       });
 
       const discovery = makeDiscovery({
@@ -1584,7 +1956,7 @@ describe("IssueDiscovery", () => {
     });
 
     it("still skips Phases 2/3 when viable candidates meet maxResults, and logs why (#266)", async () => {
-      mockFetchIssuesFromKnownRepos.mockResolvedValue({
+      mockFetchWarmRepoCandidates.mockResolvedValue({
         candidates: [
           makeCandidate("org/merged-0", "merged_pr", "approve"),
           makeCandidate("org/merged-1", "merged_pr", "approve"),
@@ -1592,6 +1964,7 @@ describe("IssueDiscovery", () => {
         ],
         allReposFailed: false,
         rateLimitHit: false,
+        vetError: null,
       });
 
       const discovery = makeDiscovery({
@@ -1621,10 +1994,11 @@ describe("IssueDiscovery", () => {
       // Phase 0 returns 3 merged_pr skips (highest searchPriority); the broad
       // phase finds 3 viable normal-priority candidates. The final maxResults
       // slice must return the viable ones, not the higher-priority skips.
-      mockFetchIssuesFromKnownRepos.mockResolvedValue({
+      mockFetchWarmRepoCandidates.mockResolvedValue({
         candidates: skipCandidates(3),
         allReposFailed: false,
         rateLimitHit: false,
+        vetError: null,
       });
       mockFilterVetAndScore.mockResolvedValueOnce({
         candidates: [
@@ -1769,18 +2143,21 @@ describe("IssueDiscovery", () => {
     function setup(
       found: Array<"merged_pr" | "starred"> = ["merged_pr", "starred"],
     ) {
-      mockFetchIssuesFromKnownRepos.mockImplementation(
-        async (...args: unknown[]) => {
-          const priority = args[5] as "merged_pr" | "starred";
-          return {
-            candidates: found.includes(priority)
-              ? [makeCandidate(`org/${priority}`, priority)]
-              : [],
-            allReposFailed: false,
-            rateLimitHit: false,
-          };
-        },
-      );
+      mockFetchWarmRepoCandidates.mockResolvedValue({
+        candidates: found.includes("merged_pr")
+          ? [makeCandidate("org/merged_pr", "merged_pr")]
+          : [],
+        allReposFailed: false,
+        rateLimitHit: false,
+        vetError: null,
+      });
+      mockFetchIssuesFromKnownRepos.mockResolvedValue({
+        candidates: found.includes("starred")
+          ? [makeCandidate("org/starred", "starred")]
+          : [],
+        allReposFailed: false,
+        rateLimitHit: false,
+      });
       mockSearchAcrossLanguagesAndLabels.mockResolvedValue([broadItem]);
       mockFilterVetAndScore.mockResolvedValue({
         candidates: [makeCandidate("broad/repo", "normal")],

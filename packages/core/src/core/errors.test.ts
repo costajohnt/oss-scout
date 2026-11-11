@@ -171,6 +171,24 @@ describe("isRateLimitError", () => {
     });
     expect(isRateLimitError(err)).toBe(false);
   });
+
+  it("classifies the error @octokit/plugin-throttling throws for a GraphQL rate limit (errors under .data)", () => {
+    // The plugin rethrows the response body as `.data`: no top-level
+    // `errors`, no `status`.
+    const err = Object.assign(new Error("GraphQL Rate Limit Exceeded"), {
+      response: { status: 200, headers: {}, data: {} },
+      data: { data: { r0: null }, errors: [{ type: "RATE_LIMITED" }] },
+    });
+    expect(isRateLimitError(err)).toBe(true);
+    expect(() => rethrowIfFatal(err)).toThrow();
+  });
+
+  it("does not treat an error whose .data.errors has only other types as a rate limit", () => {
+    const err = Object.assign(new Error("Could not resolve"), {
+      data: { data: { r0: null }, errors: [{ type: "NOT_FOUND" }] },
+    });
+    expect(isRateLimitError(err)).toBe(false);
+  });
 });
 
 describe("resolveErrorCode", () => {

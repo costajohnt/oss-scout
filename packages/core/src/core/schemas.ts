@@ -358,10 +358,11 @@ export const ScoutStateSchema = z.looseObject({
    * consumer wraps at use time so a shrinking language list never needs
    * clamping here).
    *
-   * `phase0Offset`, `starredOffset` and `maintainedOffset` do the same for the
-   * repo lists those phases cap per run (#324, #333): each run searches the
-   * next window of the list instead of always the first N, so every
-   * contributed/starred repo gets searched within a few runs.
+   * `starredOffset` and `maintainedOffset` do the same for the repo lists
+   * those phases cap per run (#324, #333): each run searches the next window
+   * of the list instead of always the first N, so every starred repo gets
+   * searched within a few runs. `phase0Offset` is still advanced but no
+   * longer read: the merged phase reads every contributed repo each run.
    *
    * `strategyOffset` is the round-robin cursor (#336): a position in
    * CONCRETE_STRATEGIES. A search runs the first usable strategy from there,

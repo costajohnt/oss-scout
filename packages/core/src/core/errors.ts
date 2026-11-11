@@ -71,14 +71,23 @@ export function isAuthError(error: unknown): boolean {
 
 export function isRateLimitError(error: unknown): boolean {
   // GraphQL's primary limit arrives as HTTP 200 with errors[].type
-  // RATE_LIMITED; @octokit/graphql throws it with no status at all.
-  const gqlErrors = (error as { errors?: Array<{ type?: string }> } | null)
-    ?.errors;
-  if (
-    Array.isArray(gqlErrors) &&
-    gqlErrors.some((e) => e?.type === "RATE_LIMITED")
-  ) {
-    return true;
+  // RATE_LIMITED; @octokit/graphql throws it with no status at all. The
+  // throttling plugin intercepts that response first and, once its retries
+  // run out, throws a plain Error carrying the response body as `.data`, so
+  // the errors array sits one level down.
+  const e = error as {
+    errors?: unknown;
+    data?: { errors?: unknown } | null;
+  } | null;
+  for (const gqlErrors of [e?.errors, e?.data?.errors]) {
+    if (
+      Array.isArray(gqlErrors) &&
+      gqlErrors.some(
+        (g: { type?: string } | null) => g?.type === "RATE_LIMITED",
+      )
+    ) {
+      return true;
+    }
   }
   const status = getHttpStatusCode(error);
   if (status === 429) return true;

@@ -61,13 +61,49 @@ const { fakeOctokit } = vi.hoisted(() => {
         return { data: { total_count: 1, items: [issueItem] } };
       }),
     },
-    // GraphQL boundary. Routes by operation-name substring so all three
-    // GraphQL shapes the pipeline issues answer correctly:
+    // GraphQL boundary. Routes by operation-name substring so every
+    // GraphQL shape the pipeline issues answers correctly:
+    //   - warmRepoIssues      → merged-phase listing of warm repos (Phase 0)
     //   - searchIssuesBroad   → broad issue search (Phase 2 / Phase 3 fallback)
     //   - batchMergedPRCounts → merged-PR affinity prefetch
+    //   - repoMergeStats      → project-health merge stats
     //   - batchIssueCores     → per-issue core prefetch used by the vetter
     graphql: vi.fn(
       async (query: string, variables: Record<string, unknown>) => {
+        if (typeof query === "string" && query.includes("warmRepoIssues")) {
+          // One open, unassigned, PR-less issue in the canned repo; any other
+          // warm repo resolves with no issues.
+          const res: Record<string, unknown> = {};
+          for (const key of Object.keys(variables ?? {})) {
+            const m = key.match(/^o(\d+)$/);
+            if (!m) continue;
+            const repo = `${variables[`o${m[1]}`]}/${variables[`n${m[1]}`]}`;
+            res[`r${m[1]}`] = {
+              nameWithOwner: repo,
+              isArchived: false,
+              issues: {
+                nodes:
+                  repo === "test-org/test-repo"
+                    ? [
+                        {
+                          url: issueItem.html_url,
+                          title: issueItem.title,
+                          createdAt: issueItem.created_at,
+                          updatedAt: issueItem.updated_at,
+                          authorAssociation: "MEMBER",
+                          viewerDidAuthor: false,
+                          assignees: { totalCount: 0 },
+                          comments: { totalCount: 0 },
+                          labels: { nodes: issueItem.labels },
+                          closedByPullRequestsReferences: { totalCount: 0 },
+                        },
+                      ]
+                    : [],
+              },
+            };
+          }
+          return res;
+        }
         if (typeof query === "string" && query.includes("searchIssuesBroad")) {
           return {
             search: {
@@ -213,7 +249,7 @@ vi.mock("../core/logger.js", () => ({
 const { OssScout } = await import("../scout.js");
 const { ScoutStateSchema } = await import("../core/schemas.js");
 
-function freshScout() {
+function freshScout(extraState: Record<string, unknown> = {}) {
   const state = ScoutStateSchema.parse({
     version: 1,
     preferences: {
@@ -224,6 +260,7 @@ function freshScout() {
       minStars: 0,
       minRepoScoreThreshold: 1,
     },
+    ...extraState,
   });
   return new OssScout("test-token", state);
 }
@@ -278,6 +315,47 @@ describe("search pipeline e2e (#161)", () => {
 
     // The GraphQL boundary was exercised for the broad search.
     expect(fakeOctokit.graphql).toHaveBeenCalled();
+  });
+
+  it("reads merged-PR repos through the warm-repo GraphQL listing, not a REST issue walk", async () => {
+    // A merged PR in the canned repo makes it a warm repo, so the merged
+    // phase (Phase 0) runs for real: GraphQL listing, ranking, then the real
+    // vetter on the listed issue.
+    const scout = freshScout({
+      mergedPRs: [
+        {
+          url: "https://github.com/test-org/test-repo/pull/3",
+          title: "Earlier fix",
+          mergedAt: "2026-01-01T00:00:00Z",
+        },
+      ],
+    });
+
+    const result = await scout.search({
+      maxResults: 5,
+      strategies: ["merged"],
+      interPhaseDelayMs: 0,
+      broadPhaseDelayMs: 0,
+    });
+
+    expect(result.strategiesUsed).toEqual(["merged"]);
+    expect(result.candidates).toHaveLength(1);
+    const candidate = result.candidates[0];
+    expect(candidate.issue.repo).toBe("test-org/test-repo");
+    expect(candidate.issue.number).toBe(7);
+    expect(candidate.searchPriority).toBe("merged_pr");
+    expect(candidate.vettingResult.checks.noExistingPR).toBe(true);
+    expect(candidate.projectHealth.checkFailed).toBeFalsy();
+
+    // One batched listing query, with the repo passed as variables.
+    const warmCalls = fakeOctokit.graphql.mock.calls.filter(
+      ([query]: [string]) =>
+        typeof query === "string" && query.includes("warmRepoIssues"),
+    );
+    expect(warmCalls).toHaveLength(1);
+    expect(warmCalls[0][1]).toEqual({ o0: "test-org", n0: "test-repo" });
+    // The merged phase no longer pages each repo's issues over REST.
+    expect(fakeOctokit.issues.listForRepo).not.toHaveBeenCalled();
   });
 
   it("persists vetted results via saveResults (the command-layer bookkeeping)", async () => {
