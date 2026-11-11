@@ -105,6 +105,7 @@ const mockFetchWarmRepoCandidates = vi.fn().mockResolvedValue({
   candidates: [],
   allReposFailed: false,
   rateLimitHit: false,
+  vetError: null,
 });
 
 /** Phase 1 (starred repos) still walks the REST list in search-phases.ts. */
@@ -290,6 +291,7 @@ describe("IssueDiscovery", () => {
       candidates: [],
       allReposFailed: false,
       rateLimitHit: false,
+      vetError: null,
     });
     mockFetchIssuesFromKnownRepos.mockResolvedValue({
       candidates: [],
@@ -322,6 +324,7 @@ describe("IssueDiscovery", () => {
         candidates: [c],
         allReposFailed: false,
         rateLimitHit: false,
+        vetError: null,
       });
 
       const discovery = makeDiscovery({
@@ -349,6 +352,7 @@ describe("IssueDiscovery", () => {
         candidates: [c],
         allReposFailed: false,
         rateLimitHit: false,
+        vetError: null,
       });
 
       const discovery = makeDiscovery({
@@ -397,6 +401,7 @@ describe("IssueDiscovery", () => {
         candidates: [c],
         allReposFailed: false,
         rateLimitHit: false,
+        vetError: null,
       });
 
       const discovery = makeDiscovery({
@@ -421,6 +426,7 @@ describe("IssueDiscovery", () => {
         candidates: [c],
         allReposFailed: false,
         rateLimitHit: false,
+        vetError: null,
       });
 
       const discovery = makeDiscovery({
@@ -443,6 +449,7 @@ describe("IssueDiscovery", () => {
         candidates: [makeCandidate("org/merged-0", "merged_pr")],
         allReposFailed: false,
         rateLimitHit: false,
+        vetError: null,
       });
       const merged = Array.from({ length: 8 }, (_, i) => `org/merged-${i}`);
       const open = Array.from({ length: 8 }, (_, i) => `org/open-${i}`);
@@ -470,6 +477,7 @@ describe("IssueDiscovery", () => {
         candidates: [makeCandidate("org/merged-0", "merged_pr")],
         allReposFailed: false,
         rateLimitHit: false,
+        vetError: null,
       });
       const merged = Array.from({ length: 150 }, (_, i) => `org/merged-${i}`);
       const open = Array.from({ length: 100 }, (_, i) => `org/open-${i}`);
@@ -493,6 +501,7 @@ describe("IssueDiscovery", () => {
         candidates: [makeCandidate("org/merged-repo", "merged_pr")],
         allReposFailed: false,
         rateLimitHit: false,
+        vetError: null,
       });
       const getRepoScore = vi.fn((repo: string) =>
         repo === "org/merged-repo" ? 7 : null,
@@ -536,6 +545,7 @@ describe("IssueDiscovery", () => {
           ),
           allReposFailed: false,
           rateLimitHit: false,
+          vetError: null,
         }),
       );
       mockFetchIssuesFromKnownRepos.mockResolvedValue({
@@ -576,6 +586,7 @@ describe("IssueDiscovery", () => {
           ),
           allReposFailed: false,
           rateLimitHit: false,
+          vetError: null,
         }),
       );
       mockFetchIssuesFromKnownRepos.mockResolvedValue({
@@ -598,6 +609,95 @@ describe("IssueDiscovery", () => {
       expect(phase1Call).toBeDefined();
     });
 
+    it.each([
+      [1, 1],
+      [2, 1],
+    ])(
+      "Phase 0's cap for maxResults %i is %i when another strategy can run",
+      async (maxResults, cap) => {
+        // ceil(1 * 0.8) = 1 and maxResults - 1 = 0: the floor keeps Phase 0
+        // from being asked for nothing.
+        mockFetchWarmRepoCandidates.mockImplementation(
+          async (
+            _octokit: unknown,
+            _vetter: unknown,
+            _repos: unknown,
+            reqMax: number,
+          ) => ({
+            candidates: Array.from({ length: reqMax }, (_, i) =>
+              makeCandidate(`org/merged-${i}`, "merged_pr"),
+            ),
+            allReposFailed: false,
+            rateLimitHit: false,
+            vetError: null,
+          }),
+        );
+        mockFetchIssuesFromKnownRepos.mockResolvedValue({
+          candidates: [makeCandidate("org/starred-repo", "starred")],
+          allReposFailed: false,
+          rateLimitHit: false,
+        });
+
+        const discovery = makeDiscovery({
+          getReposWithMergedPRs: vi.fn(() => ["org/merged-repo"]),
+          getStarredRepos: vi.fn(() => ["org/starred-repo"]),
+        });
+
+        await discovery.searchIssues({ maxResults });
+
+        expect(mockFetchWarmRepoCandidates.mock.calls[0][3]).toBe(cap);
+      },
+    );
+
+    describe("the slot reserved for other strategies (--full, strategies merged+starred, maxResults 3)", () => {
+      function setup(starred: string[]) {
+        mockFetchWarmRepoCandidates.mockImplementation(
+          async (
+            _octokit: unknown,
+            _vetter: unknown,
+            _repos: unknown,
+            reqMax: number,
+          ) => ({
+            candidates: Array.from({ length: reqMax }, (_, i) =>
+              makeCandidate(`org/merged-${i}`, "merged_pr"),
+            ),
+            allReposFailed: false,
+            rateLimitHit: false,
+            vetError: null,
+          }),
+        );
+        return makeDiscovery({
+          getReposWithMergedPRs: vi.fn(() => ["org/contributed"]),
+          getStarredRepos: vi.fn(() => starred),
+        });
+      }
+
+      it("is not reserved when every starred repo is also a contributed repo: Phase 0 is asked for 3", async () => {
+        // The starred phase drops Phase 0's repos before windowing, so it has
+        // nothing to search and cannot use a reserved slot.
+        const discovery = setup(["org/contributed"]);
+
+        await discovery.searchIssues({
+          maxResults: 3,
+          strategies: ["merged", "starred"],
+        });
+
+        expect(mockFetchWarmRepoCandidates.mock.calls[0][3]).toBe(3);
+        expect(mockFetchIssuesFromKnownRepos).not.toHaveBeenCalled();
+      });
+
+      it("is reserved when a starred repo is not a contributed repo: Phase 0 is asked for 2", async () => {
+        const discovery = setup(["org/contributed", "org/starred-only"]);
+
+        await discovery.searchIssues({
+          maxResults: 3,
+          strategies: ["merged", "starred"],
+        });
+
+        expect(mockFetchWarmRepoCandidates.mock.calls[0][3]).toBe(2);
+      });
+    });
+
     it("does NOT cap Phase 0 when no other strategy can run (no under-fill)", async () => {
       // A contributed-only user (no starred repos; broad/maintained disabled)
       // must still get the full budget from Phase 0 — the cap only applies
@@ -607,6 +707,7 @@ describe("IssueDiscovery", () => {
         candidates: [c],
         allReposFailed: false,
         rateLimitHit: false,
+        vetError: null,
       });
 
       const discovery = makeDiscovery(
@@ -630,6 +731,7 @@ describe("IssueDiscovery", () => {
         candidates: [c],
         allReposFailed: false,
         rateLimitHit: false,
+        vetError: null,
       });
 
       const discovery = makeDiscovery({
@@ -988,6 +1090,7 @@ describe("IssueDiscovery", () => {
         candidates: [c],
         allReposFailed: false,
         rateLimitHit: false,
+        vetError: null,
       });
 
       const discovery = makeDiscovery({
@@ -1098,6 +1201,7 @@ describe("IssueDiscovery", () => {
         candidates: [c],
         allReposFailed: false,
         rateLimitHit: false,
+        vetError: null,
       });
 
       const discovery = makeDiscovery({
@@ -1128,6 +1232,7 @@ describe("IssueDiscovery", () => {
         candidates: [makeCandidate("org/merged", "merged_pr")],
         allReposFailed: false,
         rateLimitHit: false,
+        vetError: null,
       });
 
       const discovery = makeDiscovery({
@@ -1161,6 +1266,7 @@ describe("IssueDiscovery", () => {
         candidates: [makeCandidate("org/merged", "merged_pr")],
         allReposFailed: false,
         rateLimitHit: false,
+        vetError: null,
       });
 
       const discovery = makeDiscovery({
@@ -1201,6 +1307,7 @@ describe("IssueDiscovery", () => {
         candidates: [makeCandidate("org/merged", "merged_pr")],
         allReposFailed: false,
         rateLimitHit: false,
+        vetError: null,
       });
 
       const discovery = makeDiscovery({
@@ -1277,6 +1384,7 @@ describe("IssueDiscovery", () => {
         candidates: [c],
         allReposFailed: false,
         rateLimitHit: false,
+        vetError: null,
       });
 
       const discovery = makeDiscovery({
@@ -1299,6 +1407,7 @@ describe("IssueDiscovery", () => {
         candidates,
         allReposFailed: false,
         rateLimitHit: false,
+        vetError: null,
       });
 
       const discovery = makeDiscovery({
@@ -1319,6 +1428,7 @@ describe("IssueDiscovery", () => {
         candidates: [merged],
         allReposFailed: false,
         rateLimitHit: false,
+        vetError: null,
       });
       // Phase 1 returns starred
       mockFetchIssuesFromKnownRepos.mockResolvedValueOnce({
@@ -1417,6 +1527,7 @@ describe("IssueDiscovery", () => {
         candidates: [c],
         allReposFailed: false,
         rateLimitHit: false,
+        vetError: null,
       });
 
       const discovery = makeDiscovery(
@@ -1430,12 +1541,15 @@ describe("IssueDiscovery", () => {
       expect(candidates.length).toBeGreaterThanOrEqual(1);
     });
 
-    it("filterIssues excludes a low-scoring repo known only through an open PR", async () => {
+    it("filterIssues does not treat a repo known only through an open PR as low-scoring, even at or below the threshold", async () => {
+      // One PR closed without merge plus a new open PR can score a repo at
+      // the threshold; adding open-PR repos to the low-scoring set removed
+      // the repo the user is contributing to from every phase.
       const discovery = makeDiscovery(
         {
-          getReposWithOpenPRs: vi.fn(() => ["org/low"]),
+          getReposWithOpenPRs: vi.fn(() => ["org/open"]),
           getRepoScore: vi.fn((repo: string) =>
-            repo === "org/low" ? 1 : null,
+            repo === "org/open" ? 2 : null,
           ),
         },
         { minRepoScoreThreshold: 2 },
@@ -1445,9 +1559,33 @@ describe("IssueDiscovery", () => {
         "No issue candidates found",
       );
 
-      // The Phase 0 filter is handed to the warm-repo phase; apply it to an
-      // issue from the open-PR repo. Low-scoring repos are derived from the
-      // merged, open-PR and starred lists.
+      // Low-scoring repos are derived from the merged and starred lists only;
+      // the Phase 0 filter lets the open-PR repo's issue through.
+      const filterIssuesPhase0 = mockFetchWarmRepoCandidates.mock
+        .calls[0]![4] as (items: GitHubSearchItem[]) => GitHubSearchItem[];
+      const item: GitHubSearchItem = {
+        html_url: "https://github.com/org/open/issues/1",
+        repository_url: "https://api.github.com/repos/org/open",
+        updated_at: "2026-03-01T00:00:00Z",
+      };
+      expect(filterIssuesPhase0([item])).toEqual([item]);
+    });
+
+    it("filterIssues still excludes a low-scoring repo known through a merged PR", async () => {
+      const discovery = makeDiscovery(
+        {
+          getReposWithMergedPRs: vi.fn(() => ["org/low"]),
+          getRepoScore: vi.fn((repo: string) =>
+            repo === "org/low" ? 2 : null,
+          ),
+        },
+        { minRepoScoreThreshold: 2 },
+      );
+
+      await expect(discovery.searchIssues({ maxResults: 5 })).rejects.toThrow(
+        "No issue candidates found",
+      );
+
       const filterIssuesPhase0 = mockFetchWarmRepoCandidates.mock
         .calls[0]![4] as (items: GitHubSearchItem[]) => GitHubSearchItem[];
       expect(
@@ -1468,6 +1606,44 @@ describe("IssueDiscovery", () => {
       await expect(discovery.searchIssues({ maxResults: 5 })).rejects.toThrow(
         "No issue candidates found",
       );
+    });
+
+    it("reports Phase 0's vet error in the zero-candidate ValidationError", async () => {
+      mockFetchWarmRepoCandidates.mockResolvedValue({
+        candidates: [],
+        allReposFailed: false,
+        rateLimitHit: false,
+        vetError: "boom",
+      });
+      const discovery = makeDiscovery({
+        getReposWithMergedPRs: vi.fn(() => ["org/merged-repo"]),
+      });
+
+      await expect(discovery.searchIssues({ maxResults: 5 })).rejects.toThrow(
+        "Phase 0 (merged-PR repos): boom",
+      );
+    });
+
+    it("reports all merged-PR repo fetches failing ahead of a vet error", async () => {
+      mockFetchWarmRepoCandidates.mockResolvedValue({
+        candidates: [],
+        allReposFailed: true,
+        rateLimitHit: false,
+        vetError: "boom",
+      });
+      const discovery = makeDiscovery({
+        getReposWithMergedPRs: vi.fn(() => ["org/merged-repo"]),
+      });
+
+      const err = await discovery.searchIssues({ maxResults: 5 }).then(
+        () => null,
+        (e: Error) => e,
+      );
+
+      expect(err?.message).toContain(
+        "Phase 0 (merged-PR repos): All merged-PR repo fetches failed",
+      );
+      expect(err?.message).not.toContain("boom");
     });
 
     it("attaches strategiesUsed to the zero-candidate ValidationError", async () => {
@@ -1512,6 +1688,7 @@ describe("IssueDiscovery", () => {
         candidates: affinityRepos.map((r) => makeCandidate(r, "merged_pr")),
         allReposFailed: false,
         rateLimitHit: false,
+        vetError: null,
       });
       vi.mocked(applyPerRepoCap).mockImplementation((c) => c);
 
@@ -1539,6 +1716,7 @@ describe("IssueDiscovery", () => {
         candidates: freshRepos.map((r) => makeCandidate(r, "merged_pr")),
         allReposFailed: false,
         rateLimitHit: false,
+        vetError: null,
       });
       vi.mocked(applyPerRepoCap).mockImplementation((c) => c);
 
@@ -1562,6 +1740,7 @@ describe("IssueDiscovery", () => {
         candidates,
         allReposFailed: false,
         rateLimitHit: false,
+        vetError: null,
       });
       vi.mocked(applyPerRepoCap).mockImplementation((c) => c);
 
@@ -1591,6 +1770,7 @@ describe("IssueDiscovery", () => {
         candidates: phase0Candidates,
         allReposFailed: false,
         rateLimitHit: false,
+        vetError: null,
       });
       vi.mocked(applyPerRepoCap).mockImplementation((c) => c);
 
@@ -1614,6 +1794,7 @@ describe("IssueDiscovery", () => {
         candidates: phase0Candidates,
         allReposFailed: false,
         rateLimitHit: false,
+        vetError: null,
       });
       vi.mocked(applyPerRepoCap).mockImplementation((c) => c);
 
@@ -1641,6 +1822,7 @@ describe("IssueDiscovery", () => {
         candidates: [],
         allReposFailed: false,
         rateLimitHit: false,
+        vetError: null,
       });
 
       // Phase 2 returns candidates so we don't throw
@@ -1677,6 +1859,7 @@ describe("IssueDiscovery", () => {
         candidates,
         allReposFailed: false,
         rateLimitHit: false,
+        vetError: null,
       });
       vi.mocked(applyPerRepoCap).mockImplementation((c) => c);
 
@@ -1699,6 +1882,7 @@ describe("IssueDiscovery", () => {
         candidates,
         allReposFailed: false,
         rateLimitHit: false,
+        vetError: null,
       });
       vi.mocked(applyPerRepoCap).mockImplementation((c) => c);
 
@@ -1729,6 +1913,7 @@ describe("IssueDiscovery", () => {
         candidates: skipCandidates(3),
         allReposFailed: false,
         rateLimitHit: false,
+        vetError: null,
       });
 
       const discovery = makeDiscovery({
@@ -1752,6 +1937,7 @@ describe("IssueDiscovery", () => {
         candidates: skipCandidates(3),
         allReposFailed: false,
         rateLimitHit: false,
+        vetError: null,
       });
 
       const discovery = makeDiscovery({
@@ -1778,6 +1964,7 @@ describe("IssueDiscovery", () => {
         ],
         allReposFailed: false,
         rateLimitHit: false,
+        vetError: null,
       });
 
       const discovery = makeDiscovery({
@@ -1811,6 +1998,7 @@ describe("IssueDiscovery", () => {
         candidates: skipCandidates(3),
         allReposFailed: false,
         rateLimitHit: false,
+        vetError: null,
       });
       mockFilterVetAndScore.mockResolvedValueOnce({
         candidates: [
@@ -1961,6 +2149,7 @@ describe("IssueDiscovery", () => {
           : [],
         allReposFailed: false,
         rateLimitHit: false,
+        vetError: null,
       });
       mockFetchIssuesFromKnownRepos.mockResolvedValue({
         candidates: found.includes("starred")

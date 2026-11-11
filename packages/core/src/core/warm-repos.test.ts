@@ -111,6 +111,18 @@ function resolvedBatch(repos: string[]) {
   return res;
 }
 
+/** The repos a query asked for, in alias order, read back from its variables. */
+function reposIn(variables: Record<string, unknown>): string[] {
+  return Object.keys(variables)
+    .filter((k) => /^o\d+$/.test(k))
+    .sort((a, b) => Number(a.slice(1)) - Number(b.slice(1)))
+    .map((k) => `${variables[k]}/${variables[`n${k.slice(1)}`]}`);
+}
+
+/** The index of the first repo in a batch of `org<i>/repo<i>` names. */
+const firstIndex = (batch: string[]): number =>
+  Number(batch[0].match(/\d+/)![0]);
+
 /** The skip-memory key `fetchWarmRepoCandidates` uses for an issue URL. */
 const skipKey = (url: string) => versionedCacheKey(`warm-skip:${url}`);
 
@@ -137,6 +149,7 @@ function warmIssue(over: Partial<WarmIssue> = {}): WarmIssue {
     title: "Fix the thing",
     labels: [],
     repo,
+    listedAs: repo,
     createdAt: daysAgo(10),
     maintainerFiled: false,
     commentCount: 3,
@@ -256,6 +269,7 @@ describe("listWarmRepoIssues", () => {
         title: "Dark mode",
         labels: [{ name: "bug" }, { name: "help wanted" }],
         repo: "owner/repo",
+        listedAs: "owner/repo",
         createdAt: "2026-06-10T00:00:00Z",
         maintainerFiled: true,
         commentCount: 2,
@@ -644,10 +658,12 @@ describe("listWarmRepoIssues", () => {
     ]);
 
     expect(graphql).toHaveBeenCalledTimes(4);
+    // Octokit already retried the batch with backoff; each solo re-read gets
+    // one attempt.
     expect(graphql.mock.calls.slice(1).map((c) => c[1])).toEqual([
-      { o0: "a", n0: "one" },
-      { o0: "b", n0: "two" },
-      { o0: "c", n0: "three" },
+      { o0: "a", n0: "one", request: { retries: 0 } },
+      { o0: "b", n0: "two", request: { retries: 0 } },
+      { o0: "c", n0: "three", request: { retries: 0 } },
     ]);
     expect(result.items.map((i) => i.repo)).toEqual(["a/one", "c/three"]);
     expect(result.failedRepos).toBe(1);
@@ -760,6 +776,217 @@ describe("listWarmRepoIssues", () => {
     expect(items[0].repository_url).toBe(
       "https://api.github.com/repos/new/name",
     );
+  });
+
+  it("sets listedAs to the input name and repo to nameWithOwner when they differ", async () => {
+    const graphql = vi.fn().mockResolvedValue({
+      r0: repoNode(
+        [issueNode({ url: "https://github.com/new/name/issues/1" })],
+        { nameWithOwner: "new/name" },
+      ),
+    });
+
+    const { items } = await listWarmRepoIssues(makeOctokit(graphql), [
+      "old/name",
+    ]);
+
+    expect(items).toHaveLength(1);
+    expect(items[0].listedAs).toBe("old/name");
+    expect(items[0].repo).toBe("new/name");
+    expect(items[0].repository_url).toBe(
+      "https://api.github.com/repos/new/name",
+    );
+  });
+
+  it("turns off octokit retries only for the solo re-reads of a batch that threw", async () => {
+    // Batch 1 (org0-org7) throws outright; batch 2 (org8, org9) resolves with
+    // org9 nulled out, so both kinds of solo re-read happen in one walk.
+    const repos = Array.from({ length: 10 }, (_, i) => `org${i}/repo${i}`);
+    let call = 0;
+    const graphql = vi.fn(
+      async (_q: string, variables: Record<string, string>) => {
+        call++;
+        if (call === 1) throw new Error("fetch failed");
+        const batch = reposIn(variables);
+        const res = resolvedBatch(batch);
+        if (batch.length === 2) res.r1 = null;
+        return res;
+      },
+    );
+
+    const result = await listWarmRepoIssues(makeOctokit(graphql), repos);
+
+    // Batch 1, 8 solo re-reads, batch 2, 1 solo re-read.
+    expect(graphql).toHaveBeenCalledTimes(11);
+    // The first read of a batch keeps octokit's retries.
+    expect(graphql.mock.calls[0][1]).toMatchObject({ o0: "org0", o7: "org7" });
+    expect(graphql.mock.calls[0][1]).not.toHaveProperty("request");
+    expect(graphql.mock.calls[9][1]).toMatchObject({ o0: "org8", o1: "org9" });
+    expect(graphql.mock.calls[9][1]).not.toHaveProperty("request");
+    // Solo re-reads of the batch that threw get one attempt each.
+    for (let i = 0; i < 8; i++) {
+      expect(graphql.mock.calls[1 + i][1]).toEqual({
+        o0: `org${i}`,
+        n0: `repo${i}`,
+        request: { retries: 0 },
+      });
+    }
+    // The solo re-read of a resource-limit casualty keeps the retries.
+    expect(graphql.mock.calls[10][1]).toEqual({ o0: "org9", n0: "repo9" });
+    expect(graphql.mock.calls[10][1]).not.toHaveProperty("request");
+    expect(result.items).toHaveLength(10);
+    expect(result.failedRepos).toBe(0);
+  });
+
+  it("does not count a batch that resolved with nothing takeable as dead: null, NOT_FOUND, archived and empty batches in a row leave the walk running", async () => {
+    // Four batches of 8. Batch 1 resolves with every alias null, and so does
+    // every solo re-read; batch 2 is a partial-data error naming every alias
+    // NOT_FOUND; batch 3 resolves to archived and issue-less repos; batch 4
+    // has issues. Three batches without an item would stop a walk that keyed
+    // "alive" on items found.
+    const repos = Array.from({ length: 32 }, (_, i) => `org${i}/repo${i}`);
+    const graphql = vi.fn(
+      async (_q: string, variables: Record<string, string>) => {
+        const batch = reposIn(variables);
+        const n = firstIndex(batch);
+        const allNull = Object.fromEntries(
+          batch.map((_, j) => [`r${j}`, null]),
+        );
+        if (n < 8) return allNull;
+        if (n < 16) {
+          throw Object.assign(new Error("Could not resolve to a Repository"), {
+            data: allNull,
+            errors: batch.map((_, j) => ({
+              type: "NOT_FOUND",
+              path: [`r${j}`],
+            })),
+          });
+        }
+        if (n < 24) {
+          return Object.fromEntries(
+            batch.map((repo, j) => [
+              `r${j}`,
+              j % 2 === 0
+                ? repoNode([issueNode()], {
+                    nameWithOwner: repo,
+                    isArchived: true,
+                  })
+                : repoNode([], { nameWithOwner: repo }),
+            ]),
+          );
+        }
+        return resolvedBatch(batch);
+      },
+    );
+
+    const result = await listWarmRepoIssues(makeOctokit(graphql), repos);
+
+    // Batch 1 (1 + 8 solo re-reads), then batches 2, 3 and 4 once each.
+    expect(graphql).toHaveBeenCalledTimes(12);
+    expect(graphql.mock.calls.at(-1)![1]).toMatchObject({
+      o0: "org24",
+      o7: "org31",
+    });
+    expect(result.items.map((i) => i.repo)).toEqual(repos.slice(24));
+    // The 8 null solo re-reads and the 8 NOT_FOUND aliases.
+    expect(result.failedRepos).toBe(16);
+    expect(result.rateLimitHit).toBe(false);
+    expect(warn).not.toHaveBeenCalledWith(
+      "warm-repos",
+      expect.stringContaining("batches in a row"),
+    );
+  });
+
+  it("counts only the unvisited repos as failed when the walk stops: 20 repos with batches 1 and 2 dead -> 20 failed, batch 3 never queried", async () => {
+    // Batches of 8, 8 and 4; every query (batch and solo) throws.
+    const repos = Array.from({ length: 20 }, (_, i) => `org${i}/repo${i}`);
+    const graphql = vi.fn().mockRejectedValue(new Error("fetch failed"));
+
+    const result = await listWarmRepoIssues(makeOctokit(graphql), repos);
+
+    // Batch 1 (1 + 8 solo) and batch 2 (1 + 8 solo).
+    expect(graphql).toHaveBeenCalledTimes(18);
+    expect(graphql.mock.calls.map((c) => c[1])).not.toContainEqual(
+      expect.objectContaining({ o0: "org16" }),
+    );
+    expect(result.items).toEqual([]);
+    expect(result.failedRepos).toBe(20);
+    expect(result.rateLimitHit).toBe(false);
+  });
+
+  it("counts only the unvisited repos as failed when the walk stops: 9 repos with the 8-repo batch and the single-repo batch both dead -> 10 queries, 9 failed", async () => {
+    const repos = Array.from({ length: 9 }, (_, i) => `org${i}/repo${i}`);
+    const graphql = vi.fn().mockRejectedValue(new Error("fetch failed"));
+
+    const result = await listWarmRepoIssues(makeOctokit(graphql), repos);
+
+    // Batch 1 (1 + 8 solo) and the single-repo batch 2 (1, not re-read).
+    expect(graphql).toHaveBeenCalledTimes(10);
+    expect(graphql.mock.calls.at(-1)![1]).toEqual({ o0: "org8", n0: "repo8" });
+    expect(result.items).toEqual([]);
+    expect(result.failedRepos).toBe(9);
+    expect(warn).toHaveBeenCalledWith(
+      "warm-repos",
+      expect.stringContaining("2 batches in a row returned nothing"),
+    );
+  });
+
+  it("after a thrown batch, a solo re-read that resolves with a null alias counts the repo failed once and keeps the batch alive", async () => {
+    // Three batches of 8. Batch 1 throws and every solo re-read resolves with
+    // a null alias; batch 2 is dead (batch and solo re-reads throw); batch 3
+    // resolves. Were batch 1 dead, batch 2 would be the second dead batch and
+    // batch 3 would never be queried.
+    const repos = Array.from({ length: 24 }, (_, i) => `org${i}/repo${i}`);
+    const graphql = vi.fn(
+      async (_q: string, variables: Record<string, string>) => {
+        const batch = reposIn(variables);
+        const n = firstIndex(batch);
+        if (n < 8) {
+          if (batch.length > 1) throw new Error("fetch failed");
+          return { r0: null };
+        }
+        if (n < 16) throw new Error("fetch failed");
+        return resolvedBatch(batch);
+      },
+    );
+
+    const result = await listWarmRepoIssues(makeOctokit(graphql), repos);
+
+    // (1 + 8) + (1 + 8) + 1
+    expect(graphql).toHaveBeenCalledTimes(19);
+    expect(graphql.mock.calls.at(-1)![1]).toMatchObject({
+      o0: "org16",
+      o7: "org23",
+    });
+    expect(result.items.map((i) => i.repo)).toEqual(repos.slice(16));
+    // 8 null solo re-reads, counted once each, plus batch 2's 8.
+    expect(result.failedRepos).toBe(16);
+    expect(warn).not.toHaveBeenCalledWith(
+      "warm-repos",
+      expect.stringContaining("batches in a row"),
+    );
+  });
+
+  it("after a thrown batch, a rate limit on a solo re-read stops the walk, flags it, and does not count the unretried repos as failed", async () => {
+    const repos = Array.from({ length: 16 }, (_, i) => `org${i}/repo${i}`);
+    const graphql = vi
+      .fn()
+      // Batch 1 throws outright.
+      .mockRejectedValueOnce(new Error("fetch failed"))
+      // Solo re-read of org0 resolves; org1 hits the limit.
+      .mockResolvedValueOnce(resolvedBatch(["org0/repo0"]))
+      .mockRejectedValueOnce(
+        Object.assign(new Error("API rate limit exceeded"), { status: 429 }),
+      );
+
+    const result = await listWarmRepoIssues(makeOctokit(graphql), repos);
+
+    // org2-org7 are not re-read and batch 2 is never queried.
+    expect(graphql).toHaveBeenCalledTimes(3);
+    expect(graphql.mock.calls[2][1]).toMatchObject({ o0: "org1" });
+    expect(result.rateLimitHit).toBe(true);
+    expect(result.items.map((i) => i.repo)).toEqual(["org0/repo0"]);
+    expect(result.failedRepos).toBe(0);
   });
 
   it("lists each issue once when two input names resolve to the same repo", async () => {
@@ -942,6 +1169,41 @@ describe("rankWarmIssues", () => {
     ]);
   });
 
+  it("falls back to the score under listedAs when there is none under repo", () => {
+    // Same freshness band; the unknown repo is newer, so only the listedAs
+    // score puts the renamed repo first.
+    const renamed = warmIssue({
+      repo: "new/name",
+      listedAs: "old/name",
+      createdAt: daysAgo(12),
+    });
+    const unknown = warmIssue({
+      repo: "owner/unknown",
+      createdAt: daysAgo(11),
+    });
+    const score = (repo: string) => (repo === "old/name" ? 9 : null);
+    expect(
+      rankWarmIssues([unknown, renamed], score, NOW).map((i) => i.repo),
+    ).toEqual(["new/name", "owner/unknown"]);
+  });
+
+  it("prefers the score under repo over the one under listedAs", () => {
+    const renamed = warmIssue({
+      repo: "new/name",
+      listedAs: "old/name",
+      createdAt: daysAgo(12),
+    });
+    const unknown = warmIssue({
+      repo: "owner/unknown",
+      createdAt: daysAgo(11),
+    });
+    const score = (repo: string) =>
+      repo === "new/name" ? 9 : repo === "old/name" ? 1 : null;
+    expect(
+      rankWarmIssues([unknown, renamed], score, NOW).map((i) => i.repo),
+    ).toEqual(["new/name", "owner/unknown"]);
+  });
+
   it("treats a null repoScore as 5", () => {
     const unknown = warmIssue({ repo: "owner/unknown" });
     const four = warmIssue({ repo: "owner/four" });
@@ -1038,8 +1300,10 @@ describe("fetchWarmRepoCandidates", () => {
       noScore,
     );
 
-    expect(filterFn).toHaveBeenCalledTimes(1);
+    // Once under the current repo name, once under the name it was listed by.
+    expect(filterFn).toHaveBeenCalledTimes(2);
     expect(filterFn.mock.calls[0][0]).toHaveLength(3);
+    expect(filterFn.mock.calls[1][0]).toHaveLength(3);
     expect(vetIssuesParallel).toHaveBeenCalledTimes(1);
     expect(vetIssuesParallel.mock.calls[0][0]).toEqual([
       "https://github.com/owner/repo/issues/2",
@@ -1047,6 +1311,71 @@ describe("fetchWarmRepoCandidates", () => {
     expect(result.candidates.map((c) => c.issue.url)).toEqual([
       "https://github.com/owner/repo/issues/2",
     ]);
+  });
+
+  describe("a renamed repo (listed as old/name, now new/name)", () => {
+    /** An octokit that resolves "old/name" to a repo GitHub now calls "new/name". */
+    const renamedOctokit = () =>
+      makeOctokit(
+        vi.fn().mockResolvedValue({
+          r0: repoNode(
+            [issueNode({ url: "https://github.com/new/name/issues/1" })],
+            { nameWithOwner: "new/name" },
+          ),
+        }),
+      );
+
+    /** A filterFn that rejects issues whose repository_url names `name`. */
+    const rejecting = (name: string) => (items: GitHubSearchItem[]) =>
+      items.filter(
+        (i) => i.repository_url !== `https://api.github.com/repos/${name}`,
+      );
+
+    async function vettedUrls(
+      filterFn: (items: GitHubSearchItem[]) => GitHubSearchItem[],
+    ) {
+      const { vetter, vetIssuesParallel } = approvingVetter();
+      await fetchWarmRepoCandidates(
+        renamedOctokit(),
+        vetter,
+        ["old/name"],
+        5,
+        filterFn,
+        noScore,
+      );
+      return vetIssuesParallel.mock.calls.flatMap((c) => c[0] as string[]);
+    }
+
+    it("vets the issue when filterFn rejects neither name", async () => {
+      expect(await vettedUrls(rejecting("other/repo"))).toEqual([
+        "https://github.com/new/name/issues/1",
+      ]);
+    });
+
+    it("does not vet an issue that passes filterFn under its current name but not under the name it was listed by", async () => {
+      expect(await vettedUrls(rejecting("old/name"))).toEqual([]);
+    });
+
+    it("does not vet an issue that passes filterFn under the name it was listed by but not under its current name", async () => {
+      expect(await vettedUrls(rejecting("new/name"))).toEqual([]);
+    });
+  });
+
+  it("reports vetError null when vetting succeeds", async () => {
+    const octokit = listingOctokit({ "owner/repo": issuesIn("owner/repo", 1) });
+    const { vetter } = approvingVetter();
+
+    const result = await fetchWarmRepoCandidates(
+      octokit,
+      vetter,
+      ["owner/repo"],
+      5,
+      identity,
+      noScore,
+    );
+
+    expect(result.candidates).toHaveLength(1);
+    expect(result.vetError).toBeNull();
   });
 
   it("sends at most 3 URLs per repo to the vetter", async () => {
@@ -1297,6 +1626,7 @@ describe("fetchWarmRepoCandidates", () => {
       candidates: [],
       allReposFailed: false,
       rateLimitHit: true,
+      vetError: null,
     });
   });
 
@@ -1330,7 +1660,7 @@ describe("fetchWarmRepoCandidates", () => {
     ],
     ["any other throw", new Error("fetch failed"), false],
   ])(
-    "returns no candidates when the vetter fails with %s, rateLimitHit %s, allReposFailed still from the listing",
+    "returns no candidates and the message as vetError when the vetter fails with %s, rateLimitHit %s, allReposFailed still from the listing",
     async (_label, err, rateLimitHit) => {
       const octokit = listingOctokit({
         "owner/repo": issuesIn("owner/repo", 1),
@@ -1355,6 +1685,7 @@ describe("fetchWarmRepoCandidates", () => {
         candidates: [],
         allReposFailed: false,
         rateLimitHit,
+        vetError: err.message,
       });
       expect(warn).toHaveBeenCalledWith(
         "warm-repos",
@@ -1418,6 +1749,29 @@ describe("fetchWarmRepoCandidates", () => {
     ]);
   });
 
+  it("skip memory lasts 24h: an entry a minute short of it still hides the issue, one a minute past it does not", async () => {
+    const octokit = listingOctokit({ "owner/repo": issuesIn("owner/repo", 3) });
+    const { vetter, vetIssuesParallel } = approvingVetter();
+    const MINUTE = 60 * 1000;
+    const DAY = 24 * 60 * MINUTE;
+    rememberSkip("https://github.com/owner/repo/issues/1", DAY - MINUTE);
+    rememberSkip("https://github.com/owner/repo/issues/2", DAY + MINUTE);
+
+    await fetchWarmRepoCandidates(
+      octokit,
+      vetter,
+      ["owner/repo"],
+      5,
+      identity,
+      noScore,
+    );
+
+    expect(vetIssuesParallel.mock.calls[0][0]).toEqual([
+      "https://github.com/owner/repo/issues/2",
+      "https://github.com/owner/repo/issues/3",
+    ]);
+  });
+
   it("slices the result to maxResults, so skips do not consume result slots", async () => {
     const octokit = listingOctokit({
       "a/r": issuesIn("a/r", 2),
@@ -1471,6 +1825,7 @@ describe("fetchWarmRepoCandidates", () => {
       candidates: [],
       allReposFailed: false,
       rateLimitHit: false,
+      vetError: null,
     });
   });
 
@@ -1570,6 +1925,7 @@ describe("fetchWarmRepoCandidates", () => {
       candidates: [],
       allReposFailed: false,
       rateLimitHit: false,
+      vetError: null,
     });
   });
 });
