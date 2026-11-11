@@ -82,7 +82,9 @@ export function isRateLimitError(error: unknown): boolean {
   for (const gqlErrors of [e?.errors, e?.data?.errors]) {
     if (
       Array.isArray(gqlErrors) &&
-      gqlErrors.some((g: { type?: string } | null) => g?.type === "RATE_LIMITED")
+      gqlErrors.some(
+        (g: { type?: string } | null) => g?.type === "RATE_LIMITED",
+      )
     ) {
       return true;
     }
