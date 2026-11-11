@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.13.0](https://github.com/costajohnt/oss-scout/compare/core-v1.12.1...core-v1.13.0) (2026-11-11)
+
+
+### Features
+
+* **search:** watch every warm repo and rank issues before vetting ([#381](https://github.com/costajohnt/oss-scout/issues/381)) ([0f3ff47](https://github.com/costajohnt/oss-scout/commit/0f3ff4747692a2169e80a5167b70b03db6e13fa6))
+
 ## [1.12.1](https://github.com/costajohnt/oss-scout/compare/core-v1.12.0...core-v1.12.1) (2026-11-11)
 
 
