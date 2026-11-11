@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.12.1](https://github.com/costajohnt/oss-scout/compare/core-v1.12.0...core-v1.12.1) (2026-11-11)
+
+
+### Bug Fixes
+
+* **core:** audit 2026-10-30 findings (issue-title question filter, search budget wait, action version pin, atomic cache writes, control characters in titles) ([0be9dc6](https://github.com/costajohnt/oss-scout/commit/0be9dc63dc3baa9a7758e86d30642483f5b92dde))
+
 ## [1.12.0](https://github.com/costajohnt/oss-scout/compare/core-v1.11.0...core-v1.12.0) (2026-10-28)
 
 
