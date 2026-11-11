@@ -197,7 +197,7 @@ async function runPhase0(
     `Phase 0: Listing open issues in ${repos.length} merged-PR repos (no label filter)...`,
   );
 
-  const { candidates, allReposFailed, rateLimitHit } =
+  const { candidates, allReposFailed, rateLimitHit, vetError } =
     await fetchWarmRepoCandidates(
       octokit,
       vetter,
@@ -211,7 +211,7 @@ async function runPhase0(
 
   return {
     candidates,
-    error: allReposFailed ? "All merged-PR repo fetches failed" : null,
+    error: allReposFailed ? "All merged-PR repo fetches failed" : vetError,
     rateLimitHit,
   };
 }
@@ -843,8 +843,9 @@ export class IssueDiscovery {
 
     if (searchBudget <= 0) {
       // An exhausted REST Search bucket is no reason to abort the run:
-      // Phase 0/1 read the much larger Core API bucket and broad/maintained
-      // run on GraphQL (#284). The starred-phase gate below already skips the
+      // Phase 0 lists on GraphQL and vets on the much larger Core API bucket,
+      // Phase 1 reads the Core bucket, and broad/maintained run on GraphQL
+      // (#284). The starred-phase gate below already skips the
       // one budget-gated phase, and the tracker paces the remaining
       // merge-stat search calls until the quota resets.
       this.rateLimitWarning =
@@ -1085,7 +1086,7 @@ export class IssueDiscovery {
       const orgsPhaseEnabled = canRun.orgs && enabledStrategies.has("orgs");
       const otherStrategiesCanRun =
         orgsPhaseEnabled ||
-        (starredRepos.length > 0 && enabledStrategies.has("starred")) ||
+        (canRun.starred && enabledStrategies.has("starred")) ||
         enabledStrategies.has("broad") ||
         enabledStrategies.has("maintained");
 
@@ -1356,7 +1357,6 @@ export class IssueDiscovery {
     const lowScoring: string[] = [];
     const knownRepos = new Set([
       ...this.stateReader.getReposWithMergedPRs(),
-      ...this.stateReader.getReposWithOpenPRs(),
       ...this.stateReader.getStarredRepos(),
     ]);
     for (const repo of knownRepos) {

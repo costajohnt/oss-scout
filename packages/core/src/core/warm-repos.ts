@@ -62,7 +62,8 @@ const MAX_VETS = 60;
  * skipped issue that did not make the returned slice would otherwise be vetted
  * again on every run and crowd out issues further down.
  *
- * ponytail: 24h because that is when the HTTP cache evicts entries. A longer
+ * ponytail: 24h because that is when the HTTP cache evicts entries, and no
+ * command clears it sooner (`skip --remove` does not). A longer or clearable
  * memory needs a field in scout state.
  */
 const SKIP_MEMORY_MS = 24 * 60 * 60 * 1000;
@@ -79,6 +80,11 @@ const PERMANENT_ERROR_TYPES = new Set(["NOT_FOUND", "FORBIDDEN"]);
 export interface WarmIssue extends GitHubSearchItem {
   /** "owner/repo", as GitHub names the repo today. */
   repo: string;
+  /**
+   * The name the repo was asked for by. Differs from `repo` after a rename or
+   * transfer; exclusion lists and repo scores may be keyed on either.
+   */
+  listedAs: string;
   createdAt: string;
   /** Filed by an OWNER, MEMBER or COLLABORATOR of the repo other than the user. */
   maintainerFiled: boolean;
@@ -110,10 +116,14 @@ type BatchResponse = Record<string, RepoNode | null | undefined>;
  * Query one batch. Returns whatever aliases resolved plus the aliases GitHub
  * reported as gone or forbidden (which a retry cannot fix). Throws when
  * nothing resolved or the points bucket is exhausted.
+ *
+ * `noRetry` turns off octokit's own retries (three, with 1s, 4s and 9s of
+ * backoff) for this query.
  */
 async function queryRepos(
   octokit: Octokit,
   repos: string[],
+  noRetry = false,
 ): Promise<{ data: BatchResponse; permanent: Set<string> }> {
   const varDefs: string[] = [];
   const selections: string[] = [];
@@ -148,7 +158,10 @@ async function queryRepos(
 
   try {
     return {
-      data: await octokit.graphql<BatchResponse>(query, variables),
+      data: await octokit.graphql<BatchResponse>(query, {
+        ...variables,
+        ...(noRetry ? { request: { retries: 0 } } : {}),
+      }),
       permanent: new Set(),
     };
   } catch (err) {
@@ -171,7 +184,10 @@ async function queryRepos(
 }
 
 /** Takeable issues from one resolved repo node, or null when the node did not resolve. */
-function takeableIssues(node: RepoNode | null | undefined): WarmIssue[] | null {
+function takeableIssues(
+  listedAs: string,
+  node: RepoNode | null | undefined,
+): WarmIssue[] | null {
   const nodes = node?.issues?.nodes;
   if (!node || !nodes) return null;
   if (node.isArchived) return [];
@@ -190,6 +206,7 @@ function takeableIssues(node: RepoNode | null | undefined): WarmIssue[] | null {
         title: n.title,
         labels: (n.labels?.nodes ?? []).map((l) => ({ name: l.name })),
         repo,
+        listedAs,
         createdAt: n.createdAt,
         maintainerFiled:
           MAINTAINER_ASSOCIATIONS.has(n.authorAssociation) &&
@@ -227,12 +244,15 @@ export async function listWarmRepoIssues(
    * Read one batch. Returns the repos worth retrying on their own, or null
    * when the query itself failed.
    */
-  const read = async (batch: string[]): Promise<string[] | null> => {
+  const read = async (
+    batch: string[],
+    noRetry = false,
+  ): Promise<string[] | null> => {
     try {
-      const { data, permanent } = await queryRepos(octokit, batch);
+      const { data, permanent } = await queryRepos(octokit, batch, noRetry);
       const retry: string[] = [];
       batch.forEach((repo, j) => {
-        const found = takeableIssues(data[`r${j}`]);
+        const found = takeableIssues(repo, data[`r${j}`]);
         if (found) for (const issue of found) byUrl.set(issue.html_url, issue);
         // A repo that did not resolve next to others most likely lost out to
         // the per-query resource limit; alone it fits.
@@ -264,10 +284,12 @@ export async function listWarmRepoIssues(
     if (first === null && batch.length === 1) failedRepos++;
     // A batch that failed outright is retried repo by repo as well: batches
     // are cut the same way every run, so one repo that breaks its query would
-    // otherwise hide the same seven neighbours forever.
+    // otherwise hide the same seven neighbours forever. Octokit already
+    // retried the failed batch with backoff, so its repos get one attempt
+    // each: eight more rounds of backoff would turn an outage into minutes.
     for (const repo of first ?? (batch.length > 1 ? batch : [])) {
       if (rateLimitHit) break;
-      if ((await read([repo])) === null) failedRepos++;
+      if ((await read([repo], first === null)) === null) failedRepos++;
       else alive = true;
     }
     deadBatches = alive ? 0 : deadBatches + 1;
@@ -293,7 +315,8 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  * merged PRs were opened within two days of the issue being filed, on issues
  * nobody had commented on yet, and maintainer-filed issues arrive already
  * scoped. `repoScore` (1-10, null when the repo has no record) carries the
- * relationship: merges raise it, PRs closed without merge lower it.
+ * relationship: merges raise it, PRs closed without merge lower it. A renamed
+ * repo is looked up under its current name, then the name it was listed by.
  *
  * ponytail: hand-set additive weights. Fit them to merge outcomes once the
  * caller records which surfaced issues turned into merged PRs.
@@ -311,7 +334,7 @@ export function rankWarmIssues(
       freshness +
       (issue.maintainerFiled ? 3 : 0) +
       (issue.commentCount === 0 ? 2 : 0) +
-      (repoScore(issue.repo) ?? 5) / 2
+      (repoScore(issue.repo) ?? repoScore(issue.listedAs) ?? 5) / 2
     );
   };
   return items
@@ -337,7 +360,7 @@ const skipMemoryKey = (url: string): string =>
  * score, with this order breaking ties.
  *
  * A vetting failure other than a 401 costs this phase its candidates, not the
- * whole search.
+ * whole search; `vetError` carries its message.
  */
 export async function fetchWarmRepoCandidates(
   octokit: Octokit,
@@ -350,14 +373,27 @@ export async function fetchWarmRepoCandidates(
   candidates: IssueCandidate[];
   allReposFailed: boolean;
   rateLimitHit: boolean;
+  vetError: string | null;
 }> {
   const cache = getHttpCache();
   const listed = await listWarmRepoIssues(octokit, repos);
-  const kept = new Set(filterFn(listed.items).map((i) => i.html_url));
+  // The caller's filter and scores are keyed on repo names from config and
+  // state, which after a rename may be the old name or the new one. An issue
+  // must pass the filter under both, and takes whichever score exists.
+  const passing = (items: GitHubSearchItem[]): Set<string> =>
+    new Set(filterFn(items).map((i) => i.html_url));
+  const kept = passing(listed.items);
+  const keptAsListed = passing(
+    listed.items.map((i) => ({
+      ...i,
+      repository_url: `https://api.github.com/repos/${i.listedAs}`,
+    })),
+  );
   const ranked = rankWarmIssues(
     listed.items.filter(
       (i) =>
         kept.has(i.html_url) &&
+        keptAsListed.has(i.html_url) &&
         cache.getEntryIfFresh(skipMemoryKey(i.html_url), SKIP_MEMORY_MS) ===
           null,
     ),
@@ -374,8 +410,9 @@ export async function fetchWarmRepoCandidates(
 
   let candidates: IssueCandidate[] = [];
   let rateLimitHit = listed.rateLimitHit;
-  // A listing cut short by a rate limit means the vetter's own GraphQL
-  // prefetch would hit the same wall; keep the flag and vet nothing.
+  let vetError: string | null = null;
+  // A listing cut short by a rate limit is reported as incomplete; vetting
+  // what was read would most likely hit the same limit.
   if (toVet.length > 0 && !listed.rateLimitHit) {
     try {
       // Ask for every URL back: the vetter stops at its result cap whatever
@@ -408,7 +445,8 @@ export async function fetchWarmRepoCandidates(
     } catch (err) {
       if (getHttpStatusCode(err) === 401) throw err;
       rateLimitHit ||= isRateLimitError(err);
-      warn(MODULE, `Vetting warm-repo issues failed: ${errorMessage(err)}`);
+      vetError = errorMessage(err);
+      warn(MODULE, `Vetting warm-repo issues failed: ${vetError}`);
     }
   }
 
@@ -416,5 +454,6 @@ export async function fetchWarmRepoCandidates(
     candidates,
     allReposFailed: repos.length > 0 && listed.failedRepos >= repos.length,
     rateLimitHit,
+    vetError,
   };
 }
