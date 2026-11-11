@@ -836,7 +836,7 @@ export class IssueVetter {
         /\[bot\]$/i.test(ghIssue.user?.login ?? ""),
       authorLooksLikeBot: looksLikeBotLogin(ghIssue.user?.login),
       authorIsMaintainer: MAINTAINER_ASSOCIATIONS.has(
-        ghIssue.author_association,
+        ghIssue.author_association ?? "",
       ),
     };
   }
