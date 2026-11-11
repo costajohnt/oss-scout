@@ -562,6 +562,42 @@ describe("IssueDiscovery", () => {
       expect(phase1Call).toBeDefined();
     });
 
+    it("reserves at least one slot for the other phases: Phase 0's cap for maxResults 3 is 2", async () => {
+      // ceil(3 * 0.8) = 3 would hand Phase 0 the whole budget.
+      mockFetchWarmRepoCandidates.mockImplementation(
+        async (
+          _octokit: unknown,
+          _vetter: unknown,
+          _repos: unknown,
+          reqMax: number,
+        ) => ({
+          candidates: Array.from({ length: reqMax }, (_, i) =>
+            makeCandidate(`org/merged-${i}`, "merged_pr"),
+          ),
+          allReposFailed: false,
+          rateLimitHit: false,
+        }),
+      );
+      mockFetchIssuesFromKnownRepos.mockResolvedValue({
+        candidates: [makeCandidate("org/starred-repo", "starred")],
+        allReposFailed: false,
+        rateLimitHit: false,
+      });
+
+      const discovery = makeDiscovery({
+        getReposWithMergedPRs: vi.fn(() => ["org/merged-repo"]),
+        getStarredRepos: vi.fn(() => ["org/starred-repo"]),
+      });
+
+      await discovery.searchIssues({ maxResults: 3 });
+
+      expect(mockFetchWarmRepoCandidates.mock.calls[0][3]).toBe(2);
+      const phase1Call = mockFetchIssuesFromKnownRepos.mock.calls.find(
+        (call) => call[5] === "starred",
+      );
+      expect(phase1Call).toBeDefined();
+    });
+
     it("does NOT cap Phase 0 when no other strategy can run (no under-fill)", async () => {
       // A contributed-only user (no starred repos; broad/maintained disabled)
       // must still get the full budget from Phase 0 — the cap only applies
@@ -642,10 +678,12 @@ describe("IssueDiscovery", () => {
       ]);
     });
 
-    // Windowing the list *after* dropping Phase 0's repos let its length shift
-    // with each run's Phase 0 window, which can leave a starred repo unsearched
-    // for many runs. The window is taken over the stable list, then filtered.
-    it("Phase 1: windows the stable starred list before dropping Phase 0 repos (#324)", async () => {
+    // The Phase 0 set is the same every run (every contributed repo, no
+    // window), so the filtered starred list is stable and is what gets
+    // windowed. Windowing first could land on a window made only of
+    // contributed repos, leaving the phase nothing to search and its cursor
+    // stuck.
+    it("Phase 1: drops Phase 0 repos from the starred list before windowing it", async () => {
       mockFetchIssuesFromKnownRepos.mockResolvedValue({
         candidates: [],
         allReposFailed: false,
@@ -671,15 +709,38 @@ describe("IssueDiscovery", () => {
       const phase1Call = mockFetchIssuesFromKnownRepos.mock.calls.find(
         (call) => call[5] === "starred",
       );
-      // 12-long list, window 10 at offset 1 = positions 10, 11, 0..7; the
-      // contributed repo at position 2 is dropped after windowing.
-      expect(phase1Call![2]).toEqual([
-        "org/s-9",
-        "org/s-10",
-        "org/s-0",
-        "org/s-1",
-        ...starredOnly.slice(2, 7),
-      ]);
+      // The contributed repo is dropped first, leaving the 11 starred-only
+      // repos; window 10 at offset 1 = positions 10, 0..8.
+      expect(phase1Call![2]).toEqual(["org/s-10", ...starredOnly.slice(0, 9)]);
+    });
+
+    it("Phase 1: still gets 10 starred repos when the first 10 of the starred list are all contributed repos", async () => {
+      mockFetchIssuesFromKnownRepos.mockResolvedValue({
+        candidates: [],
+        allReposFailed: false,
+        rateLimitHit: false,
+      });
+      const contributed = Array.from({ length: 10 }, (_, i) => `org/c-${i}`);
+      const starredOnly = Array.from({ length: 10 }, (_, i) => `org/s-${i}`);
+      const discovery = makeDiscovery({
+        getReposWithOpenPRs: vi.fn(() => contributed),
+        getStarredRepos: vi.fn(() => [...contributed, ...starredOnly]),
+      });
+
+      await expect(
+        discovery.searchIssues({
+          maxResults: 5,
+          repoRotationOffsets: { starred: 0 },
+        }),
+      ).rejects.toThrow("No issue candidates found");
+
+      // Windowing first would take the 10 contributed repos and filter them
+      // all away, so the starred phase would not run at all.
+      const phase1Call = mockFetchIssuesFromKnownRepos.mock.calls.find(
+        (call) => call[5] === "starred",
+      );
+      expect(phase1Call).toBeDefined();
+      expect(phase1Call![2]).toEqual(starredOnly);
     });
 
     it("Phase 3: the maintained cursor picks the window of the starred list (#324)", async () => {
@@ -966,6 +1027,59 @@ describe("IssueDiscovery", () => {
       expect(strategiesUsed).not.toContain("merged");
       expect(strategiesUsed).toContain("starred");
       expect(strategiesUsed).toContain("broad");
+    });
+
+    // With the merged strategy off, no phase searches the contributed repos,
+    // so excluding them from the other phases would hide them altogether.
+    it("strategies=[starred] does not exclude contributed repos from the starred phase", async () => {
+      mockFetchIssuesFromKnownRepos.mockResolvedValue({
+        candidates: [makeCandidate("org/other", "starred")],
+        allReposFailed: false,
+        rateLimitHit: false,
+      });
+      const discovery = makeDiscovery({
+        getReposWithMergedPRs: vi.fn(() => ["org/contributed"]),
+        getReposWithOpenPRs: vi.fn(() => ["org/open"]),
+        getStarredRepos: vi.fn(() => [
+          "org/contributed",
+          "org/open",
+          "org/other",
+        ]),
+      });
+
+      await discovery.searchIssues({ maxResults: 5, strategies: ["starred"] });
+
+      expect(mockFetchWarmRepoCandidates).not.toHaveBeenCalled();
+      const phase1Call = mockFetchIssuesFromKnownRepos.mock.calls.find(
+        (call) => call[5] === "starred",
+      );
+      expect(phase1Call![2]).toEqual([
+        "org/contributed",
+        "org/open",
+        "org/other",
+      ]);
+    });
+
+    it("strategies=[broad] passes an empty Phase 0 exclusion set to the broad phase", async () => {
+      mockFilterVetAndScore.mockResolvedValue({
+        candidates: [makeCandidate("org/other")],
+        allVetFailed: false,
+        rateLimitHit: false,
+      });
+      const discovery = makeDiscovery({
+        getReposWithMergedPRs: vi.fn(() => ["org/contributed"]),
+        getReposWithOpenPRs: vi.fn(() => ["org/open"]),
+      });
+
+      await discovery.searchIssues({ maxResults: 5, strategies: ["broad"] });
+
+      expect(mockFetchWarmRepoCandidates).not.toHaveBeenCalled();
+      // filterVetAndScore(vetter, items, filter, [phase0Set, starredSet, seen], ...)
+      const [phase0Set] = mockFilterVetAndScore.mock
+        .calls[0]![3] as Set<string>[];
+      expect(phase0Set).toEqual(new Set());
+      expect(phase0Set.has("org/contributed")).toBe(false);
+      expect(phase0Set.has("org/open")).toBe(false);
     });
   });
 
@@ -1314,6 +1428,37 @@ describe("IssueDiscovery", () => {
       // Verify discovery was constructed without error when blocklist is set
       // and candidates from non-blocked repos are returned
       expect(candidates.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it("filterIssues excludes a low-scoring repo known only through an open PR", async () => {
+      const discovery = makeDiscovery(
+        {
+          getReposWithOpenPRs: vi.fn(() => ["org/low"]),
+          getRepoScore: vi.fn((repo: string) =>
+            repo === "org/low" ? 1 : null,
+          ),
+        },
+        { minRepoScoreThreshold: 2 },
+      );
+
+      await expect(discovery.searchIssues({ maxResults: 5 })).rejects.toThrow(
+        "No issue candidates found",
+      );
+
+      // The Phase 0 filter is handed to the warm-repo phase; apply it to an
+      // issue from the open-PR repo. Low-scoring repos are derived from the
+      // merged, open-PR and starred lists.
+      const filterIssuesPhase0 = mockFetchWarmRepoCandidates.mock
+        .calls[0]![4] as (items: GitHubSearchItem[]) => GitHubSearchItem[];
+      expect(
+        filterIssuesPhase0([
+          {
+            html_url: "https://github.com/org/low/issues/1",
+            repository_url: "https://api.github.com/repos/org/low",
+            updated_at: "2026-03-01T00:00:00Z",
+          },
+        ]),
+      ).toEqual([]);
     });
   });
 

@@ -79,6 +79,7 @@ const { fakeOctokit } = vi.hoisted(() => {
             if (!m) continue;
             const repo = `${variables[`o${m[1]}`]}/${variables[`n${m[1]}`]}`;
             res[`r${m[1]}`] = {
+              nameWithOwner: repo,
               isArchived: false,
               issues: {
                 nodes:
@@ -90,6 +91,7 @@ const { fakeOctokit } = vi.hoisted(() => {
                           createdAt: issueItem.created_at,
                           updatedAt: issueItem.updated_at,
                           authorAssociation: "MEMBER",
+                          viewerDidAuthor: false,
                           assignees: { totalCount: 0 },
                           comments: { totalCount: 0 },
                           labels: { nodes: issueItem.labels },
