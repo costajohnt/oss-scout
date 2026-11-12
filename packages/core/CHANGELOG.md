@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.14.0](https://github.com/costajohnt/oss-scout/compare/core-v1.13.0...core-v1.14.0) (2026-11-12)
+
+
+### Features
+
+* **vet:** add complexIssues setting to unlock larger issues in contributed repos ([#383](https://github.com/costajohnt/oss-scout/issues/383)) ([0d22f4d](https://github.com/costajohnt/oss-scout/commit/0d22f4d4257930ab2ca60ea05df620ec435f98db))
+
 ## [1.13.0](https://github.com/costajohnt/oss-scout/compare/core-v1.12.1...core-v1.13.0) (2026-11-11)
 
 
