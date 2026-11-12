@@ -1663,6 +1663,13 @@ describe("IssueDiscovery", () => {
       expect(filter([warmItem()])).toEqual([]);
     });
 
+    it("drops the same title when the preference is absent (library host that skips schema parsing)", async () => {
+      const filter = await capturePhase0Filter(
+        makeDiscovery(warmState, { complexIssues: undefined }),
+      );
+      expect(filter([warmItem()])).toEqual([]);
+    });
+
     it("drops the same title when the repo has no merged PR", async () => {
       const filter = await capturePhase0Filter(
         makeDiscovery(

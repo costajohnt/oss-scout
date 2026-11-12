@@ -1304,6 +1304,155 @@ describe("OssScout.search recently-surfaced rotation (#249)", () => {
   });
 });
 
+describe("OssScout.search skip list under complexIssues", () => {
+  const LINKED_URL = "https://github.com/org/repo/issues/1";
+  const CLOSED_URL = "https://github.com/org/repo/issues/2";
+  const MANUAL_URL = "https://github.com/org/repo/issues/3";
+  const OTHER_REPO_URL = "https://github.com/org/other/issues/4";
+  const EXISTING_URL = "https://github.com/org/repo/issues/5";
+  const CLOSED_PR_URL = "https://github.com/org/repo/issues/6";
+
+  function skip(url: string, repo: string, reason?: string) {
+    return {
+      url,
+      repo,
+      number: Number(url.split("/").pop()),
+      title: "t",
+      skippedAt: new Date().toISOString(),
+      ...(reason === undefined ? {} : { reason, permanent: false }),
+    };
+  }
+
+  /**
+   * `undefined` leaves the preference out and any value other than off/warm
+   * is written after parsing: both stand in for a library host that passes
+   * state without running it through the schema.
+   */
+  function makeScout(complexIssues?: string) {
+    const parsed = complexIssues === "off" || complexIssues === "warm";
+    const state = ScoutStateSchema.parse({
+      version: 1,
+      preferences: parsed ? { complexIssues } : {},
+      // The merged-PR list is derived from the URL and keeps its casing;
+      // the skip entries below name the same repo in lower case.
+      mergedPRs: [
+        {
+          url: "https://github.com/Org/Repo/pull/9",
+          title: "merged",
+          mergedAt: "2026-01-01T00:00:00Z",
+        },
+      ],
+      skippedIssues: [
+        skip(LINKED_URL, "org/repo", "Linked PR already merged"),
+        skip(CLOSED_URL, "org/repo", "Issue is closed"),
+        skip(MANUAL_URL, "org/repo"),
+        skip(OTHER_REPO_URL, "org/other", "Linked PR already merged"),
+        skip(EXISTING_URL, "org/repo", "Has existing PR"),
+        skip(CLOSED_PR_URL, "org/repo", "Linked PR closed without merge"),
+      ],
+    });
+    if (parsed) return new OssScout("test-token", state);
+    const preferences = { ...state.preferences } as Record<string, unknown>;
+    if (complexIssues === undefined) delete preferences.complexIssues;
+    else preferences.complexIssues = complexIssues;
+    return new OssScout("test-token", {
+      ...state,
+      preferences: preferences as typeof state.preferences,
+    });
+  }
+
+  function captureSkippedUrls() {
+    let captured: Set<string> | undefined;
+    vi.spyOn(IssueDiscovery.prototype, "searchIssues").mockImplementation(
+      async (opts: { skippedUrls?: Set<string> }) => {
+        captured = opts.skippedUrls;
+        return { candidates: [], strategiesUsed: [] };
+      },
+    );
+    return () => captured!;
+  }
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("the merged-PR list keeps the casing from the PR URL", () => {
+    expect(makeScout("warm").getReposWithMergedPRs()).toEqual(["Org/Repo"]);
+  });
+
+  it("warm: linked-PR skips in a contributed repo are vetted again; everything else stays skipped", async () => {
+    const scout = makeScout("warm");
+    const getCaptured = captureSkippedUrls();
+    await scout.search({ excludeRecentlySurfaced: false });
+    const skipped = getCaptured();
+    expect(skipped.has(LINKED_URL)).toBe(false);
+    expect(skipped.has(EXISTING_URL)).toBe(false);
+    expect(skipped.has(CLOSED_PR_URL)).toBe(false);
+    expect(skipped.has(CLOSED_URL)).toBe(true);
+    expect(skipped.has(MANUAL_URL)).toBe(true);
+    expect(skipped.has(OTHER_REPO_URL)).toBe(true);
+    expect(skipped.size).toBe(3);
+  });
+
+  it("off: the same linked-PR skip stays skipped", async () => {
+    const scout = makeScout("off");
+    const getCaptured = captureSkippedUrls();
+    await scout.search({ excludeRecentlySurfaced: false });
+    expect(getCaptured().has(LINKED_URL)).toBe(true);
+    expect(getCaptured().size).toBe(6);
+  });
+
+  it("no preference: same as off", async () => {
+    const scout = makeScout();
+    const getCaptured = captureSkippedUrls();
+    await scout.search({ excludeRecentlySurfaced: false });
+    expect(getCaptured().has(LINKED_URL)).toBe(true);
+    expect(getCaptured().size).toBe(6);
+  });
+
+  it("a value outside the schema (unparsed library state) does not unlock anything", async () => {
+    const scout = makeScout("on" as never);
+    const getCaptured = captureSkippedUrls();
+    await scout.search({ excludeRecentlySurfaced: false });
+    expect(getCaptured().has(LINKED_URL)).toBe(true);
+    expect(getCaptured().size).toBe(6);
+  });
+
+  it("warm: the skip entries themselves are left in the state", async () => {
+    const scout = makeScout("warm");
+    captureSkippedUrls();
+    await scout.search({ excludeRecentlySurfaced: false });
+    expect(scout.getState().skippedIssues.map((s) => s.url)).toContain(
+      LINKED_URL,
+    );
+  });
+});
+
+describe("OssScout.getComplexIssuesMode", () => {
+  it("returns the warm preference", () => {
+    const scout = new OssScout(
+      "test-token",
+      makeState({ preferences: { complexIssues: "warm" } } as never),
+    );
+    expect(scout.getComplexIssuesMode()).toBe("warm");
+  });
+
+  it("returns off for the schema default", () => {
+    const scout = new OssScout("test-token", makeState());
+    expect(scout.getState().preferences.complexIssues).toBe("off");
+    expect(scout.getComplexIssuesMode()).toBe("off");
+  });
+
+  it("returns off when the preference is absent (state not schema-parsed)", () => {
+    const state = makeState();
+    const preferences = { ...state.preferences };
+    delete (preferences as Partial<typeof preferences>).complexIssues;
+    const scout = new OssScout("test-token", { ...state, preferences });
+    expect(scout.getPreferences().complexIssues).toBeUndefined();
+    expect(scout.getComplexIssuesMode()).toBe("off");
+  });
+});
+
 describe("OssScout.search language rotation cursor (#249 follow-up)", () => {
   function makeRotationScout(searchRotation?: {
     languageOffset: number;

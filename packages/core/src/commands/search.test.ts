@@ -128,6 +128,43 @@ describe("runSearch", () => {
     expect(result.strategiesUsed).toEqual(["broad"]);
   });
 
+  it("carries complexityUnlocked: true for an unlocked candidate", async () => {
+    mockSearch.mockResolvedValue({
+      candidates: [makeCandidate({ complexityUnlocked: true })],
+      excludedRepos: [],
+      aiPolicyBlocklist: [],
+      strategiesUsed: ["merged"],
+    });
+    mockGetRepoScoreRecord.mockReturnValue(undefined);
+
+    const { runSearch } = await import("./search.js");
+    const result = await runSearch({ maxResults: 5 });
+
+    expect(result.candidates[0].complexityUnlocked).toBe(true);
+    // What `--json` prints
+    expect(JSON.parse(JSON.stringify(result)).candidates[0]).toMatchObject({
+      complexityUnlocked: true,
+    });
+  });
+
+  it("leaves complexityUnlocked out for a candidate vetted under the default rules", async () => {
+    mockSearch.mockResolvedValue({
+      candidates: [makeCandidate()],
+      excludedRepos: [],
+      aiPolicyBlocklist: [],
+      strategiesUsed: ["merged"],
+    });
+    mockGetRepoScoreRecord.mockReturnValue(undefined);
+
+    const { runSearch } = await import("./search.js");
+    const result = await runSearch({ maxResults: 5 });
+
+    expect(result.candidates[0].complexityUnlocked).toBeUndefined();
+    expect(JSON.parse(JSON.stringify(result)).candidates[0]).not.toHaveProperty(
+      "complexityUnlocked",
+    );
+  });
+
   it("includes repoUrl in issue objects", async () => {
     const candidate = makeCandidate();
     mockSearch.mockResolvedValue({
