@@ -318,7 +318,8 @@ async function checkNoClosingPR(
     )
     .map(toLinkedPR);
   const own = openMentions.find(
-    (pr) => username !== "" && pr.author.toLowerCase() === username.toLowerCase(),
+    (pr) =>
+      username !== "" && pr.author.toLowerCase() === username.toLowerCase(),
   );
   if (own) return { passed: false, linkedPR: own };
   const active = openMentions.filter((pr) => !isLinkedPRStalled(pr));
