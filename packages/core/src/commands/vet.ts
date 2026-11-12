@@ -22,6 +22,7 @@ export interface VetOutput {
   recommendation: "approve" | "skip" | "needs_review";
   reasonsToApprove: string[];
   reasonsToSkip: string[];
+  complexityUnlocked?: true;
   projectHealth: ProjectHealth;
   vettingResult: IssueVettingResult;
 }
@@ -48,6 +49,7 @@ export async function runVet(options: VetCommandOptions): Promise<VetOutput> {
       recommendation: candidate.recommendation,
       reasonsToApprove: candidate.reasonsToApprove,
       reasonsToSkip: candidate.reasonsToSkip,
+      complexityUnlocked: candidate.complexityUnlocked,
       projectHealth: candidate.projectHealth,
       vettingResult: candidate.vettingResult,
     };

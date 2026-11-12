@@ -83,7 +83,18 @@ const VETTING_CACHE_TTL_MS = 15 * 60 * 1000;
  * "P2") is missed. Read the repo's label descriptions if that matters.
  */
 const DECIDED_LABEL =
-  /\b(?:accepted|confirmed|approved|triaged|planned|help[- ]wanted)\b/i;
+  /\b(?:accepted|confirmed|approved|triaged|planned|help[- _]wanted)\b/i;
+
+/** Qualifiers that flip a DECIDED_LABEL match: "not planned", "to be triaged". */
+const DECIDED_LABEL_VETO =
+  /\b(?:not|needs?|to[- ]be|wontfix|duplicate|cla|answer)\b/i;
+
+/**
+ * Labels and title words that say the work is not settled, whoever filed it:
+ * a roadmap or tracking issue, an RFC, a question, something blocked.
+ */
+const UNDECIDED_MARKER =
+  /\b(?:tracking|epic|meta|rfc|roadmap|blocked|on[- ]hold|question|discussion|support|needs?[- ](?:info|design|discussion|triage|decision))\b/i;
 
 /**
  * Feature-mode signals supplied by the caller (orchestrator) — the vetter
@@ -506,12 +517,19 @@ export class IssueVetter {
 
     // Check if the user already has merged PRs in this repo (skip the Search API call)
     const reposWithMergedPRs = this.stateReader.getReposWithMergedPRs();
-    const hasMergedPRsInRepo = reposWithMergedPRs.includes(repoFullName);
+    // GitHub repo names are case-insensitive; the state and a typed URL can
+    // disagree on casing.
+    const repoLower = repoFullName.toLowerCase();
+    const hasMergedPRsInRepo = reposWithMergedPRs.some(
+      (r) => r.toLowerCase() === repoLower,
+    );
     // ponytail: unlocks on the state's merged-PR list only. A merge that
     // predates the state (found by the live count below) does not unlock,
     // because the existing-PR check has to pick its mode before that count
     // returns. Sync the state to pick those repos up.
     const complexityUnlocked = complexMode === "warm" && hasMergedPRsInRepo;
+
+    const username = this.stateReader.getGitHubUsername?.() ?? "";
 
     // Run all vetting checks in parallel — delegates to standalone functions
     const [
@@ -523,6 +541,7 @@ export class IssueVetter {
     ] = await Promise.all([
       checkNoExistingPR(this.octokit, owner, repo, number, {
         closingOnly: complexityUnlocked,
+        username,
       }),
       checkNotClaimed(this.octokit, owner, repo, number, core.commentCount),
       checkProjectHealth(this.octokit, owner, repo),
@@ -554,8 +573,7 @@ export class IssueVetter {
     const notClaimed = claimCheck.passed;
 
     // Is the linked PR the user's own open PR (#166)? If so the issue is
-    // "you're already on it", not competition.
-    const username = this.stateReader.getGitHubUsername?.() ?? "";
+    // "you're already on it", not competition. (`username` is read above.)
 
     // Takeability: signals that the issue is spoken for even with no
     // assignee, linked PR or claiming comment. Both read the issue itself, so
@@ -572,6 +590,11 @@ export class IssueVetter {
     const cautionReasons: string[] = [];
     if (!core.authorIsBot && core.authorLooksLikeBot)
       cautionReasons.push("Author login looks like a bot");
+    const openMentions = existingPRCheck.openMentions ?? [];
+    if (openMentions.length > 0)
+      cautionReasons.push(
+        `Open PR ${openMentions.map((pr) => `#${pr.number}`).join(", ")} mentions this issue`,
+      );
     if (antiLLMPolicy.matched)
       cautionReasons.push(
         `AI contribution policy in ${antiLLMPolicy.sourceFile ?? "repo docs"}`,
@@ -596,11 +619,17 @@ export class IssueVetter {
     const bodyIsClear = analyzeRequirements(core.body);
     // In an unlocked repo, who filed or accepted the issue stands in for
     // code in the body: a maintainer's prose spec is a decided piece of work.
+    // Not for an empty body, and not when a label or the title says the
+    // work is still open (a tracking issue, an RFC, something blocked).
     const maintainerDecided =
       complexityUnlocked &&
       !bodyIsClear &&
+      core.body.trim().length >= 50 &&
+      ![core.title, ...core.labels].some((t) => UNDECIDED_MARKER.test(t)) &&
       ((!!core.authorIsMaintainer && !isOwnIssue) ||
-        core.labels.some((l) => DECIDED_LABEL.test(l)));
+        core.labels.some(
+          (l) => DECIDED_LABEL.test(l) && !DECIDED_LABEL_VETO.test(l),
+        ));
     const clearRequirements = bodyIsClear || maintainerDecided;
 
     // When the health check itself failed (API error), use a neutral default:

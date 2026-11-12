@@ -21,6 +21,7 @@ export interface SearchOutput {
     reasonsToApprove: string[];
     reasonsToSkip: string[];
     searchPriority: string;
+    complexityUnlocked?: true;
     viabilityScore: number;
     repoScore?: {
       score: number;
@@ -129,6 +130,7 @@ export async function runSearch(
             reasonsToApprove: c.reasonsToApprove,
             reasonsToSkip: c.reasonsToSkip,
             searchPriority: c.searchPriority,
+            complexityUnlocked: c.complexityUnlocked,
             viabilityScore: c.viabilityScore,
             repoScore: repoScoreRecord
               ? {
