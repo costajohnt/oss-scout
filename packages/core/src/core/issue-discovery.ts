@@ -144,6 +144,11 @@ interface IssueFilterConfig {
   maxAgeDays: number;
   now: Date;
   includeDocIssues: boolean;
+  /**
+   * Lowercased repos where `complexIssues` is unlocked. Empty when the
+   * setting is off.
+   */
+  complexRepos: Set<string>;
 }
 
 /** Build a reusable filter function from config. */
@@ -174,7 +179,11 @@ function buildIssueFilter(
       const ageDays = daysBetween(updatedAt, config.now);
       if (ageDays > config.maxAgeDays) return false;
       if (!config.includeDocIssues && isDocOnlyIssue(item)) return false;
-      if (isNonActionableIssue(item)) return false;
+      // Only the warm-repo watcher sets maintainerFiled, so other phases
+      // keep the title checks even in an unlocked repo.
+      const labelsOnly =
+        item.maintainerFiled === true && config.complexRepos.has(repoLower);
+      if (isNonActionableIssue(item, { labelsOnly })) return false;
       return true;
     });
   };
@@ -890,6 +899,11 @@ export class IssueDiscovery {
       skippedUrls: options.skippedUrls ?? new Set<string>(),
       now: new Date(),
       includeDocIssues: config.includeDocIssues ?? true,
+      complexRepos: new Set(
+        config.complexIssues === "warm"
+          ? mergedPRRepos.map((r) => r.toLowerCase())
+          : [],
+      ),
     };
     const filterIssues = buildIssueFilter({
       ...baseFilterConfig,

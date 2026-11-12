@@ -127,6 +127,38 @@ describe("runVet", () => {
     expect(result.reasonsToSkip).toEqual([]);
   });
 
+  it("carries complexityUnlocked: true for an unlocked candidate", async () => {
+    mockVetIssue.mockResolvedValue({
+      ...makeVettedCandidate(),
+      complexityUnlocked: true,
+    });
+
+    const { runVet } = await import("./vet.js");
+    const result = await runVet({
+      issueUrl: "https://github.com/owner/repo/issues/42",
+    });
+
+    expect(result.complexityUnlocked).toBe(true);
+    // What `--json` prints
+    expect(JSON.parse(JSON.stringify(result))).toMatchObject({
+      complexityUnlocked: true,
+    });
+  });
+
+  it("leaves complexityUnlocked out for a candidate vetted under the default rules", async () => {
+    mockVetIssue.mockResolvedValue(makeVettedCandidate());
+
+    const { runVet } = await import("./vet.js");
+    const result = await runVet({
+      issueUrl: "https://github.com/owner/repo/issues/42",
+    });
+
+    expect(result.complexityUnlocked).toBeUndefined();
+    expect(JSON.parse(JSON.stringify(result))).not.toHaveProperty(
+      "complexityUnlocked",
+    );
+  });
+
   it("returns projectHealth", async () => {
     const candidate = makeVettedCandidate();
     mockVetIssue.mockResolvedValue(candidate);

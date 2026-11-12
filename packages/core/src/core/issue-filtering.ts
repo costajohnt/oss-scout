@@ -47,6 +47,13 @@ export function isDocOnlyIssue(item: GitHubSearchItem): boolean {
   return nonEmptyLabels.every((n) => DOC_ONLY_LABELS.has(n));
 }
 
+/** Author associations that mean the issue was filed from inside the project. */
+export const MAINTAINER_ASSOCIATIONS: ReadonlySet<string> = new Set([
+  "OWNER",
+  "MEMBER",
+  "COLLABORATOR",
+]);
+
 /** Labels that mark an issue as a conversation, not a change request. */
 const NON_ACTIONABLE_LABELS = new Set(["question", "discussion", "support"]);
 
@@ -64,12 +71,20 @@ const QUESTION_TITLE =
  * Drop issues that are not a change request (#332): labelled as a
  * question/discussion/support thread, titled as a question ("Does X work
  * with Y?"), or given a placeholder title under three words ("logan").
+ *
+ * `labelsOnly` skips the two title checks. A maintainer writing "Should the
+ * exporter stream?" in a repo the user contributes to is scoping work, not
+ * asking for support.
  */
-export function isNonActionableIssue(item: GitHubSearchItem): boolean {
+export function isNonActionableIssue(
+  item: GitHubSearchItem,
+  opts: { labelsOnly?: boolean } = {},
+): boolean {
   const labelNames = (item.labels ?? []).map((l) =>
     (typeof l === "string" ? l : l.name || "").toLowerCase(),
   );
   if (labelNames.some((n) => NON_ACTIONABLE_LABELS.has(n))) return true;
+  if (opts.labelsOnly) return false;
   const title = (item.title ?? "").trim();
   if (title.endsWith("?")) return true;
   if (QUESTION_TITLE.test(title)) return true;

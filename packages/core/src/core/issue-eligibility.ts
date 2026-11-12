@@ -20,6 +20,7 @@ import {
   type SearchBudgetTracker,
 } from "./search-budget.js";
 import type { CheckResult, LinkedPR } from "./types.js";
+import { isLinkedPRStalled } from "./linked-pr.js";
 
 /**
  * Result of the existing-PR check, including metadata for the first linked PR
@@ -28,6 +29,12 @@ import type { CheckResult, LinkedPR } from "./types.js";
  */
 export type ExistingPRCheckResult = CheckResult & {
   linkedPR: LinkedPR | null;
+  /**
+   * Closing-reference mode only: open, recently active PRs by other people
+   * that mention the issue without closing it. Not a block, but someone may
+   * be fixing it in pieces ("Part of #N").
+   */
+  openMentions?: LinkedPR[];
 };
 
 /** Shape of a cross-referenced PR event from the GitHub issue timeline API. */
@@ -209,18 +216,146 @@ export function commentClaimsIssue(body: string): boolean {
   return false;
 }
 
+/** A PR that will close the issue on merge, from GraphQL. */
+type ClosingPRNode = {
+  number: number;
+  state: "OPEN" | "CLOSED" | "MERGED";
+  url: string;
+  updatedAt?: string;
+  author?: { login?: string } | null;
+};
+
+type ClosingPRsResponse = {
+  repository?: {
+    issue?: {
+      closedByPullRequestsReferences?: { nodes?: (ClosingPRNode | null)[] };
+      // `source` is `{}` when the cross-reference came from an issue.
+      timelineItems?: {
+        nodes?: ({ source?: Partial<ClosingPRNode> | null } | null)[];
+      };
+    } | null;
+  } | null;
+};
+
+function toLinkedPR(pr: ClosingPRNode): LinkedPR {
+  return {
+    number: pr.number,
+    // A deleted account has no login; the PR still counts.
+    author: pr.author?.login ?? "ghost",
+    state: pr.state === "OPEN" ? "open" : "closed",
+    merged: pr.state === "MERGED",
+    url: pr.url,
+    updatedAt: pr.updatedAt,
+  };
+}
+
+/** Which closing PR decides the verdict: merged, then open, then closed. */
+const CLOSING_PR_RANK = { MERGED: 0, OPEN: 1, CLOSED: 2 } as const;
+
+/**
+ * Existing-PR check that counts only PRs that close the issue ("Fixes #N" or
+ * a manual link), not every PR that mentions it. One GraphQL call.
+ *
+ * Open PRs that only mention the issue are not a block, with one exception:
+ * the user's own ("Part of #N" on a branch already in flight) is. Other
+ * people's recent ones come back as `openMentions`.
+ */
+async function checkNoClosingPR(
+  octokit: Octokit,
+  owner: string,
+  repo: string,
+  issueNumber: number,
+  username: string,
+): Promise<ExistingPRCheckResult> {
+  const data = await octokit.graphql<ClosingPRsResponse>(
+    `query closingPRs($owner: String!, $repo: String!, $number: Int!) {
+      repository(owner: $owner, name: $repo) {
+        issue(number: $number) {
+          closedByPullRequestsReferences(first: 20, includeClosedPrs: true) {
+            nodes { number state url updatedAt author { login } }
+          }
+          timelineItems(itemTypes: [CROSS_REFERENCED_EVENT], last: 30) {
+            nodes {
+              ... on CrossReferencedEvent {
+                source {
+                  ... on PullRequest { number state url updatedAt author { login } }
+                }
+              }
+            }
+          }
+        }
+      }
+    }`,
+    { owner, repo, number: issueNumber },
+  );
+  const issue = data.repository?.issue;
+  if (!issue) {
+    // No issue and no error: nothing was checked, so do not report a pass.
+    return {
+      passed: true,
+      inconclusive: true,
+      reason: "issue not returned by GraphQL",
+      linkedPR: null,
+    };
+  }
+  const nodes = (issue.closedByPullRequestsReferences?.nodes ?? []).filter(
+    (n): n is ClosingPRNode => n != null,
+  );
+  if (nodes.length > 0) {
+    const pr = [...nodes].sort(
+      (a, b) => CLOSING_PR_RANK[a.state] - CLOSING_PR_RANK[b.state],
+    )[0] as ClosingPRNode;
+    return { passed: false, linkedPR: toLinkedPR(pr) };
+  }
+
+  const openMentions = (issue.timelineItems?.nodes ?? [])
+    .map((n) => n?.source)
+    .filter(
+      (s): s is ClosingPRNode =>
+        s?.state === "OPEN" &&
+        typeof s.number === "number" &&
+        typeof s.url === "string",
+    )
+    .map(toLinkedPR);
+  const own = openMentions.find(
+    (pr) =>
+      username !== "" && pr.author.toLowerCase() === username.toLowerCase(),
+  );
+  if (own) return { passed: false, linkedPR: own };
+  const active = openMentions.filter((pr) => !isLinkedPRStalled(pr));
+  return {
+    passed: true,
+    linkedPR: null,
+    ...(active.length > 0 ? { openMentions: active } : {}),
+  };
+}
+
 /**
  * Check whether an open PR already exists for the given issue.
  * Uses the timeline API (REST) to detect cross-referenced PRs, avoiding
  * the Search API's strict 30 req/min rate limit.
+ *
+ * `closingOnly` switches to closing references: a PR that only mentions the
+ * issue no longer counts. Long-lived issues collect mentions, and under the
+ * default rule the oldest one decides the verdict.
  */
 export async function checkNoExistingPR(
   octokit: Octokit,
   owner: string,
   repo: string,
   issueNumber: number,
+  opts: { closingOnly?: boolean; username?: string } = {},
 ): Promise<ExistingPRCheckResult> {
   try {
+    if (opts.closingOnly) {
+      return await checkNoClosingPR(
+        octokit,
+        owner,
+        repo,
+        issueNumber,
+        opts.username ?? "",
+      );
+    }
     // Use the timeline API (REST, not Search) to detect linked PRs.
     // This avoids consuming GitHub Search API quota (30 req/min limit).
     // Timeline captures formally linked PRs via cross-referenced events

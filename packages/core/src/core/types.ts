@@ -136,6 +136,12 @@ export interface IssueCandidate {
   viabilityScore: number;
   searchPriority: SearchPriority;
   /**
+   * Set when the `complexIssues` preference unlocked this repo: the vet ran
+   * under the relaxed rules, and a consumer may take the issue on even when
+   * it is not small. Absent otherwise.
+   */
+  complexityUnlocked?: true;
+  /**
    * Personalization marker (#1244). A candidate is EITHER boosted (it matched
    * a `preferLanguages` / `preferRepos` bias and gets a soft sort boost between
    * the `recommendation` tier and `viabilityScore`) OR a diversity slot (it

@@ -73,6 +73,7 @@ describe("prefetchIssueCores", () => {
       authorLogin: undefined,
       authorIsBot: false,
       authorLooksLikeBot: false,
+      authorIsMaintainer: false,
     });
 
     const c2 = result.get(issueCoreKey("owner", "repo", 2));
@@ -81,6 +82,38 @@ describe("prefetchIssueCores", () => {
     expect(c2?.body).toBe("");
     expect(c2?.labels).toEqual([]);
     expect(c2?.commentCount).toBe(0);
+  });
+
+  it.each([
+    ["OWNER", true],
+    ["MEMBER", true],
+    ["COLLABORATOR", true],
+    ["CONTRIBUTOR", false],
+    ["NONE", false],
+    [undefined, false],
+  ])(
+    "sets authorIsMaintainer from authorAssociation %s -> %s",
+    async (authorAssociation, expected) => {
+      const graphql = vi.fn().mockResolvedValue({
+        i0: { issue: graphqlNode({ authorAssociation }) },
+      });
+      const result = await prefetchIssueCores(makeOctokit(graphql), [
+        ISSUES[0]!,
+      ]);
+      expect(
+        result.get(issueCoreKey("owner", "repo", 1))?.authorIsMaintainer,
+      ).toBe(expected);
+    },
+  );
+
+  it("asks for authorAssociation in the batch query", async () => {
+    const graphql = vi.fn().mockResolvedValue({
+      i0: { issue: graphqlNode() },
+      i1: { issue: graphqlNode() },
+    });
+    await prefetchIssueCores(makeOctokit(graphql), ISSUES);
+    const [query] = graphql.mock.calls[0];
+    expect(query).toContain("authorAssociation");
   });
 
   it("passes owner/name/number as GraphQL variables, not interpolated text", async () => {

@@ -14,6 +14,7 @@ import {
   ProjectCategorySchema,
   PersistenceModeSchema,
   SearchStrategySchema,
+  ComplexIssuesModeSchema,
 } from "./schemas.js";
 import type { ScoutPreferences } from "./schemas.js";
 import { ValidationError } from "./errors.js";
@@ -55,6 +56,7 @@ export const FIELD_CONFIGS: Record<string, FieldConfig> = {
   boostIssueTypes: { type: "array" },
   slmTriageModel: { type: "string" },
   slmTriageHost: { type: "string" },
+  complexIssues: { type: "enum", validValues: ComplexIssuesModeSchema.options },
   featuresAnchorThreshold: { type: "number" },
   featuresSplitRatio: { type: "float" },
 };

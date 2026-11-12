@@ -122,6 +122,7 @@ vi.mock("./http-cache.js", () => ({
 }));
 
 import { IssueVetter, type ScoutStateReader } from "./issue-vetting.js";
+import type { PrefetchedIssueCore } from "./issue-graphql.js";
 import {
   checkNoExistingPR,
   checkNotClaimed,
@@ -686,6 +687,744 @@ describe("IssueVetter", () => {
       expect(result.reasonsToApprove).toContain(
         "Matches preferred project category",
       );
+    });
+  });
+
+  // ── vetIssue: complexIssues ───────────────────────────────────────
+
+  describe("vetIssue — complexIssues", () => {
+    const DECIDED_NOTE =
+      "Requirements taken as decided: maintainer-filed or triage-accepted";
+
+    /** A maintainer's prose spec: no repro steps, no code block. */
+    function proseCore(
+      over: Partial<PrefetchedIssueCore> = {},
+    ): PrefetchedIssueCore {
+      return {
+        id: 10,
+        title: "Stream the exporter output",
+        body: "The exporter buffers everything; it should stream instead.",
+        state: "open",
+        labels: [],
+        commentCount: 0,
+        createdAt: "2026-02-01T00:00:00Z",
+        updatedAt: "2026-04-01T00:00:00Z",
+        authorLogin: "maint",
+        ...over,
+      };
+    }
+
+    /** Vetter with the preference on and owner/repo in the merged-PR list. */
+    function unlockedVetter(over: Partial<ScoutStateReader> = {}): IssueVetter {
+      return makeVetter({
+        getComplexIssuesMode: vi.fn(() => "warm" as const),
+        getReposWithMergedPRs: vi.fn(() => ["owner/repo"]),
+        ...over,
+      });
+    }
+
+    function existingPROpts(): unknown {
+      const call = vi.mocked(checkNoExistingPR).mock.calls.at(-1);
+      expect(call).toBeDefined();
+      return call![4];
+    }
+
+    describe("existing-PR mode", () => {
+      it("mode off: timeline path and no complexityUnlocked key, even in a merged-PR repo", async () => {
+        const vetter = makeVetter({
+          getComplexIssuesMode: vi.fn(() => "off" as const),
+          getReposWithMergedPRs: vi.fn(() => ["owner/repo"]),
+        });
+        const result = await vetter.vetIssue(VALID_ISSUE_URL);
+        expect(existingPROpts()).toEqual({ closingOnly: false, username: "" });
+        expect(result).not.toHaveProperty("complexityUnlocked");
+      });
+
+      it("reader without getComplexIssuesMode reads as off", async () => {
+        const vetter = makeVetter({
+          getReposWithMergedPRs: vi.fn(() => ["owner/repo"]),
+        });
+        const result = await vetter.vetIssue(VALID_ISSUE_URL);
+        expect(existingPROpts()).toEqual({ closingOnly: false, username: "" });
+        expect(result).not.toHaveProperty("complexityUnlocked");
+      });
+
+      it("mode warm but repo not in the merged-PR list: same as off", async () => {
+        const vetter = makeVetter({
+          getComplexIssuesMode: vi.fn(() => "warm" as const),
+          getReposWithMergedPRs: vi.fn(() => ["owner/other-repo"]),
+        });
+        const result = await vetter.vetIssue(VALID_ISSUE_URL);
+        expect(existingPROpts()).toEqual({ closingOnly: false, username: "" });
+        expect(result).not.toHaveProperty("complexityUnlocked");
+      });
+
+      it("mode warm + merged-PR repo: closing-PR path and complexityUnlocked true", async () => {
+        const vetter = unlockedVetter();
+        const result = await vetter.vetIssue(VALID_ISSUE_URL);
+        expect(existingPROpts()).toEqual({ closingOnly: true, username: "" });
+        expect(result.complexityUnlocked).toBe(true);
+      });
+
+      it("approves an unlocked issue whose only PR is a non-closing mention; mode off does not", async () => {
+        // Run the real existing-PR check: the timeline shows an open PR that
+        // merely mentions the issue, the closing-PR query shows nothing.
+        const actual = await vi.importActual<
+          typeof import("./issue-eligibility.js")
+        >("./issue-eligibility.js");
+        vi.mocked(checkNoExistingPR).mockImplementation(
+          actual.checkNoExistingPR,
+        );
+        const mentionEvent = {
+          event: "cross-referenced",
+          source: {
+            issue: {
+              number: 99,
+              state: "open",
+              html_url: "https://github.com/owner/repo/pull/99",
+              user: { login: "someone-else" },
+              pull_request: { url: "u", merged_at: null },
+            },
+          },
+        };
+        function octokitWithMention(): Octokit {
+          const octokit = makeMockOctokit();
+          (
+            octokit as unknown as {
+              issues: { listEventsForTimeline: ReturnType<typeof vi.fn> };
+            }
+          ).issues.listEventsForTimeline = vi
+            .fn()
+            .mockResolvedValue({ data: [mentionEvent] });
+          (
+            octokit as unknown as { graphql: ReturnType<typeof vi.fn> }
+          ).graphql = vi.fn().mockResolvedValue({
+            repository: {
+              issue: { closedByPullRequestsReferences: { nodes: [] } },
+            },
+          });
+          return octokit;
+        }
+
+        const off = new IssueVetter(
+          octokitWithMention(),
+          makeStubStateReader({
+            getComplexIssuesMode: vi.fn(() => "off" as const),
+            getReposWithMergedPRs: vi.fn(() => ["owner/repo"]),
+          }),
+        );
+        const offResult = await off.vetIssue(VALID_ISSUE_URL);
+        expect(offResult.vettingResult.checks.noExistingPR).toBe(false);
+        expect(offResult.reasonsToSkip).toContain("Has existing PR");
+        expect(offResult.recommendation).not.toBe("approve");
+
+        const warm = new IssueVetter(
+          octokitWithMention(),
+          makeStubStateReader({
+            getComplexIssuesMode: vi.fn(() => "warm" as const),
+            getReposWithMergedPRs: vi.fn(() => ["owner/repo"]),
+          }),
+        );
+        const warmResult = await warm.vetIssue(VALID_ISSUE_URL);
+        expect(warmResult.vettingResult.checks.noExistingPR).toBe(true);
+        expect(warmResult.vettingResult.linkedPR).toBeNull();
+        expect(warmResult.recommendation).toBe("approve");
+        expect(warmResult.complexityUnlocked).toBe(true);
+      });
+    });
+
+    describe("requirements", () => {
+      beforeEach(() => {
+        vi.mocked(analyzeRequirements).mockReturnValue(false);
+      });
+
+      it("prose body + maintainer author + unlocked: clear, with the note", async () => {
+        const result = await unlockedVetter().vetIssue(VALID_ISSUE_URL, {
+          prefetched: proseCore({ authorIsMaintainer: true }),
+        });
+        expect(result.vettingResult.checks.clearRequirements).toBe(true);
+        expect(result.vettingResult.passedAllChecks).toBe(true);
+        expect(result.vettingResult.notes).toContain(DECIDED_NOTE);
+        expect(result.reasonsToSkip).not.toContain("Unclear requirements");
+      });
+
+      it("same issue with mode off: unclear, no note", async () => {
+        const vetter = makeVetter({
+          getComplexIssuesMode: vi.fn(() => "off" as const),
+          getReposWithMergedPRs: vi.fn(() => ["owner/repo"]),
+        });
+        const result = await vetter.vetIssue(VALID_ISSUE_URL, {
+          prefetched: proseCore({ authorIsMaintainer: true }),
+        });
+        expect(result.vettingResult.checks.clearRequirements).toBe(false);
+        expect(result.vettingResult.notes).not.toContain(DECIDED_NOTE);
+      });
+
+      it("same issue with mode warm outside the merged-PR list: unclear", async () => {
+        const vetter = makeVetter({
+          getComplexIssuesMode: vi.fn(() => "warm" as const),
+          getReposWithMergedPRs: vi.fn(() => ["owner/other-repo"]),
+        });
+        const result = await vetter.vetIssue(VALID_ISSUE_URL, {
+          prefetched: proseCore({ authorIsMaintainer: true }),
+        });
+        expect(result.vettingResult.checks.clearRequirements).toBe(false);
+        expect(result.vettingResult.notes).not.toContain(DECIDED_NOTE);
+      });
+
+      it("maintainer author who is the configured user: unclear", async () => {
+        const vetter = unlockedVetter({
+          getGitHubUsername: vi.fn(() => "Maint"),
+        });
+        const result = await vetter.vetIssue(VALID_ISSUE_URL, {
+          prefetched: proseCore({
+            authorLogin: "maint",
+            authorIsMaintainer: true,
+          }),
+        });
+        expect(result.vettingResult.checks.clearRequirements).toBe(false);
+        expect(result.vettingResult.notes).not.toContain(DECIDED_NOTE);
+      });
+
+      it("non-maintainer with label 'status: accepted': clear", async () => {
+        const result = await unlockedVetter().vetIssue(VALID_ISSUE_URL, {
+          prefetched: proseCore({
+            authorIsMaintainer: false,
+            labels: ["status: accepted"],
+          }),
+        });
+        expect(result.vettingResult.checks.clearRequirements).toBe(true);
+        expect(result.vettingResult.notes).toContain(DECIDED_NOTE);
+      });
+
+      it("non-maintainer with label 'unconfirmed': unclear", async () => {
+        const result = await unlockedVetter().vetIssue(VALID_ISSUE_URL, {
+          prefetched: proseCore({
+            authorIsMaintainer: false,
+            labels: ["unconfirmed"],
+          }),
+        });
+        expect(result.vettingResult.checks.clearRequirements).toBe(false);
+        expect(result.vettingResult.notes).not.toContain(DECIDED_NOTE);
+      });
+
+      it("non-maintainer with label 'help wanted': clear", async () => {
+        const result = await unlockedVetter().vetIssue(VALID_ISSUE_URL, {
+          prefetched: proseCore({
+            authorIsMaintainer: false,
+            labels: ["help wanted"],
+          }),
+        });
+        expect(result.vettingResult.checks.clearRequirements).toBe(true);
+        expect(result.vettingResult.notes).toContain(DECIDED_NOTE);
+      });
+
+      it("body that already passes analyzeRequirements: clear without the note", async () => {
+        vi.mocked(analyzeRequirements).mockReturnValue(true);
+        const result = await unlockedVetter().vetIssue(VALID_ISSUE_URL, {
+          prefetched: proseCore({
+            authorIsMaintainer: true,
+            labels: ["help wanted"],
+          }),
+        });
+        expect(result.vettingResult.checks.clearRequirements).toBe(true);
+        expect(result.vettingResult.notes).not.toContain(DECIDED_NOTE);
+      });
+    });
+
+    describe("authorIsMaintainer on the REST fetchIssueCore path", () => {
+      it.each([
+        ["OWNER", true],
+        ["MEMBER", true],
+        ["COLLABORATOR", true],
+        ["CONTRIBUTOR", false],
+        ["NONE", false],
+        [undefined, false],
+      ])(
+        "author_association %s -> maintainer-decided %s",
+        async (association, expected) => {
+          vi.mocked(analyzeRequirements).mockReturnValue(false);
+          const octokit = makeMockOctokit();
+          (
+            octokit as unknown as { issues: { get: ReturnType<typeof vi.fn> } }
+          ).issues.get.mockResolvedValue({
+            data: {
+              id: 123,
+              html_url: VALID_ISSUE_URL,
+              title: "Stream the exporter output",
+              body: "The exporter buffers everything; it should stream.",
+              comments: 0,
+              labels: [],
+              created_at: "2026-01-01T00:00:00Z",
+              updated_at: "2026-03-01T00:00:00Z",
+              user: { login: "maint" },
+              ...(association === undefined
+                ? {}
+                : { author_association: association }),
+            },
+          });
+          const vetter = new IssueVetter(
+            octokit,
+            makeStubStateReader({
+              getComplexIssuesMode: vi.fn(() => "warm" as const),
+              getReposWithMergedPRs: vi.fn(() => ["owner/repo"]),
+            }),
+          );
+          const result = await vetter.vetIssue(VALID_ISSUE_URL);
+          expect(result.vettingResult.checks.clearRequirements).toBe(expected);
+          expect(result.vettingResult.notes.includes(DECIDED_NOTE)).toBe(
+            expected,
+          );
+        },
+      );
+    });
+
+    describe("vet cache", () => {
+      /** A real key/value store so a hit in one mode is visible to the other. */
+      function installMapCache(): Map<string, unknown> {
+        const store = new Map<string, unknown>();
+        vi.mocked(getHttpCache).mockReturnValue({
+          getIfFresh: vi.fn((key: string) => store.get(key) ?? null),
+          set: vi.fn((key: string, _etag: string, value: unknown) =>
+            store.set(key, value),
+          ),
+        } as unknown as ReturnType<typeof getHttpCache>);
+        return store;
+      }
+
+      it("a result cached with mode off is not returned when mode is warm", async () => {
+        const store = installMapCache();
+        const calls = () => vi.mocked(checkNoExistingPR).mock.calls.length;
+        const before = calls();
+        const off = makeVetter({
+          getComplexIssuesMode: vi.fn(() => "off" as const),
+          getReposWithMergedPRs: vi.fn(() => ["owner/repo"]),
+        });
+        const offResult = await off.vetIssue(VALID_ISSUE_URL);
+        expect(calls()).toBe(before + 1);
+
+        const warmResult = await unlockedVetter().vetIssue(VALID_ISSUE_URL);
+        expect(calls()).toBe(before + 2);
+        expect(warmResult).not.toBe(offResult);
+        expect(warmResult.complexityUnlocked).toBe(true);
+        expect([...store.keys()]).toEqual([
+          `vet:${VALID_ISSUE_URL}`,
+          `vet:${VALID_ISSUE_URL}:cx-warm`,
+        ]);
+
+        // Each mode now hits its own entry
+        expect(await off.vetIssue(VALID_ISSUE_URL)).toBe(offResult);
+        expect(await unlockedVetter().vetIssue(VALID_ISSUE_URL)).toBe(
+          warmResult,
+        );
+        expect(calls()).toBe(before + 2);
+      });
+
+      it("a result cached with mode warm is not returned when mode is off", async () => {
+        installMapCache();
+        const calls = () => vi.mocked(checkNoExistingPR).mock.calls.length;
+        const before = calls();
+        const warmResult = await unlockedVetter().vetIssue(VALID_ISSUE_URL);
+        expect(calls()).toBe(before + 1);
+
+        const off = makeVetter({
+          getComplexIssuesMode: vi.fn(() => "off" as const),
+          getReposWithMergedPRs: vi.fn(() => ["owner/repo"]),
+        });
+        const offResult = await off.vetIssue(VALID_ISSUE_URL);
+        expect(calls()).toBe(before + 2);
+        expect(offResult).not.toBe(warmResult);
+        expect(offResult).not.toHaveProperty("complexityUnlocked");
+      });
+    });
+
+    describe("merged-PR repo match", () => {
+      it("unlocks when the state lists the repo in different casing", async () => {
+        const vetter = makeVetter({
+          getComplexIssuesMode: vi.fn(() => "warm" as const),
+          getReposWithMergedPRs: vi.fn(() => ["Foo/Bar"]),
+        });
+        const liveCountCalls = () =>
+          vi.mocked(checkUserMergedPRsInRepo).mock.calls.length;
+        const before = liveCountCalls();
+        const result = await vetter.vetIssue(
+          "https://github.com/foo/bar/issues/1",
+        );
+        expect(result.complexityUnlocked).toBe(true);
+        expect(existingPROpts()).toEqual({ closingOnly: true, username: "" });
+        // The same match also stands in for the live merged-PR count.
+        expect(liveCountCalls()).toBe(before);
+        expect(result.reasonsToApprove).toContain(
+          "Trusted project (1 PR merged)",
+        );
+      });
+    });
+
+    describe("open PRs that only mention the issue", () => {
+      type MentionNode = {
+        number: number;
+        state?: "OPEN" | "CLOSED" | "MERGED";
+        author?: { login?: string } | null;
+        updatedAt?: string;
+      };
+      const DAY_MS = 24 * 60 * 60 * 1000;
+
+      /** Run the real existing-PR check against a closing-PR GraphQL reply. */
+      async function useRealExistingPRCheck(): Promise<void> {
+        const actual = await vi.importActual<
+          typeof import("./issue-eligibility.js")
+        >("./issue-eligibility.js");
+        vi.mocked(checkNoExistingPR).mockImplementation(
+          actual.checkNoExistingPR,
+        );
+      }
+
+      function octokitWithMentions(
+        mentions: MentionNode[],
+        closing: MentionNode[] = [],
+      ): Octokit {
+        const node = (m: MentionNode) => ({
+          number: m.number,
+          state: m.state ?? "OPEN",
+          url: `https://github.com/owner/repo/pull/${m.number}`,
+          updatedAt: m.updatedAt ?? new Date().toISOString(),
+          author: m.author === undefined ? { login: "someone" } : m.author,
+        });
+        const octokit = makeMockOctokit();
+        (octokit as unknown as { graphql: ReturnType<typeof vi.fn> }).graphql =
+          vi.fn().mockResolvedValue({
+            repository: {
+              issue: {
+                closedByPullRequestsReferences: { nodes: closing.map(node) },
+                timelineItems: {
+                  nodes: mentions.map((m) => ({ source: node(m) })),
+                },
+              },
+            },
+          });
+        return octokit;
+      }
+
+      function unlockedVetterWith(
+        octokit: Octokit,
+        username?: string,
+      ): IssueVetter {
+        return new IssueVetter(
+          octokit,
+          makeStubStateReader({
+            getComplexIssuesMode: vi.fn(() => "warm" as const),
+            getReposWithMergedPRs: vi.fn(() => ["owner/repo"]),
+            ...(username === undefined
+              ? {}
+              : { getGitHubUsername: vi.fn(() => username) }),
+          }),
+        );
+      }
+
+      it("someone else's open mention updated today: needs_review with the caution, not 'Has existing PR'", async () => {
+        await useRealExistingPRCheck();
+        const vetter = unlockedVetterWith(
+          octokitWithMentions([{ number: 12, author: { login: "alice" } }]),
+          "me",
+        );
+        const result = await vetter.vetIssue(VALID_ISSUE_URL);
+        expect(result.vettingResult.checks.noExistingPR).toBe(true);
+        expect(result.vettingResult.linkedPR).toBeNull();
+        expect(result.vettingResult.passedAllChecks).toBe(true);
+        expect(result.recommendation).toBe("needs_review");
+        expect(result.reasonsToSkip).toEqual([
+          "Open PR #12 mentions this issue",
+        ]);
+        expect(result.reasonsToSkip).not.toContain("Has existing PR");
+        expect(result.reasonsToApprove).toContain("No existing PR");
+        expect(result.complexityUnlocked).toBe(true);
+      });
+
+      it("the user's own open mention, in different casing: skip, 'You already have a PR in flight'", async () => {
+        await useRealExistingPRCheck();
+        const vetter = unlockedVetterWith(
+          octokitWithMentions([{ number: 12, author: { login: "Alice" } }]),
+          "ALICE",
+        );
+        const result = await vetter.vetIssue(VALID_ISSUE_URL);
+        expect(existingPROpts()).toEqual({
+          closingOnly: true,
+          username: "ALICE",
+        });
+        expect(result.vettingResult.checks.noExistingPR).toBe(false);
+        expect(result.vettingResult.linkedPR).toMatchObject({
+          number: 12,
+          author: "Alice",
+          state: "open",
+          merged: false,
+        });
+        expect(result.recommendation).toBe("skip");
+        expect(result.reasonsToSkip).toContain(
+          "You already have a PR in flight",
+        );
+        expect(result.reasonsToSkip).not.toContain("Has existing PR");
+        expect(result.reasonsToSkip.join("\n")).not.toContain("mentions this");
+      });
+
+      it("a mention last updated 45 days ago leaves the issue approvable", async () => {
+        await useRealExistingPRCheck();
+        const vetter = unlockedVetterWith(
+          octokitWithMentions([
+            {
+              number: 12,
+              author: { login: "alice" },
+              updatedAt: new Date(Date.now() - 45 * DAY_MS).toISOString(),
+            },
+          ]),
+          "me",
+        );
+        const result = await vetter.vetIssue(VALID_ISSUE_URL);
+        expect(result.recommendation).toBe("approve");
+        expect(result.reasonsToSkip).toEqual([]);
+      });
+
+      it("merged and closed mentions are ignored", async () => {
+        await useRealExistingPRCheck();
+        const vetter = unlockedVetterWith(
+          octokitWithMentions([
+            { number: 12, state: "MERGED", author: { login: "me" } },
+            { number: 13, state: "CLOSED", author: { login: "alice" } },
+          ]),
+          "me",
+        );
+        const result = await vetter.vetIssue(VALID_ISSUE_URL);
+        expect(result.recommendation).toBe("approve");
+        expect(result.vettingResult.linkedPR).toBeNull();
+        expect(result.reasonsToSkip).toEqual([]);
+      });
+
+      it("two open mentions produce one caution naming both", async () => {
+        await useRealExistingPRCheck();
+        const vetter = unlockedVetterWith(
+          octokitWithMentions([
+            { number: 12, author: { login: "alice" } },
+            { number: 13, author: { login: "bob" } },
+          ]),
+          "me",
+        );
+        const result = await vetter.vetIssue(VALID_ISSUE_URL);
+        expect(result.recommendation).toBe("needs_review");
+        expect(result.reasonsToSkip).toEqual([
+          "Open PR #12, #13 mentions this issue",
+        ]);
+      });
+
+      it("the caution comes from the check's openMentions, independent of the GraphQL shape", async () => {
+        vi.mocked(checkNoExistingPR).mockResolvedValue({
+          passed: true,
+          linkedPR: null,
+          openMentions: [
+            {
+              number: 8,
+              author: "alice",
+              state: "open",
+              merged: false,
+              url: "https://github.com/owner/repo/pull/8",
+            },
+          ],
+        });
+        const result = await unlockedVetter().vetIssue(VALID_ISSUE_URL);
+        expect(result.recommendation).toBe("needs_review");
+        expect(result.reasonsToSkip).toEqual([
+          "Open PR #8 mentions this issue",
+        ]);
+        expect(result.vettingResult.checks.noExistingPR).toBe(true);
+      });
+
+      it("a closing PR blocks the issue and no mention caution is added", async () => {
+        await useRealExistingPRCheck();
+        const vetter = unlockedVetterWith(
+          octokitWithMentions(
+            [{ number: 12, author: { login: "alice" } }],
+            [{ number: 7, author: { login: "carol" } }],
+          ),
+          "me",
+        );
+        const result = await vetter.vetIssue(VALID_ISSUE_URL);
+        expect(result.vettingResult.checks.noExistingPR).toBe(false);
+        expect(result.vettingResult.linkedPR?.number).toBe(7);
+        expect(result.reasonsToSkip).toEqual(["Has existing PR"]);
+      });
+
+      it.each([
+        ["repository: null", { repository: null }],
+        ["issue: null", { repository: { issue: null } }],
+      ])(
+        "a GraphQL reply with %s is inconclusive and the verdict is not cached",
+        async (_label, reply) => {
+          await useRealExistingPRCheck();
+          const cacheSet = vi.fn();
+          vi.mocked(getHttpCache).mockReturnValue({
+            getIfFresh: vi.fn(() => null),
+            set: cacheSet,
+          } as unknown as ReturnType<typeof getHttpCache>);
+          const octokit = makeMockOctokit();
+          (
+            octokit as unknown as { graphql: ReturnType<typeof vi.fn> }
+          ).graphql = vi.fn().mockResolvedValue(reply);
+          const result = await unlockedVetterWith(octokit, "me").vetIssue(
+            VALID_ISSUE_URL,
+          );
+          expect(result.vettingResult.checks.noExistingPR).toBe(true);
+          expect(result.recommendation).toBe("needs_review");
+          expect(result.vettingResult.notes).toContain(
+            "Recommendation downgraded: one or more checks were inconclusive",
+          );
+          expect(result.vettingResult.notes.join("\n")).toContain(
+            "issue not returned by GraphQL",
+          );
+          expect(cacheSet).not.toHaveBeenCalled();
+        },
+      );
+    });
+
+    describe("maintainer-decided requirements", () => {
+      beforeEach(() => {
+        vi.mocked(analyzeRequirements).mockReturnValue(false);
+      });
+
+      async function clearFor(
+        over: Partial<PrefetchedIssueCore>,
+      ): Promise<{ clear: boolean; noted: boolean }> {
+        const result = await unlockedVetter().vetIssue(VALID_ISSUE_URL, {
+          prefetched: proseCore({ authorIsMaintainer: true, ...over }),
+        });
+        return {
+          clear: result.vettingResult.checks.clearRequirements,
+          noted: result.vettingResult.notes.includes(DECIDED_NOTE),
+        };
+      }
+
+      it("needs a body of at least 50 characters", async () => {
+        expect(await clearFor({ body: "a".repeat(49) })).toEqual({
+          clear: false,
+          noted: false,
+        });
+        expect(await clearFor({ body: "a".repeat(50) })).toEqual({
+          clear: true,
+          noted: true,
+        });
+      });
+
+      it("does not count surrounding whitespace toward the 50", async () => {
+        expect(
+          await clearFor({ body: `${" ".repeat(10)}${"a".repeat(49)}\n\n` }),
+        ).toEqual({ clear: false, noted: false });
+      });
+
+      it("an empty body is unclear", async () => {
+        expect(await clearFor({ body: "" })).toEqual({
+          clear: false,
+          noted: false,
+        });
+      });
+
+      it.each([
+        ["Tracking: Q3 roadmap"],
+        ["RFC: new plugin API"],
+        ["[Epic] Rewrite the exporter"],
+        ["Question about streaming"],
+        ["Blocked on upstream fix"],
+      ])("title %j marks the work undecided", async (title) => {
+        expect(await clearFor({ title })).toEqual({
+          clear: false,
+          noted: false,
+        });
+      });
+
+      it.each([["blocked"], ["needs-design"], ["question"], ["on hold"]])(
+        "label %j marks the work undecided even next to 'help wanted'",
+        async (label) => {
+          expect(await clearFor({ labels: ["help wanted", label] })).toEqual({
+            clear: false,
+            noted: false,
+          });
+          expect(await clearFor({ labels: [label, "help wanted"] })).toEqual({
+            clear: false,
+            noted: false,
+          });
+        },
+      );
+
+      it("a body that passes analyzeRequirements is clear regardless of markers or length", async () => {
+        vi.mocked(analyzeRequirements).mockReturnValue(true);
+        const result = await unlockedVetter().vetIssue(VALID_ISSUE_URL, {
+          prefetched: proseCore({
+            authorIsMaintainer: true,
+            title: "Tracking: Q3 roadmap",
+            labels: ["blocked", "question"],
+            body: "short",
+          }),
+        });
+        expect(result.vettingResult.checks.clearRequirements).toBe(true);
+        expect(result.vettingResult.notes).not.toContain(DECIDED_NOTE);
+      });
+    });
+
+    describe("triage labels on the non-maintainer path", () => {
+      beforeEach(() => {
+        vi.mocked(analyzeRequirements).mockReturnValue(false);
+      });
+
+      async function clearFor(label: string): Promise<boolean> {
+        const result = await unlockedVetter().vetIssue(VALID_ISSUE_URL, {
+          prefetched: proseCore({
+            authorIsMaintainer: false,
+            // 58 characters of prose, past the 50-character floor
+            body: "The exporter buffers everything; it should stream instead.",
+            labels: [label],
+          }),
+        });
+        const clear = result.vettingResult.checks.clearRequirements;
+        expect(result.vettingResult.notes.includes(DECIDED_NOTE)).toBe(clear);
+        return clear;
+      }
+
+      it.each([
+        ["status: accepted"],
+        ["confirmed"],
+        ["approved"],
+        ["triaged"],
+        ["planned"],
+        ["help wanted"],
+        ["help-wanted"],
+        ["help_wanted"],
+        ["Help Wanted"],
+      ])("label %j: clear", async (label) => {
+        expect(await clearFor(label)).toBe(true);
+      });
+
+      it.each([
+        ["not planned"],
+        ["not-planned"],
+        ["to be triaged"],
+        ["needs-triaged"],
+        ["to-be-confirmed"],
+        ["not approved"],
+        ["wontfix-confirmed"],
+        ["duplicate-confirmed"],
+        ["cla: approved"],
+        ["accepted-answer"],
+        ["unconfirmed"],
+        ["unplanned"],
+      ])("label %j: not clear", async (label) => {
+        expect(await clearFor(label)).toBe(false);
+      });
+
+      it("one vetoed label does not cancel a separate accepted one", async () => {
+        const result = await unlockedVetter().vetIssue(VALID_ISSUE_URL, {
+          prefetched: proseCore({
+            authorIsMaintainer: false,
+            labels: ["not planned", "help wanted"],
+          }),
+        });
+        expect(result.vettingResult.checks.clearRequirements).toBe(true);
+      });
     });
   });
 

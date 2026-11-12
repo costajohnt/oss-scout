@@ -387,6 +387,27 @@ describe("config command", () => {
       });
     });
 
+    describe("complexIssues field", () => {
+      it("defaults to off and accepts warm", () => {
+        writeState(makeState());
+        expect(readState().preferences.complexIssues).toBe("off");
+
+        const result = runConfigSet("complexIssues", "warm");
+
+        expect(result.complexIssues).toBe("warm");
+        expect(readState().preferences.complexIssues).toBe("warm");
+      });
+
+      it("rejects an unknown mode and leaves the state untouched", () => {
+        writeState(makeState());
+
+        expect(() => runConfigSet("complexIssues", "anchor")).toThrow(
+          "Invalid value",
+        );
+        expect(readState().preferences.complexIssues).toBe("off");
+      });
+    });
+
     describe("validation", () => {
       it("should reject unknown keys", () => {
         writeState(makeState());

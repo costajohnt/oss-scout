@@ -62,6 +62,10 @@ import {
 } from "./core/errors.js";
 import { getHttpCache } from "./core/http-cache.js";
 
+/** Vetter skip reasons that come from the existing-PR check. */
+const LINKED_PR_SKIP_REASON =
+  /Linked PR already merged|Linked PR closed without merge|Has existing PR/;
+
 /** Cause-specific user-facing message for degraded (offline) mode. */
 function offlineModeMessage(reason: DegradedReason | undefined): string {
   const tail = "Changes will only be saved locally.";
@@ -230,8 +234,27 @@ export class OssScout implements ScoutStateReader, ScoutStateWriter {
     this.evictStaleCacheEntries();
     this.cullExpiredSkips();
 
+    // Under complexIssues "warm", a vetter skip recorded for a linked PR in a
+    // contributed repo may have come from a PR that only mentioned the issue,
+    // which no longer counts there. Let those be vetted again.
+    // ponytail: matched on the reason text, so a real closing-PR skip is
+    // re-vetted (and re-recorded) each search. Stamp entries with the rule
+    // that produced them if that cost ever shows up.
+    const unlockedRepos = new Set(
+      this.getComplexIssuesMode() === "warm"
+        ? this.getReposWithMergedPRs().map((r) => r.toLowerCase())
+        : [],
+    );
     const skippedUrls = new Set(
-      (this.state.skippedIssues ?? []).map((s) => s.url),
+      (this.state.skippedIssues ?? [])
+        .filter(
+          (s) =>
+            !(
+              unlockedRepos.has(s.repo.toLowerCase()) &&
+              LINKED_PR_SKIP_REASON.test(s.reason ?? "")
+            ),
+        )
+        .map((s) => s.url),
     );
 
     // Rotation (#249): also exclude issues surfaced by a recent search so
@@ -675,6 +698,10 @@ export class OssScout implements ScoutStateReader, ScoutStateWriter {
     const model = this.state.preferences.slmTriageModel ?? "";
     if (!model) return null;
     return { model, host: this.state.preferences.slmTriageHost ?? "" };
+  }
+
+  getComplexIssuesMode(): "off" | "warm" {
+    return this.state.preferences.complexIssues ?? "off";
   }
 
   /** Get current preferences (read-only). */

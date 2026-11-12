@@ -66,6 +66,21 @@ describe("preference-fields", () => {
       );
     });
 
+    it("accepts complexIssues warm and rejects an unknown mode", () => {
+      expect(FIELD_CONFIGS.complexIssues).toEqual({
+        type: "enum",
+        validValues: ["off", "warm"],
+      });
+      expect(
+        applyPreferenceField(defaults, "complexIssues", "warm").complexIssues,
+      ).toBe("warm");
+      expect(() =>
+        applyPreferenceField(defaults, "complexIssues", "anchor"),
+      ).toThrow(
+        'Invalid value for "complexIssues": "anchor". Valid: off, warm',
+      );
+    });
+
     it("rejects an unknown key with the sorted key list", () => {
       expect(() => applyPreferenceField(defaults, "nope", "x")).toThrow(
         "Unknown config key",

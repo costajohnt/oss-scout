@@ -14,7 +14,11 @@ import type { Octokit } from "@octokit/rest";
 import { errorMessage, getHttpStatusCode, isRateLimitError } from "./errors.js";
 import { getHttpCache, versionedCacheKey } from "./http-cache.js";
 import { warn } from "./logger.js";
-import { applyPerRepoCap, type GitHubSearchItem } from "./issue-filtering.js";
+import {
+  applyPerRepoCap,
+  MAINTAINER_ASSOCIATIONS,
+  type GitHubSearchItem,
+} from "./issue-filtering.js";
 import type { IssueVetter } from "./issue-vetting.js";
 import { KNOWN_REPO_PER_REPO_CAP } from "./search-phases.js";
 import type { IssueCandidate } from "./types.js";
@@ -67,8 +71,6 @@ const MAX_VETS = 60;
  * memory needs a field in scout state.
  */
 const SKIP_MEMORY_MS = 24 * 60 * 60 * 1000;
-
-const MAINTAINER_ASSOCIATIONS = new Set(["OWNER", "MEMBER", "COLLABORATOR"]);
 
 /** GraphQL error types that a retry cannot fix. */
 const PERMANENT_ERROR_TYPES = new Set(["NOT_FOUND", "FORBIDDEN"]);

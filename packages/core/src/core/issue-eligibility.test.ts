@@ -323,6 +323,551 @@ describe("checkNoExistingPR", () => {
   });
 });
 
+// ── checkNoExistingPR: closingOnly (complexIssues) ────────────────
+
+describe("checkNoExistingPR with closingOnly", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockPaginateAll.mockResolvedValue([]);
+  });
+
+  type Node = {
+    number: number;
+    state: "OPEN" | "CLOSED" | "MERGED";
+    url?: string;
+    updatedAt?: string;
+    author?: { login?: string } | null;
+  };
+
+  function closingNode(over: Partial<Node> & Pick<Node, "number">): Node {
+    return {
+      state: "OPEN",
+      url: `https://github.com/owner/repo/pull/${over.number}`,
+      updatedAt: "2026-04-01T12:00:00Z",
+      author: { login: `user${over.number}` },
+      ...over,
+    };
+  }
+
+  function octokitWithClosingPRs(nodes: (Node | null)[] | undefined): Octokit {
+    return makeMockOctokit({
+      graphql: vi.fn().mockResolvedValue({
+        repository: {
+          issue:
+            nodes === undefined
+              ? null
+              : { closedByPullRequestsReferences: { nodes } },
+        },
+      }),
+    });
+  }
+
+  function graphqlOf(octokit: Octokit): ReturnType<typeof vi.fn> {
+    return (octokit as unknown as { graphql: ReturnType<typeof vi.fn> })
+      .graphql;
+  }
+
+  it("walks the timeline and never queries closing PRs by default", async () => {
+    const octokit = octokitWithClosingPRs([closingNode({ number: 1 })]);
+    const result = await checkNoExistingPR(octokit, "owner", "repo", 1);
+    expect(mockPaginateAll).toHaveBeenCalledTimes(1);
+    expect(graphqlOf(octokit)).not.toHaveBeenCalled();
+    // The closing PR above is invisible to the timeline path
+    expect(result.passed).toBe(true);
+  });
+
+  it("walks the timeline when closingOnly is explicitly false", async () => {
+    const octokit = octokitWithClosingPRs([closingNode({ number: 1 })]);
+    await checkNoExistingPR(octokit, "owner", "repo", 1, {
+      closingOnly: false,
+    });
+    expect(mockPaginateAll).toHaveBeenCalledTimes(1);
+    expect(graphqlOf(octokit)).not.toHaveBeenCalled();
+  });
+
+  it("queries closedByPullRequestsReferences and skips the timeline when closingOnly", async () => {
+    const octokit = octokitWithClosingPRs([]);
+    await checkNoExistingPR(octokit, "owner", "repo", 42, {
+      closingOnly: true,
+    });
+    expect(mockPaginateAll).not.toHaveBeenCalled();
+    const graphql = graphqlOf(octokit);
+    expect(graphql).toHaveBeenCalledTimes(1);
+    const [query, variables] = graphql.mock.calls[0];
+    expect(query).toContain(
+      "closedByPullRequestsReferences(first: 20, includeClosedPrs: true)",
+    );
+    expect(query).toContain("repository(owner: $owner, name: $repo)");
+    expect(query).toContain("issue(number: $number)");
+    expect(variables).toEqual({ owner: "owner", repo: "repo", number: 42 });
+  });
+
+  it("passes when no PR closes the issue", async () => {
+    const octokit = octokitWithClosingPRs([]);
+    const result = await checkNoExistingPR(octokit, "owner", "repo", 1, {
+      closingOnly: true,
+    });
+    expect(result).toEqual({ passed: true, linkedPR: null });
+  });
+
+  it("is inconclusive, not a pass, when the issue node itself is missing", async () => {
+    const octokit = octokitWithClosingPRs(undefined);
+    const result = await checkNoExistingPR(octokit, "owner", "repo", 1, {
+      closingOnly: true,
+    });
+    expect(result).toEqual({
+      passed: true,
+      inconclusive: true,
+      reason: "issue not returned by GraphQL",
+      linkedPR: null,
+    });
+  });
+
+  it("fails with an open linkedPR for one OPEN closing PR", async () => {
+    const octokit = octokitWithClosingPRs([
+      closingNode({ number: 7, author: { login: "alice" } }),
+    ]);
+    const result = await checkNoExistingPR(octokit, "owner", "repo", 1, {
+      closingOnly: true,
+    });
+    expect(result.passed).toBe(false);
+    expect(result.inconclusive).toBeUndefined();
+    expect(result.linkedPR).toEqual({
+      number: 7,
+      author: "alice",
+      state: "open",
+      merged: false,
+      url: "https://github.com/owner/repo/pull/7",
+      updatedAt: "2026-04-01T12:00:00Z",
+    });
+  });
+
+  it("lets a MERGED closing PR decide over an OPEN one, whatever the order", async () => {
+    const octokit = octokitWithClosingPRs([
+      closingNode({ number: 8, state: "OPEN" }),
+      closingNode({ number: 3, state: "MERGED", author: { login: "bob" } }),
+    ]);
+    const result = await checkNoExistingPR(octokit, "owner", "repo", 1, {
+      closingOnly: true,
+    });
+    expect(result.passed).toBe(false);
+    // state "closed" + merged true is how a merged PR is encoded
+    expect(result.linkedPR).toMatchObject({
+      number: 3,
+      author: "bob",
+      state: "closed",
+      merged: true,
+    });
+  });
+
+  it("lets an OPEN closing PR decide over a CLOSED one", async () => {
+    const octokit = octokitWithClosingPRs([
+      closingNode({ number: 2, state: "CLOSED" }),
+      closingNode({ number: 9, state: "OPEN" }),
+    ]);
+    const result = await checkNoExistingPR(octokit, "owner", "repo", 1, {
+      closingOnly: true,
+    });
+    expect(result.linkedPR).toMatchObject({
+      number: 9,
+      state: "open",
+      merged: false,
+    });
+  });
+
+  it("reports a closed-unmerged linkedPR when only CLOSED PRs exist", async () => {
+    const octokit = octokitWithClosingPRs([
+      closingNode({ number: 5, state: "CLOSED", author: { login: "carol" } }),
+    ]);
+    const result = await checkNoExistingPR(octokit, "owner", "repo", 1, {
+      closingOnly: true,
+    });
+    expect(result.passed).toBe(false);
+    expect(result.linkedPR).toMatchObject({
+      number: 5,
+      author: "carol",
+      state: "closed",
+      merged: false,
+    });
+  });
+
+  it("ignores null nodes", async () => {
+    const onlyNull = octokitWithClosingPRs([null]);
+    expect(
+      await checkNoExistingPR(onlyNull, "owner", "repo", 1, {
+        closingOnly: true,
+      }),
+    ).toEqual({ passed: true, linkedPR: null });
+
+    const mixed = octokitWithClosingPRs([null, closingNode({ number: 4 })]);
+    const result = await checkNoExistingPR(mixed, "owner", "repo", 1, {
+      closingOnly: true,
+    });
+    expect(result.passed).toBe(false);
+    expect(result.linkedPR?.number).toBe(4);
+  });
+
+  it("names a deleted author 'ghost' and still blocks the issue", async () => {
+    for (const author of [null, undefined, {}]) {
+      const octokit = octokitWithClosingPRs([
+        closingNode({ number: 6, author: author as Node["author"] }),
+      ]);
+      const result = await checkNoExistingPR(octokit, "owner", "repo", 1, {
+        closingOnly: true,
+      });
+      expect(result.passed).toBe(false);
+      expect(result.linkedPR?.author).toBe("ghost");
+    }
+  });
+
+  it("leaves linkedPR.updatedAt undefined when the node lacks it", async () => {
+    const octokit = octokitWithClosingPRs([
+      closingNode({ number: 6, updatedAt: undefined }),
+    ]);
+    const result = await checkNoExistingPR(octokit, "owner", "repo", 1, {
+      closingOnly: true,
+    });
+    expect(result.linkedPR?.updatedAt).toBeUndefined();
+  });
+
+  it("returns passed:true and inconclusive:true when the GraphQL call fails", async () => {
+    const octokit = makeMockOctokit({
+      graphql: vi.fn().mockRejectedValue(new Error("GraphQL timeout")),
+    });
+    const result = await checkNoExistingPR(octokit, "owner", "repo", 1, {
+      closingOnly: true,
+    });
+    expect(result.passed).toBe(true);
+    expect(result.inconclusive).toBe(true);
+    expect(result.reason).toContain("GraphQL timeout");
+    expect(result.linkedPR).toBeNull();
+    expect(mockPaginateAll).not.toHaveBeenCalled();
+  });
+
+  it("propagates a 401 from the GraphQL call", async () => {
+    const octokit = makeMockOctokit({
+      graphql: vi.fn().mockRejectedValue(httpError(401, "Unauthorized")),
+    });
+    await expect(
+      checkNoExistingPR(octokit, "owner", "repo", 1, { closingOnly: true }),
+    ).rejects.toThrow("Unauthorized");
+  });
+
+  it("propagates a 429 from the GraphQL call", async () => {
+    const octokit = makeMockOctokit({
+      graphql: vi
+        .fn()
+        .mockRejectedValue(httpError(429, "API rate limit exceeded")),
+    });
+    await expect(
+      checkNoExistingPR(octokit, "owner", "repo", 1, { closingOnly: true }),
+    ).rejects.toThrow("rate limit");
+  });
+});
+
+// ── checkNoExistingPR: closingOnly, PRs that only mention the issue ──
+
+describe("checkNoExistingPR with closingOnly: open mentions", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockPaginateAll.mockResolvedValue([]);
+  });
+
+  type PRNode = {
+    number: number;
+    state: "OPEN" | "CLOSED" | "MERGED";
+    url?: string;
+    updatedAt?: string;
+    author?: { login?: string } | null;
+  };
+  /** A timeline node: `source` is a PR, `{}` for an issue, or null. */
+  type TimelineNode = { source?: Partial<PRNode> | null } | null;
+
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  const today = () => new Date().toISOString();
+  const daysAgo = (n: number) =>
+    new Date(Date.now() - n * DAY_MS).toISOString();
+
+  function pr(over: Partial<PRNode> & Pick<PRNode, "number">): PRNode {
+    return {
+      state: "OPEN",
+      url: `https://github.com/owner/repo/pull/${over.number}`,
+      updatedAt: today(),
+      author: { login: `user${over.number}` },
+      ...over,
+    };
+  }
+
+  function mention(
+    over: Partial<PRNode> & Pick<PRNode, "number">,
+  ): TimelineNode {
+    return { source: pr(over) };
+  }
+
+  function octokitWith(opts: {
+    closing?: (PRNode | null)[];
+    timeline?: TimelineNode[];
+    repository?: null;
+    issue?: null;
+  }): Octokit {
+    const issue =
+      opts.issue === null
+        ? null
+        : {
+            closedByPullRequestsReferences: { nodes: opts.closing ?? [] },
+            timelineItems: { nodes: opts.timeline ?? [] },
+          };
+    return makeMockOctokit({
+      graphql: vi.fn().mockResolvedValue({
+        repository: opts.repository === null ? null : { issue },
+      }),
+    });
+  }
+
+  function graphqlOf(octokit: Octokit): ReturnType<typeof vi.fn> {
+    return (octokit as unknown as { graphql: ReturnType<typeof vi.fn> })
+      .graphql;
+  }
+
+  const closingOnly = (
+    octokit: Octokit,
+    username?: string,
+  ): ReturnType<typeof checkNoExistingPR> =>
+    checkNoExistingPR(octokit, "owner", "repo", 1, {
+      closingOnly: true,
+      ...(username === undefined ? {} : { username }),
+    });
+
+  it("asks for cross-referenced timeline items with a PullRequest fragment", async () => {
+    const octokit = octokitWith({});
+    await closingOnly(octokit);
+    const [query] = graphqlOf(octokit).mock.calls[0];
+    expect(query).toContain(
+      "timelineItems(itemTypes: [CROSS_REFERENCED_EVENT], last: 30)",
+    );
+    expect(query).toContain("... on CrossReferencedEvent");
+    expect(query).toContain(
+      "... on PullRequest { number state url updatedAt author { login } }",
+    );
+  });
+
+  it("passes with the mention in openMentions: no closing PR, one open mention by someone else updated today", async () => {
+    const updatedAt = today();
+    const octokit = octokitWith({
+      timeline: [
+        mention({ number: 12, author: { login: "alice" }, updatedAt }),
+      ],
+    });
+    const result = await closingOnly(octokit, "me");
+    expect(result).toEqual({
+      passed: true,
+      linkedPR: null,
+      openMentions: [
+        {
+          number: 12,
+          author: "alice",
+          state: "open",
+          merged: false,
+          url: "https://github.com/owner/repo/pull/12",
+          updatedAt,
+        },
+      ],
+    });
+    expect(result.inconclusive).toBeUndefined();
+  });
+
+  it("fails with linkedPR when the open mention is the user's own, whatever the casing", async () => {
+    const octokit = octokitWith({
+      timeline: [mention({ number: 12, author: { login: "Alice" } })],
+    });
+    const result = await closingOnly(octokit, "ALICE");
+    expect(result.passed).toBe(false);
+    expect(result.openMentions).toBeUndefined();
+    expect(result.linkedPR).toMatchObject({
+      number: 12,
+      author: "Alice",
+      state: "open",
+      merged: false,
+    });
+  });
+
+  it("the user's own open mention blocks even when it is stalled", async () => {
+    // Stalled filtering applies to other people's mentions only: a branch of
+    // yours that went quiet is still your branch.
+    const octokit = octokitWith({
+      timeline: [
+        mention({
+          number: 12,
+          author: { login: "alice" },
+          updatedAt: daysAgo(45),
+        }),
+      ],
+    });
+    const result = await closingOnly(octokit, "alice");
+    expect(result.passed).toBe(false);
+    expect(result.linkedPR?.number).toBe(12);
+  });
+
+  it("the user's own mention wins over an earlier mention by someone else", async () => {
+    const octokit = octokitWith({
+      timeline: [
+        mention({ number: 11, author: { login: "bob" } }),
+        mention({ number: 12, author: { login: "alice" } }),
+      ],
+    });
+    const result = await closingOnly(octokit, "alice");
+    expect(result.passed).toBe(false);
+    expect(result.linkedPR?.number).toBe(12);
+  });
+
+  it("leaves a mention last updated 45 days ago out of openMentions", async () => {
+    const octokit = octokitWith({
+      timeline: [
+        mention({
+          number: 12,
+          author: { login: "alice" },
+          updatedAt: daysAgo(45),
+        }),
+      ],
+    });
+    const result = await closingOnly(octokit, "me");
+    expect(result).toEqual({ passed: true, linkedPR: null });
+    expect(result).not.toHaveProperty("openMentions");
+  });
+
+  it("keeps a mention updated 29 days ago and drops one at exactly 30", async () => {
+    const fresh = await closingOnly(
+      octokitWith({
+        timeline: [mention({ number: 1, updatedAt: daysAgo(29) })],
+      }),
+      "me",
+    );
+    expect(fresh.openMentions?.map((p) => p.number)).toEqual([1]);
+    const stale = await closingOnly(
+      octokitWith({
+        timeline: [mention({ number: 2, updatedAt: daysAgo(30) })],
+      }),
+      "me",
+    );
+    expect(stale.openMentions).toBeUndefined();
+  });
+
+  it("keeps a mention with no updatedAt (cannot be judged stalled)", async () => {
+    const result = await closingOnly(
+      octokitWith({
+        timeline: [mention({ number: 3, updatedAt: undefined })],
+      }),
+      "me",
+    );
+    expect(result.openMentions?.map((p) => p.number)).toEqual([3]);
+    expect(result.openMentions?.[0]?.updatedAt).toBeUndefined();
+  });
+
+  it.each([["MERGED"], ["CLOSED"]] as const)(
+    "ignores a %s mention",
+    async (state) => {
+      const octokit = octokitWith({
+        timeline: [mention({ number: 12, state, author: { login: "alice" } })],
+      });
+      // Even as the user's own: a finished PR is not a PR in flight.
+      const result = await closingOnly(octokit, "alice");
+      expect(result).toEqual({ passed: true, linkedPR: null });
+    },
+  );
+
+  it("ignores cross-references from issues ({}), null sources and null nodes", async () => {
+    const octokit = octokitWith({
+      timeline: [{ source: {} }, { source: null }, {}, null],
+    });
+    const result = await closingOnly(octokit, "me");
+    expect(result).toEqual({ passed: true, linkedPR: null });
+  });
+
+  it("ignores a PR-shaped source missing its number or url", async () => {
+    const octokit = octokitWith({
+      timeline: [
+        {
+          source: {
+            state: "OPEN",
+            url: "https://github.com/owner/repo/pull/1",
+          },
+        },
+        { source: { state: "OPEN", number: 2 } },
+      ],
+    });
+    const result = await closingOnly(octokit, "me");
+    expect(result).toEqual({ passed: true, linkedPR: null });
+  });
+
+  it("lists two open mentions by other people, in timeline order", async () => {
+    const octokit = octokitWith({
+      timeline: [
+        mention({ number: 12, author: { login: "alice" } }),
+        mention({ number: 13, author: { login: "bob" } }),
+      ],
+    });
+    const result = await closingOnly(octokit, "me");
+    expect(result.passed).toBe(true);
+    expect(result.openMentions?.map((p) => p.number)).toEqual([12, 13]);
+  });
+
+  it("reports the closing PR and no openMentions when both exist", async () => {
+    const octokit = octokitWith({
+      closing: [pr({ number: 7, author: { login: "carol" } })],
+      timeline: [
+        mention({ number: 12, author: { login: "alice" } }),
+        mention({ number: 13, author: { login: "me" } }),
+      ],
+    });
+    const result = await closingOnly(octokit, "me");
+    expect(result.passed).toBe(false);
+    expect(result.linkedPR?.number).toBe(7);
+    expect(result).not.toHaveProperty("openMentions");
+    expect(Object.keys(result).sort()).toEqual(["linkedPR", "passed"]);
+  });
+
+  it("names a deleted mention author 'ghost'", async () => {
+    const result = await closingOnly(
+      octokitWith({ timeline: [mention({ number: 4, author: null })] }),
+      "me",
+    );
+    expect(result.openMentions?.[0]?.author).toBe("ghost");
+  });
+
+  describe("an empty username never matches an author", () => {
+    it.each([
+      ["ghost (deleted account)", null],
+      ["an empty login", { login: "" }],
+      ["a login with no value", {}],
+    ])("%s", async (_label, author) => {
+      const octokit = octokitWith({
+        timeline: [mention({ number: 5, author: author as PRNode["author"] })],
+      });
+      for (const result of [
+        await closingOnly(octokit, ""),
+        await closingOnly(octokit),
+      ]) {
+        expect(result.passed).toBe(true);
+        expect(result.linkedPR).toBeNull();
+        expect(result.openMentions?.map((p) => p.number)).toEqual([5]);
+      }
+    });
+  });
+
+  it.each([
+    ["repository: null", { repository: null as const }],
+    ["issue: null", { issue: null as const }],
+  ])("is inconclusive when the response has %s", async (_label, shape) => {
+    const result = await closingOnly(octokitWith(shape), "me");
+    expect(result).toEqual({
+      passed: true,
+      inconclusive: true,
+      reason: "issue not returned by GraphQL",
+      linkedPR: null,
+    });
+  });
+});
+
 // ── commentClaimsIssue ────────────────────────────────────────────
 
 describe("commentClaimsIssue", () => {
