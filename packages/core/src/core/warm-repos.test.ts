@@ -358,6 +358,27 @@ describe("listWarmRepoIssues", () => {
     expect(graphql).toHaveBeenCalledTimes(1);
   });
 
+  it("yields nothing for a repo below minStars and keeps one at the floor", async () => {
+    const graphql = vi.fn().mockResolvedValue({
+      r0: repoNode([issueNode({ url: "https://github.com/a/low/issues/1" })], {
+        nameWithOwner: "a/low",
+        stargazerCount: 99,
+      }),
+      r1: repoNode([issueNode({ url: "https://github.com/a/ok/issues/1" })], {
+        nameWithOwner: "a/ok",
+        stargazerCount: 100,
+      }),
+    });
+    const result = await listWarmRepoIssues(
+      makeOctokit(graphql),
+      ["a/low", "a/ok"],
+      100,
+    );
+    expect(result.items.map((i) => i.repo)).toEqual(["a/ok"]);
+    expect(result.failedRepos).toBe(0);
+    expect(graphql.mock.calls[0]?.[0]).toContain("stargazerCount");
+  });
+
   it.each([["owner/repo"], ["owner/re_po.js-v2"], ["o-w.n_er/r"], ["a1/B2"]])(
     "accepts the valid repo %s",
     async (repo) => {

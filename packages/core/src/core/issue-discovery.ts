@@ -200,6 +200,7 @@ async function runPhase0(
   maxResults: number,
   filterIssues: (items: GitHubSearchItem[]) => GitHubSearchItem[],
   repoScore: (repo: string) => number | null,
+  minStars: number,
 ): Promise<PhaseResult> {
   info(
     MODULE,
@@ -214,6 +215,7 @@ async function runPhase0(
       maxResults,
       filterIssues,
       repoScore,
+      minStars,
     );
 
   info(MODULE, `Found ${candidates.length} candidates from merged-PR repos`);
@@ -972,6 +974,7 @@ export class IssueDiscovery {
             wanted,
             filterIssuesPhase0,
             (repo) => this.stateReader.getRepoScore(repo),
+            minStars,
           ),
         );
         strategiesUsed.push("merged");
