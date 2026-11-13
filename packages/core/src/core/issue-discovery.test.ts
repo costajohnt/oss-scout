@@ -318,7 +318,7 @@ describe("IssueDiscovery", () => {
   });
 
   describe("searchIssues — phase execution", () => {
-    it("Phase 0: calls fetchWarmRepoCandidates with merged-PR repos, the Phase 0 filter and a repoScore callback", async () => {
+    it("Phase 0: calls fetchWarmRepoCandidates with merged-PR repos, the Phase 0 filter, a repoScore callback and minStars", async () => {
       const c = makeCandidate("org/merged-repo", "merged_pr");
       mockFetchWarmRepoCandidates.mockResolvedValue({
         candidates: [c],
@@ -341,6 +341,7 @@ describe("IssueDiscovery", () => {
         expect.any(Number), // maxResults for the phase
         expect.any(Function), // filterIssuesPhase0
         expect.any(Function), // repoScore
+        50, // minStars (schema default)
       );
       // The merged phase no longer walks the REST list.
       expect(mockFetchIssuesFromKnownRepos).not.toHaveBeenCalled();
