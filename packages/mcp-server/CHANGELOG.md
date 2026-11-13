@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.13.2](https://github.com/costajohnt/oss-scout/compare/mcp-server-v0.13.1...mcp-server-v0.13.2) (2026-11-13)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @oss-scout/core bumped to 1.14.2
+
 ## [0.13.1](https://github.com/costajohnt/oss-scout/compare/mcp-server-v0.13.0...mcp-server-v0.13.1) (2026-10-28)
 
 
