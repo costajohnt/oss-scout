@@ -109,6 +109,7 @@ interface IssueNode {
 interface RepoNode {
   nameWithOwner: string;
   isArchived: boolean;
+  stargazerCount?: number;
   issues: { nodes: (IssueNode | null)[] | null } | null;
 }
 
@@ -139,6 +140,7 @@ async function queryRepos(
       `r${i}: repository(owner: $o${i}, name: $n${i}) {
         nameWithOwner
         isArchived
+        stargazerCount
         issues(first: ${ISSUES_PER_REPO}, states: OPEN, orderBy: { field: CREATED_AT, direction: DESC }) {
           nodes {
             url
@@ -189,10 +191,12 @@ async function queryRepos(
 function takeableIssues(
   listedAs: string,
   node: RepoNode | null | undefined,
+  minStars: number,
 ): WarmIssue[] | null {
   const nodes = node?.issues?.nodes;
   if (!node || !nodes) return null;
   if (node.isArchived) return [];
+  if ((node.stargazerCount ?? 0) < minStars) return [];
   // GraphQL follows renames, so name the repo as GitHub does now: the issue
   // URLs use that name, and so will the vetted candidates.
   const repo = node.nameWithOwner;
@@ -222,7 +226,8 @@ function takeableIssues(
 /**
  * List the newest open issues of every repo in `repos` that nobody has taken:
  * unassigned and without an open or merged PR that closes them. Archived repos
- * yield nothing. Each issue appears once even when two names in `repos` point
+ * and repos below `minStars` yield nothing: a past merge does not exempt a
+ * repo from the user's star floor. Each issue appears once even when two names in `repos` point
  * at the same (renamed) repo.
  *
  * A 401 propagates. A rate limit stops the walk and returns what was read,
@@ -233,6 +238,7 @@ function takeableIssues(
 export async function listWarmRepoIssues(
   octokit: Octokit,
   repos: string[],
+  minStars = 0,
 ): Promise<{ items: WarmIssue[]; failedRepos: number; rateLimitHit: boolean }> {
   const valid = repos.filter((r) => {
     const parts = r.split("/");
@@ -254,7 +260,7 @@ export async function listWarmRepoIssues(
       const { data, permanent } = await queryRepos(octokit, batch, noRetry);
       const retry: string[] = [];
       batch.forEach((repo, j) => {
-        const found = takeableIssues(repo, data[`r${j}`]);
+        const found = takeableIssues(repo, data[`r${j}`], minStars);
         if (found) for (const issue of found) byUrl.set(issue.html_url, issue);
         // A repo that did not resolve next to others most likely lost out to
         // the per-query resource limit; alone it fits.
@@ -371,6 +377,7 @@ export async function fetchWarmRepoCandidates(
   maxResults: number,
   filterFn: (items: GitHubSearchItem[]) => GitHubSearchItem[],
   repoScore: (repo: string) => number | null,
+  minStars = 0,
 ): Promise<{
   candidates: IssueCandidate[];
   allReposFailed: boolean;
@@ -378,7 +385,7 @@ export async function fetchWarmRepoCandidates(
   vetError: string | null;
 }> {
   const cache = getHttpCache();
-  const listed = await listWarmRepoIssues(octokit, repos);
+  const listed = await listWarmRepoIssues(octokit, repos, minStars);
   // The caller's filter and scores are keyed on repo names from config and
   // state, which after a rename may be the old name or the new one. An issue
   // must pass the filter under both, and takes whichever score exists.
