@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.14.1](https://github.com/costajohnt/oss-scout/compare/core-v1.14.0...core-v1.14.1) (2026-11-13)
+
+
+### Bug Fixes
+
+* **search:** apply minStars to the warm-repo phase ([#385](https://github.com/costajohnt/oss-scout/issues/385)) ([2820819](https://github.com/costajohnt/oss-scout/commit/282081929674116e290ecea7454f160be3c3ae6b))
+
 ## [1.14.0](https://github.com/costajohnt/oss-scout/compare/core-v1.13.0...core-v1.14.0) (2026-11-12)
 
 
