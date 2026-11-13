@@ -498,6 +498,52 @@ describe("discoverFeatures orchestrator", () => {
     );
   });
 
+  it("drops anchor candidates below minStars and keeps unknown-star ones", async () => {
+    const octokit = {
+      issues: {
+        listForRepo: vi.fn().mockImplementation(async ({ owner, repo }) => ({
+          data: [
+            {
+              html_url: `https://github.com/${owner}/${repo}/issues/1`,
+              title: "enhancement",
+              labels: [{ name: "enhancement" }],
+              milestone: null,
+              assignee: null,
+            },
+          ],
+        })),
+      },
+    } as never;
+    const health: Record<string, object> = {
+      small: { stargazersCount: 80 },
+      big: { stargazersCount: 500 },
+      unknown: { checkFailed: true },
+    };
+    const vetter = {
+      vetIssue: vi.fn().mockImplementation(async (url: string) => ({
+        issue: { url, repo: "x/y", number: 1, title: "t", labels: [] },
+        projectHealth: health[new URL(url).pathname.split("/")[1]!],
+        recommendation: "approve",
+        reasonsToApprove: [],
+        reasonsToSkip: [],
+        viabilityScore: 80,
+        searchPriority: "merged_pr",
+      })),
+    } as never;
+    const result = await discoverFeatures({
+      octokit,
+      vetter,
+      repoScores: mkScores(["small/r", 6], ["big/r", 5], ["unknown/r", 4]),
+      count: 10,
+      minStars: 100,
+    });
+    expect(result.anchorRepos).toEqual(["small/r", "big/r", "unknown/r"]);
+    expect(result.quickWins.map((c) => c.issue.url).sort()).toEqual([
+      "https://github.com/big/r/issues/1",
+      "https://github.com/unknown/r/issues/1",
+    ]);
+  });
+
   it("honors anchorThreshold and splitRatio overrides", async () => {
     // Build issues so quick-win and bigger-bet candidates both exist.
     const octokit = {

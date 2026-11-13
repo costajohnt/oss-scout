@@ -221,6 +221,8 @@ export interface DiscoverFeaturesOptions {
   excludeOrgs?: string[];
   /** Repos with anti-AI contribution policies (#307). */
   aiPolicyBlocklist?: string[];
+  /** Drop candidates from repos below this star count, like search does. */
+  minStars?: number;
 }
 
 /**
@@ -291,6 +293,7 @@ function isFeatureIssue(item: RawIssueItem): boolean {
 async function vetAndClassify(
   item: RawIssueItem,
   vetter: IssueVetter,
+  minStars: number,
   roadmapRefs?: ReadonlySet<number>,
 ): Promise<FeatureCandidate | null> {
   const labels = extractLabels(item);
@@ -320,6 +323,17 @@ async function vetAndClassify(
   } catch (err: unknown) {
     rethrowIfFatal(err);
     warn(MODULE, `vet failed for ${item.html_url}: ${errorMessage(err)}`);
+    return null;
+  }
+
+  // Same rule as search: a failed health check keeps the candidate, since its
+  // star count is unknown. The count comes from the vet, so a repo that grows
+  // past the floor qualifies again on its own; a past merge does not exempt
+  // an anchor repo.
+  if (
+    !candidate.projectHealth.checkFailed &&
+    (candidate.projectHealth.stargazersCount ?? 0) < minStars
+  ) {
     return null;
   }
 
@@ -397,7 +411,12 @@ export async function discoverFeatures(
     );
 
     for (const item of items) {
-      const candidate = await vetAndClassify(item, opts.vetter, roadmapRefs);
+      const candidate = await vetAndClassify(
+        item,
+        opts.vetter,
+        opts.minStars ?? 0,
+        roadmapRefs,
+      );
       if (candidate) candidates.push(candidate);
     }
   }
@@ -431,6 +450,8 @@ export interface DiscoverFeaturesBroadOptions {
   excludeOrgs?: string[];
   /** Repos with anti-AI contribution policies, filtered post-search (#307). */
   aiPolicyBlocklist?: string[];
+  /** Drop candidates from repos below this star count, like search does. */
+  minStars?: number;
   /** Override default split ratio. */
   splitRatio?: number;
   /** Maximum search results to vet (default 30). */
@@ -580,7 +601,7 @@ export async function discoverFeaturesBroad(
   for (const item of items) {
     // No roadmapRefs: roadmap scraping is per-repo and deliberately skipped
     // on the broad path to keep it cheap. Anchor mode keeps the bonus.
-    const candidate = await vetAndClassify(item, opts.vetter);
+    const candidate = await vetAndClassify(item, opts.vetter, opts.minStars ?? 0);
     if (candidate) candidates.push(candidate);
   }
 
