@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.14.2](https://github.com/costajohnt/oss-scout/compare/core-v1.14.1...core-v1.14.2) (2026-11-13)
+
+
+### Bug Fixes
+
+* **features:** apply minStars to feature discovery ([#387](https://github.com/costajohnt/oss-scout/issues/387)) ([36474d3](https://github.com/costajohnt/oss-scout/commit/36474d385e53ac965b4932c416f3c3df43b9ba0b))
+
 ## [1.14.1](https://github.com/costajohnt/oss-scout/compare/core-v1.14.0...core-v1.14.1) (2026-11-13)
 
 
