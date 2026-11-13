@@ -601,7 +601,11 @@ export async function discoverFeaturesBroad(
   for (const item of items) {
     // No roadmapRefs: roadmap scraping is per-repo and deliberately skipped
     // on the broad path to keep it cheap. Anchor mode keeps the bonus.
-    const candidate = await vetAndClassify(item, opts.vetter, opts.minStars ?? 0);
+    const candidate = await vetAndClassify(
+      item,
+      opts.vetter,
+      opts.minStars ?? 0,
+    );
     if (candidate) candidates.push(candidate);
   }
 
